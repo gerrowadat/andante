@@ -139,6 +139,10 @@ vulnerability reporting; Dependabot alerts and security updates.
   workflow, so that one job produces and checks the release files.
 - **`make ci-clean` is a `--clean` mode of `act-guard.sh`**, not a separate
   `act-clean.sh`.
+- **Spectral runs from its Docker image**, pinned by digest, so `make spec-lint`
+  and CI run the same thing and neither needs Node.
+- **`oasdiff` skips when the base has no spec**, which only happened on the PR
+  that added it.
 - **`main` is protected by a repository ruleset**, not classic branch protection.
   It requires a PR and the checks `test`, `lint`, `licenses` and `workflows`, and
   blocks force pushes and deletion, with no bypass actors and no required
@@ -146,6 +150,5 @@ vulnerability reporting; Dependabot alerts and security updates.
 
 ## Not built yet
 
-- **Phase 4:** Spectral and `oasdiff` in the `contracts` job.
 - **Phase 10:** the end-to-end suite described above. Today `test/e2e` holds one
   test, that `andante-server --version` reports the stamped version.

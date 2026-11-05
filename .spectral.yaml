@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 Dave O'Connor
+extends:
+  - spectral:oas

@@ -13,6 +13,7 @@ Start at the [project README](../README.md) for what andante is.
   - [Feeds and sharing](proposals/feeds-and-sharing.md) — output formats, tokens, decorators.
 - [`design/`](design/) — records for shipped features:
   - [Delivery](design/delivery.md) — CI, security scanning, releases, supply chain.
+  - [API](design/api.md) — why the admin API's contract is the way it is.
 
 ## Building it
 
@@ -24,8 +25,9 @@ Start at the [project README](../README.md) for what andante is.
 ## Running it
 
 - [Configuration](configuration.md) — flags, environment variables, and what is not configured here.
+- [API](api.md) — authentication, errors, pagination, versioning, generating a client.
 
 ## Using it
 
-Written as features land: `api.md`, `sources.md`, `reads.md`, `feeds.md`,
-`cli.md`, `deploying.md`, `monitoring.md`, `faq.md`.
+Written as features land: `sources.md`, `reads.md`, `feeds.md`, `cli.md`,
+`deploying.md`, `monitoring.md`, `faq.md`.

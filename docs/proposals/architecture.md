@@ -173,11 +173,13 @@ never stored or recoverable; that is why an OPML export issues new tokens.
 
 ## Admin API (v1)
 
-OpenAPI document at `api/openapi.yaml`, served at `GET /api/v1/openapi.json`
-on the admin listener. Server interface and client are generated with
-oapi-codegen (std-http server, strict mode). Errors are RFC 9457 problem
-details. Lists use opaque cursors (`?cursor=…&limit=…`) with a `next` link in
-the body and a `Link` header.
+OpenAPI 3.1 document at `api/openapi.yaml`, served at
+`GET /api/v1/openapi.json` on the admin listener. Server interface and client are
+generated with oapi-codegen (std-http server, strict mode). Errors are RFC 9457
+problem details. Lists use opaque cursors (`?cursor=…&limit=…`) with a `next`
+link in the body and a `Link` header. `PATCH` takes a JSON merge patch (RFC 7396).
+A source's strategy is the `strategy` property of its `config`. See
+[`design/api.md`](../design/api.md).
 
 | Method & path | Purpose |
 |---|---|

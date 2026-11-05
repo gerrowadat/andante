@@ -90,6 +90,9 @@ func (s *Store) Ready(ctx context.Context) error {
 	return nil
 }
 
+// Pool returns the connection pool, for tests that set up rows directly.
+func (s *Store) Pool() *pgxpool.Pool { return s.pool }
+
 // Close releases the store's connections.
 func (s *Store) Close() {
 	_ = s.migrator.Close()

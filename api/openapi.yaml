@@ -1,0 +1,1487 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 Dave O'Connor
+openapi: 3.1.0
+info:
+  title: andante admin API
+  version: 1.0.0
+  summary: Manage sources, reads and tokens on an andante server.
+  description: >-
+    The single interface for changing andante's state. Within /api/v1 changes
+    are additive only. See docs/api.md for authentication, errors, pagination
+    and the versioning policy.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+  contact:
+    name: andante
+    url: https://github.com/gerrowadat/andante
+servers:
+  - url: /api/v1
+    description: The admin listener.
+security:
+  - bearerAuth: []
+tags:
+  - name: sources
+    description: Serials and how their archives are discovered.
+  - name: reads
+    description: Paced replays of a source.
+  - name: tokens
+    description: Feed tokens and API tokens.
+  - name: exchange
+    description: OPML import and export.
+  - name: meta
+    description: The API's own description.
+# Shared example values, anchored here and aliased below.
+x-examples:
+  Source: &source
+    id: 1
+    slug: example-comic
+    title: Example Comic
+    home_url: https://comic.example/
+    default_kind: page
+    image_url: null
+    extra: {}
+    config:
+      strategy: crawl
+      start_url: https://comic.example/1
+    state: indexing
+    due_at: null
+    last_crawled_at: null
+    last_error: null
+    created_at: 2026-11-05T07:00:00Z
+  Entry: &entry
+    id: 1
+    seq: 0
+    kind: page
+    url: https://comic.example/1
+    guid: null
+    title: The First Page
+    summary: null
+    content_html: null
+    images:
+      - https://comic.example/images/1.png
+    alt_text: null
+    enclosures: []
+    duration: null
+    extra: {}
+    original_date: 2009-03-01T00:00:00Z
+    discovered_at: 2026-11-05T07:00:00Z
+  Read: &read
+    id: 1
+    source_id: 1
+    name: Mornings
+    catch_up: passthrough
+    buffer: 0
+    config: {}
+    created_at: 2026-11-05T07:00:00Z
+    position: 0
+    due: 0
+    next_release_at: 2026-11-06T07:00:00Z
+    index_end: 41
+    state: active
+  FeedToken: &feed-token
+    id: 1
+    read_id: 1
+    role: viewer
+    label: Alex
+    created_at: 2026-11-05T07:00:00Z
+    revoked_at: null
+    last_seen_at: null
+  APIToken: &api-token
+    id: 1
+    label: bootstrap
+    created_at: 2026-11-05T07:00:00Z
+    revoked_at: null
+    last_used_at: 2026-11-05T07:05:00Z
+paths:
+  /openapi.json:
+    get:
+      operationId: getSpec
+      tags: [meta]
+      summary: Get this document
+      description: Returns this OpenAPI document as JSON. Needs no token.
+      security: []
+      responses:
+        "200":
+          description: The OpenAPI document.
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                openapi: 3.1.0
+                info:
+                  title: andante admin API
+                  version: 1.0.0
+                paths: {}
+        default:
+          $ref: "#/components/responses/Problem"
+  /sources:
+    get:
+      operationId: listSources
+      tags: [sources]
+      summary: List sources
+      description: Lists every source, oldest first.
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: A page of sources.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SourceList"
+              example:
+                items:
+                  - *source
+                next: null
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: createSource
+      tags: [sources]
+      summary: Create a source
+      description: >-
+        Creates a source. Its strategy config is validated here rather than at
+        crawl time. Probe it first with createProbe.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SourceCreate"
+            example:
+              slug: example-comic
+              title: Example Comic
+              home_url: https://comic.example/
+              default_kind: page
+              config:
+                strategy: crawl
+                start_url: https://comic.example/1
+      responses:
+        "201":
+          description: The new source.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Source"
+              example: *source
+        default:
+          $ref: "#/components/responses/Problem"
+  /sources/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      operationId: getSource
+      tags: [sources]
+      summary: Get a source
+      description: Returns one source.
+      responses:
+        "200":
+          description: The source.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Source"
+              example: *source
+        default:
+          $ref: "#/components/responses/Problem"
+    patch:
+      operationId: updateSource
+      tags: [sources]
+      summary: Update a source
+      description: >-
+        Applies a JSON merge patch (RFC 7396). A slug cannot change. State can
+        only be set to paused or indexing; the crawler sets tail and error.
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: "#/components/schemas/SourcePatch"
+            example:
+              title: A Better Title
+              image_url: null
+              state: paused
+      responses:
+        "200":
+          description: The updated source.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Source"
+              example: *source
+        default:
+          $ref: "#/components/responses/Problem"
+    delete:
+      operationId: deleteSource
+      tags: [sources]
+      summary: Delete a source
+      description: >-
+        Deletes a source and its entries. Refused with a 409 while a read uses
+        the source.
+      responses:
+        "204":
+          description: The source is gone.
+        default:
+          $ref: "#/components/responses/Problem"
+  /sources/{id}/entries:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      operationId: listEntries
+      tags: [sources]
+      summary: List a source's entries
+      description: Lists the indexed entries, in reading order.
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: A page of entries.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EntryList"
+              example:
+                items:
+                  - *entry
+                next: /api/v1/sources/1/entries?cursor=MA&limit=50
+        default:
+          $ref: "#/components/responses/Problem"
+  /sources/{id}/crawls:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      operationId: requestCrawl
+      tags: [sources]
+      summary: Ask for a crawl now
+      description: Marks the source due. Crawling happens in the background.
+      responses:
+        "202":
+          description: The source is due.
+        default:
+          $ref: "#/components/responses/Problem"
+  /probes:
+    post:
+      operationId: createProbe
+      tags: [sources]
+      summary: Dry-run discovery
+      description: >-
+        Runs discovery for a proposed source config and returns the first
+        entries with any extraction warnings. Saves nothing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProbeRequest"
+            example:
+              default_kind: page
+              limit: 10
+              config:
+                strategy: crawl
+                start_url: https://comic.example/1
+      responses:
+        "200":
+          description: What discovery found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProbeResult"
+              example:
+                entries:
+                  - *entry
+                warnings:
+                  - no image found on https://comic.example/2
+                dated_share: 1
+        default:
+          $ref: "#/components/responses/Problem"
+  /reads:
+    get:
+      operationId: listReads
+      tags: [reads]
+      summary: List reads
+      description: Lists every read, oldest first.
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: A page of reads.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadList"
+              example:
+                items:
+                  - *read
+                next: null
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: createRead
+      tags: [reads]
+      summary: Create a read
+      description: Creates a read of a source, with its first segment.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReadCreate"
+            example:
+              source_id: 1
+              name: Mornings
+              pacing:
+                mode: rrule
+                rrule: FREQ=DAILY;BYHOUR=7;BYMINUTE=0;BYSECOND=0
+                timezone: Europe/Dublin
+                per_release: 1
+      responses:
+        "201":
+          description: The new read.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Read"
+              example: *read
+        default:
+          $ref: "#/components/responses/Problem"
+  /reads/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      operationId: getRead
+      tags: [reads]
+      summary: Get a read
+      description: Returns one read, with its current position and next release.
+      responses:
+        "200":
+          description: The read.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Read"
+              example: *read
+        default:
+          $ref: "#/components/responses/Problem"
+    patch:
+      operationId: updateRead
+      tags: [reads]
+      summary: Update a read
+      description: >-
+        Applies a JSON merge patch (RFC 7396). Pacing and position change
+        through createAdjustment, not here.
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: "#/components/schemas/ReadPatch"
+            example:
+              name: Evenings
+      responses:
+        "200":
+          description: The updated read.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Read"
+              example: *read
+        default:
+          $ref: "#/components/responses/Problem"
+    delete:
+      operationId: deleteRead
+      tags: [reads]
+      summary: Delete a read
+      description: Deletes a read, its history and its feed tokens.
+      responses:
+        "204":
+          description: The read is gone.
+        default:
+          $ref: "#/components/responses/Problem"
+  /reads/{id}/adjustments:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      operationId: createAdjustment
+      tags: [reads]
+      summary: Adjust a read
+      description: >-
+        Skips, pauses, resumes, jumps or re-paces a read by appending a segment.
+        A jump to a seq at or below the read's position gets a 409: a read only
+        moves forward, and a re-read is a new read.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Adjustment"
+            example:
+              type: skip
+              count: 2
+      responses:
+        "200":
+          description: The adjusted read.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Read"
+              example: *read
+        default:
+          $ref: "#/components/responses/Problem"
+  /reads/{id}/segments:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      operationId: listSegments
+      tags: [reads]
+      summary: List a read's history
+      description: Lists the read's append-only segments, oldest first.
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: A page of segments.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SegmentList"
+              example:
+                items:
+                  - id: 1
+                    from_seq: 0
+                    starts_at: 2026-11-05T07:00:00Z
+                    created_at: 2026-11-05T07:00:00Z
+                    reason: created
+                    pacing:
+                      mode: rrule
+                      rrule: FREQ=DAILY;BYHOUR=7;BYMINUTE=0;BYSECOND=0
+                      timezone: Europe/Dublin
+                      per_release: 1
+                next: null
+        default:
+          $ref: "#/components/responses/Problem"
+  /reads/{id}/tokens:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      operationId: listFeedTokens
+      tags: [tokens]
+      summary: List a read's feed tokens
+      description: Lists the read's feed tokens. Raw tokens are never returned.
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: A page of feed tokens.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeedTokenList"
+              example:
+                items:
+                  - *feed-token
+                next: null
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: createFeedToken
+      tags: [tokens]
+      summary: Issue a feed token
+      description: >-
+        Issues a feed token. The raw token and its feed URLs appear only in this
+        response.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FeedTokenCreate"
+            example:
+              role: viewer
+              label: Alex
+      responses:
+        "201":
+          description: The new token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssuedFeedToken"
+              example:
+                id: 1
+                read_id: 1
+                role: viewer
+                label: Alex
+                created_at: 2026-11-05T07:00:00Z
+                token: Qk9PS01BUktCT09LTUFSS0JPT0tNQVJLQk9PS01BUks
+                urls:
+                  atom: https://andante.example/f/Qk9PS01BUktCT09LTUFSS0JPT0tNQVJLQk9PS01BUks.atom
+                  rss: https://andante.example/f/Qk9PS01BUktCT09LTUFSS0JPT0tNQVJLQk9PS01BUks.rss
+                  json: https://andante.example/f/Qk9PS01BUktCT09LTUFSS0JPT0tNQVJLQk9PS01BUks.json
+                suggested: atom
+        default:
+          $ref: "#/components/responses/Problem"
+  /tokens/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    delete:
+      operationId: revokeFeedToken
+      tags: [tokens]
+      summary: Revoke a feed token
+      description: Revokes a feed token. Its URLs stop working.
+      responses:
+        "204":
+          description: The token is revoked.
+        default:
+          $ref: "#/components/responses/Problem"
+  /exports/opml:
+    post:
+      operationId: exportOPML
+      tags: [exchange]
+      summary: Export reads as OPML
+      description: >-
+        Issues a fresh feed token per read with the given role and label, and
+        returns OPML 2.0 of their feed URLs. Raw tokens are never stored, so an
+        export can only contain tokens created for it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OPMLExportRequest"
+            example:
+              issue: viewer
+              label: For Alex
+      responses:
+        "200":
+          description: An OPML 2.0 document.
+          content:
+            text/x-opml:
+              schema:
+                type: string
+              example: <opml version="2.0"><head><title>andante</title></head><body/></opml>
+        default:
+          $ref: "#/components/responses/Problem"
+  /imports/opml:
+    post:
+      operationId: importOPML
+      tags: [exchange]
+      summary: Import sources from OPML
+      description: >-
+        Creates a feed-strategy source in the paused state for each outline, so
+        nothing crawls until each one is probed and enabled.
+      requestBody:
+        required: true
+        content:
+          text/x-opml:
+            schema:
+              type: string
+            example: <opml version="2.0"><head/><body><outline type="rss" text="A Podcast" xmlUrl="https://feed.example/rss"/></body></opml>
+      responses:
+        "200":
+          description: The result for each outline.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OPMLImportResult"
+              example:
+                results:
+                  - title: A Podcast
+                    feed_url: https://feed.example/rss
+                    status: created
+                    source_id: 2
+        default:
+          $ref: "#/components/responses/Problem"
+  /api-tokens:
+    get:
+      operationId: listAPITokens
+      tags: [tokens]
+      summary: List API tokens
+      description: Lists API tokens, revoked ones included. Raw tokens are never returned.
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: A page of API tokens.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APITokenList"
+              example:
+                items:
+                  - *api-token
+                next: null
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: createAPIToken
+      tags: [tokens]
+      summary: Create an API token
+      description: Creates an API token. The raw token appears only in this response.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/APITokenCreate"
+            example:
+              label: laptop
+      responses:
+        "201":
+          description: The new token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssuedAPIToken"
+              example:
+                id: 2
+                label: laptop
+                created_at: 2026-11-05T07:00:00Z
+                token: Qk9PS01BUktCT09LTUFSS0JPT0tNQVJLQk9PS01BUks
+        default:
+          $ref: "#/components/responses/Problem"
+  /api-tokens/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    delete:
+      operationId: revokeAPIToken
+      tags: [tokens]
+      summary: Revoke an API token
+      description: >-
+        Revokes an API token. Revoking one already revoked succeeds. Revoking
+        the last active token gets a 409, because nothing could then use the API
+        to make another.
+      responses:
+        "204":
+          description: The token is revoked.
+        default:
+          $ref: "#/components/responses/Problem"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: An API token (RFC 6750). Separate from feed tokens.
+  parameters:
+    ID:
+      name: id
+      in: path
+      required: true
+      description: The resource's ID.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    Cursor:
+      name: cursor
+      in: query
+      description: An opaque cursor from a previous page's next link.
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      description: The most items to return.
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+        maximum: 100
+        default: 50
+  headers:
+    Link:
+      description: The next page as an RFC 8288 link, when there is one.
+      schema:
+        type: string
+      example: </api/v1/sources?cursor=MA&limit=50>; rel="next"
+  responses:
+    Problem:
+      description: An error, as RFC 9457 problem details.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: about:blank
+            title: Not Found
+            status: 404
+            detail: source 7 does not exist
+  schemas:
+    Problem:
+      type: object
+      description: RFC 9457 problem details.
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri-reference
+          description: Identifies the problem. about:blank means the status says it all.
+        title:
+          type: string
+        status:
+          type: integer
+          format: int32
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri-reference
+        errors:
+          type: array
+          description: What was wrong with the request, field by field.
+          items:
+            $ref: "#/components/schemas/FieldError"
+    FieldError:
+      type: object
+      required: [detail]
+      properties:
+        pointer:
+          type: string
+          description: A JSON pointer to the field in the request body.
+        detail:
+          type: string
+    NextLink:
+      type: [string, "null"]
+      format: uri-reference
+      description: The next page, or null on the last one.
+    Kind:
+      type: string
+      enum: [page, episode, article]
+    Source:
+      type: object
+      required: [id, slug, title, home_url, default_kind, extra, config, state, created_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        slug:
+          type: string
+        title:
+          type: string
+        home_url:
+          type: string
+          format: uri
+        default_kind:
+          $ref: "#/components/schemas/Kind"
+        image_url:
+          type: [string, "null"]
+          format: uri
+        extra:
+          type: object
+          description: Show or site metadata copied from the source.
+        config:
+          $ref: "#/components/schemas/SourceConfig"
+        state:
+          type: string
+          enum: [indexing, tail, paused, error]
+        due_at:
+          type: [string, "null"]
+          format: date-time
+        last_crawled_at:
+          type: [string, "null"]
+          format: date-time
+        last_error:
+          type: [string, "null"]
+        created_at:
+          type: string
+          format: date-time
+    SourceCreate:
+      type: object
+      additionalProperties: false
+      required: [slug, title, home_url, default_kind, config]
+      properties:
+        slug:
+          type: string
+          pattern: ^[a-z0-9]+(-[a-z0-9]+)*$
+          maxLength: 64
+        title:
+          type: string
+          minLength: 1
+        home_url:
+          type: string
+          format: uri
+        default_kind:
+          $ref: "#/components/schemas/Kind"
+        image_url:
+          type: string
+          format: uri
+        config:
+          $ref: "#/components/schemas/SourceConfig"
+    SourcePatch:
+      type: object
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          minLength: 1
+        home_url:
+          type: string
+          format: uri
+        default_kind:
+          $ref: "#/components/schemas/Kind"
+        image_url:
+          type: [string, "null"]
+          format: uri
+        config:
+          $ref: "#/components/schemas/SourceConfig"
+        state:
+          type: string
+          enum: [indexing, paused]
+    SourceList:
+      type: object
+      required: [items, next]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Source"
+        next:
+          $ref: "#/components/schemas/NextLink"
+    SourceConfig:
+      description: How the source's archive is discovered.
+      oneOf:
+        - $ref: "#/components/schemas/CrawlConfig"
+        - $ref: "#/components/schemas/NumericConfig"
+        - $ref: "#/components/schemas/FeedConfig"
+        - $ref: "#/components/schemas/FeedPagedConfig"
+      discriminator:
+        propertyName: strategy
+        mapping:
+          crawl: "#/components/schemas/CrawlConfig"
+          numeric: "#/components/schemas/NumericConfig"
+          feed: "#/components/schemas/FeedConfig"
+          feed-paged: "#/components/schemas/FeedPagedConfig"
+    CrawlConfig:
+      type: object
+      description: Walk pages by their next link.
+      additionalProperties: false
+      required: [strategy, start_url]
+      properties:
+        strategy:
+          type: string
+          enum: [crawl]
+        start_url:
+          type: string
+          format: uri
+        selectors:
+          $ref: "#/components/schemas/Selectors"
+    Selectors:
+      type: object
+      description: CSS selectors that override extraction, field by field.
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          minLength: 1
+        image:
+          type: string
+          minLength: 1
+        alt_text:
+          type: string
+          minLength: 1
+        date:
+          type: string
+          minLength: 1
+        next:
+          type: string
+          minLength: 1
+    NumericConfig:
+      type: object
+      description: Walk URLs that carry an incrementing ID.
+      additionalProperties: false
+      required: [strategy, url_template, start]
+      properties:
+        strategy:
+          type: string
+          enum: [numeric]
+        url_template:
+          type: string
+          description: The URL, with {n} where the ID goes.
+        start:
+          type: integer
+          format: int64
+        max_consecutive_misses:
+          type: integer
+          format: int32
+          minimum: 1
+        format:
+          type: string
+          enum: [html, json]
+    FeedConfig:
+      type: object
+      description: Read a feed that holds the whole archive, or RFC 5005 archived feeds.
+      additionalProperties: false
+      required: [strategy, feed_url]
+      properties:
+        strategy:
+          type: string
+          enum: [feed]
+        feed_url:
+          type: string
+          format: uri
+    FeedPagedConfig:
+      type: object
+      description: Walk a WordPress-style paged feed.
+      additionalProperties: false
+      required: [strategy, feed_url]
+      properties:
+        strategy:
+          type: string
+          enum: [feed-paged]
+        feed_url:
+          type: string
+          format: uri
+        max_pages:
+          type: integer
+          format: int32
+          minimum: 1
+        page_param:
+          type: string
+          minLength: 1
+    Entry:
+      type: object
+      required: [id, seq, kind, images, enclosures, extra, discovered_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        seq:
+          type: integer
+          format: int32
+        kind:
+          $ref: "#/components/schemas/Kind"
+        url:
+          type: [string, "null"]
+        guid:
+          type: [string, "null"]
+        title:
+          type: [string, "null"]
+        summary:
+          type: [string, "null"]
+        content_html:
+          type: [string, "null"]
+        images:
+          type: array
+          items:
+            type: string
+        alt_text:
+          type: [string, "null"]
+        enclosures:
+          type: array
+          items:
+            $ref: "#/components/schemas/Enclosure"
+        duration:
+          type: [string, "null"]
+          format: duration
+        extra:
+          type: object
+          description: Namespaced fields passed through from the source.
+        original_date:
+          type: [string, "null"]
+          format: date-time
+        discovered_at:
+          type: string
+          format: date-time
+    Enclosure:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+        type:
+          type: string
+        length:
+          type: integer
+          format: int64
+    EntryList:
+      type: object
+      required: [items, next]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Entry"
+        next:
+          $ref: "#/components/schemas/NextLink"
+    ProbeRequest:
+      type: object
+      additionalProperties: false
+      required: [config]
+      properties:
+        default_kind:
+          $ref: "#/components/schemas/Kind"
+        limit:
+          type: integer
+          format: int32
+          description: The most entries to return.
+          minimum: 1
+          maximum: 25
+          default: 10
+        config:
+          $ref: "#/components/schemas/SourceConfig"
+    ProbeResult:
+      type: object
+      required: [entries, warnings, dated_share]
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/Entry"
+        warnings:
+          type: array
+          items:
+            type: string
+        dated_share:
+          type: number
+          format: double
+          description: The share of entries with an original date, from 0 to 1.
+    Pacing:
+      description: How a segment releases entries.
+      oneOf:
+        - $ref: "#/components/schemas/RRulePacing"
+        - $ref: "#/components/schemas/ReplayPacing"
+        - $ref: "#/components/schemas/PausedPacing"
+      discriminator:
+        propertyName: mode
+        mapping:
+          rrule: "#/components/schemas/RRulePacing"
+          replay: "#/components/schemas/ReplayPacing"
+          paused: "#/components/schemas/PausedPacing"
+    RRulePacing:
+      type: object
+      description: A fixed schedule.
+      additionalProperties: false
+      required: [mode, rrule, timezone]
+      properties:
+        mode:
+          type: string
+          enum: [rrule]
+        rrule:
+          type: string
+          description: An RFC 5545 recurrence rule.
+        timezone:
+          type: string
+          description: An IANA time zone.
+        per_release:
+          type: integer
+          format: int32
+          minimum: 1
+          default: 1
+    ReplayPacing:
+      type: object
+      description: The original run's gaps, divided by speed.
+      additionalProperties: false
+      required: [mode, speed]
+      properties:
+        mode:
+          type: string
+          enum: [replay]
+        speed:
+          type: number
+          format: double
+          exclusiveMinimum: 0
+        min_gap:
+          type: string
+          format: duration
+        max_gap:
+          type: string
+          format: duration
+        default_gap:
+          type: string
+          format: duration
+    PausedPacing:
+      type: object
+      description: Release nothing.
+      additionalProperties: false
+      required: [mode]
+      properties:
+        mode:
+          type: string
+          enum: [paused]
+    Read:
+      type: object
+      required: [id, source_id, name, catch_up, buffer, config, created_at, position, due, state]
+      properties:
+        id:
+          type: integer
+          format: int64
+        source_id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        catch_up:
+          $ref: "#/components/schemas/CatchUp"
+        buffer:
+          type: integer
+          format: int32
+        config:
+          type: object
+        created_at:
+          type: string
+          format: date-time
+        position:
+          type: integer
+          format: int32
+          description: The last seq released.
+        due:
+          type: integer
+          format: int32
+          description: The last seq the pacing says is due, which can pass the index.
+        next_release_at:
+          type: [string, "null"]
+          format: date-time
+        index_end:
+          type: [integer, "null"]
+          format: int32
+          description: The highest seq indexed.
+        state:
+          type: string
+          enum: [active, paused, caught-up]
+    CatchUp:
+      type: string
+      enum: [passthrough, buffer]
+    ReadCreate:
+      type: object
+      additionalProperties: false
+      required: [source_id, name, pacing]
+      properties:
+        source_id:
+          type: integer
+          format: int64
+        name:
+          type: string
+          minLength: 1
+        pacing:
+          $ref: "#/components/schemas/Pacing"
+        start_seq:
+          type: integer
+          format: int32
+          description: The first seq to release. Defaults to the source's first.
+        initial:
+          type: integer
+          format: int32
+          description: How many entries are there immediately.
+          minimum: 0
+          default: 1
+        catch_up:
+          $ref: "#/components/schemas/CatchUp"
+        buffer:
+          type: integer
+          format: int32
+          minimum: 0
+        config:
+          type: object
+    ReadPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+        catch_up:
+          $ref: "#/components/schemas/CatchUp"
+        buffer:
+          type: integer
+          format: int32
+          minimum: 0
+        config:
+          type: object
+    ReadList:
+      type: object
+      required: [items, next]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Read"
+        next:
+          $ref: "#/components/schemas/NextLink"
+    Adjustment:
+      description: A change to a read. Each appends a segment.
+      oneOf:
+        - $ref: "#/components/schemas/SkipAdjustment"
+        - $ref: "#/components/schemas/PauseAdjustment"
+        - $ref: "#/components/schemas/ResumeAdjustment"
+        - $ref: "#/components/schemas/JumpAdjustment"
+        - $ref: "#/components/schemas/PacingAdjustment"
+      discriminator:
+        propertyName: type
+        mapping:
+          skip: "#/components/schemas/SkipAdjustment"
+          pause: "#/components/schemas/PauseAdjustment"
+          resume: "#/components/schemas/ResumeAdjustment"
+          jump: "#/components/schemas/JumpAdjustment"
+          pacing: "#/components/schemas/PacingAdjustment"
+    SkipAdjustment:
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [skip]
+        count:
+          type: integer
+          format: int32
+          minimum: 1
+          default: 1
+    PauseAdjustment:
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [pause]
+    ResumeAdjustment:
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [resume]
+    JumpAdjustment:
+      type: object
+      additionalProperties: false
+      required: [type, seq]
+      properties:
+        type:
+          type: string
+          enum: [jump]
+        seq:
+          type: integer
+          format: int32
+    PacingAdjustment:
+      type: object
+      additionalProperties: false
+      required: [type, pacing]
+      properties:
+        type:
+          type: string
+          enum: [pacing]
+        pacing:
+          $ref: "#/components/schemas/Pacing"
+    Segment:
+      type: object
+      required: [id, from_seq, starts_at, created_at, reason, pacing]
+      properties:
+        id:
+          type: integer
+          format: int64
+        from_seq:
+          type: integer
+          format: int32
+        starts_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        reason:
+          type: string
+          enum: [created, pacing, pause, resume, skip, jump]
+        pacing:
+          $ref: "#/components/schemas/Pacing"
+    SegmentList:
+      type: object
+      required: [items, next]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Segment"
+        next:
+          $ref: "#/components/schemas/NextLink"
+    Role:
+      type: string
+      enum: [owner, viewer]
+    FeedToken:
+      type: object
+      required: [id, read_id, role, label, created_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        read_id:
+          type: integer
+          format: int64
+        role:
+          $ref: "#/components/schemas/Role"
+        label:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        revoked_at:
+          type: [string, "null"]
+          format: date-time
+        last_seen_at:
+          type: [string, "null"]
+          format: date-time
+    FeedTokenCreate:
+      type: object
+      additionalProperties: false
+      required: [role, label]
+      properties:
+        role:
+          $ref: "#/components/schemas/Role"
+        label:
+          type: string
+          minLength: 1
+    IssuedFeedToken:
+      type: object
+      required: [id, read_id, role, label, created_at, token, urls, suggested]
+      properties:
+        id:
+          type: integer
+          format: int64
+        read_id:
+          type: integer
+          format: int64
+        role:
+          $ref: "#/components/schemas/Role"
+        label:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        token:
+          type: string
+          description: The raw token, shown only here.
+        urls:
+          type: object
+          required: [atom, rss, json]
+          properties:
+            atom:
+              type: string
+              format: uri
+            rss:
+              type: string
+              format: uri
+            json:
+              type: string
+              format: uri
+        suggested:
+          type: string
+          enum: [atom, rss, json]
+    FeedTokenList:
+      type: object
+      required: [items, next]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/FeedToken"
+        next:
+          $ref: "#/components/schemas/NextLink"
+    OPMLExportRequest:
+      type: object
+      additionalProperties: false
+      required: [issue, label]
+      properties:
+        issue:
+          $ref: "#/components/schemas/Role"
+        label:
+          type: string
+          minLength: 1
+    OPMLImportResult:
+      type: object
+      required: [results]
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/OPMLOutlineResult"
+    OPMLOutlineResult:
+      type: object
+      required: [status]
+      properties:
+        title:
+          type: string
+        feed_url:
+          type: string
+        status:
+          type: string
+          enum: [created, duplicate, invalid]
+        source_id:
+          type: integer
+          format: int64
+        detail:
+          type: string
+    APIToken:
+      type: object
+      required: [id, label, created_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        label:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        revoked_at:
+          type: [string, "null"]
+          format: date-time
+        last_used_at:
+          type: [string, "null"]
+          format: date-time
+    APITokenCreate:
+      type: object
+      additionalProperties: false
+      required: [label]
+      properties:
+        label:
+          type: string
+          minLength: 1
+    IssuedAPIToken:
+      type: object
+      required: [id, label, created_at, token]
+      properties:
+        id:
+          type: integer
+          format: int64
+        label:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        token:
+          type: string
+          description: The raw token, shown only here.
+    APITokenList:
+      type: object
+      required: [items, next]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/APIToken"
+        next:
+          $ref: "#/components/schemas/NextLink"
