@@ -62,7 +62,7 @@ from.
 | Action | New segment |
 |---|---|
 | Create read | `from_seq = start_seq - 1 + initial` (default: the first entry is there immediately), `starts_at = now` |
-| Change pacing | `from_seq = released(now)`, new pacing; `starts_at = now` for `rrule`, `release_time(from_seq)` for `replay` |
+| Change pacing | `from_seq = released(now)`, new pacing; `starts_at = now` for `rrule`, `max(release_time(from_seq), now − next_gap)` for `replay` |
 | Pause | `from_seq = released(now)`, `pacing = paused`, `starts_at = now` |
 | Resume | `from_seq = released(now)`, previous pacing; `starts_at = now` for `rrule`, `now − (pause_start − release_time(from_seq))` for `replay` |
 | Skip N / "next one now" | `from_seq = released(now) + N`, same pacing, `starts_at = now` |
@@ -70,8 +70,13 @@ from.
 
 Under `replay` a gap counts from the entry it follows, so a new segment anchors
 at `release_time(from_seq)` rather than at `now`; if nothing has been released
-yet, that is the read's creation time. Skip and jump release entries now, so
-the next gap counts from now. Resume keeps the part of the current gap that had
+yet, that is the read's creation time. Changing pacing limits how far back the
+anchor can be: `next_gap` is the gap to entry `from_seq + 1` under the new
+pacing (divided by `speed`, clamped, `default_gap` if undated), so after a long
+quiet spell only that one entry is overdue, and it releases at `now`. Pace is
+the product, so a change of pacing never releases a batch. If that entry is not
+indexed yet there is no `next_gap`, and the anchor is `release_time(from_seq)`.
+Skip and jump release entries now, so the next gap counts from now. Resume keeps the part of the current gap that had
 already elapsed when the pause began (`pause_start`, the paused segment's
 `starts_at`).
 
@@ -93,9 +98,10 @@ replay:  release_at(q) = max(s.created_at, s.starts_at + Σ_{i = from_seq .. q-1
          where gap(i, i+1) = original_date(i+1) − original_date(i)
          (the first gap is measured from the last entry already released, so
           create and skip need no special case: their `initial`/skipped
-          entries are inside from_seq already; the max() matters when an
-          anchor is far enough back that a gap ended before the segment
-          existed: those entries release together at created_at)
+          entries are inside from_seq already; the max() matters when a
+          gap ended before the segment existed, as when a read waiting on
+          its index resumes after the next entry was found: that entry
+          releases at created_at)
 
 released(t) = min(due(t), end_of_index - buffer)
 ```
@@ -174,6 +180,8 @@ func NextRelease(segs []Segment, t time.Time, idx Index) (time.Time, bool, error
   segment's `from_seq` is `released(now)`, so anything owed past the end of the
   index is not carried over.
 - A jump at or below `released(now)` is refused.
+- Changing to `replay` after the gap to the next entry has elapsed releases that
+  entry at `now` and no others, where the following gaps are above zero.
 - Long horizons: a read created 10 years ago at 3/day computes quickly
   (occurrence counting must not iterate every occurrence when a closed form
   exists, and must be bounded when it does not).
