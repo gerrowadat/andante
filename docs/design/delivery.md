@@ -1,7 +1,8 @@
-# Proposal: Delivery — CI, security, releases
+# Design: Delivery — CI, security, releases
 
-Status: proposed. Covers phases 0–2 of the [build plan](../plan/README.md).
-Follows the patterns in gerrowadat/nomad-gitops and gerrowadat/disgracelands,
+Status: shipped in phases 0–2 of the [build plan](../plan/README.md), except what
+"Not built yet" lists. How to cut a release is in
+[`releasing.md`](../releasing.md). Follows the patterns in gerrowadat/nomad-gitops and gerrowadat/disgracelands,
 adjusted for a service with a Postgres dependency and an API contract.
 
 ## Principles
@@ -110,3 +111,42 @@ vulnerability reporting; Dependabot alerts and security updates.
   `make generate`, `make lint`, `make ci` (act), `make run` (server against
   local Postgres with dev flags).
 - `compose.yaml` for Postgres only.
+
+## Where this diverged from the proposal
+
+- **Actions were pinned by SHA in phase 0, not phase 1.** zizmor reports tag pins
+  as high-severity findings, so the `workflows` job could not pass otherwise.
+- **Base images are pinned by digest as well as tag**, which goes beyond pinning
+  actions.
+- **`security.yml` and `release.yml` run on PRs.** GitHub only dispatches a
+  workflow once its file is on the default branch, so a new or changed workflow
+  could not otherwise prove itself before merge. On a PR, `release.yml` runs
+  `full-suite` alone, without version and commit validation.
+- **SARIF uploads skip PRs from forks**, whose token cannot write security events.
+- **gitleaks scans history only on the scheduled and manual runs.** On a PR or a
+  push it scans the commits in that event.
+- **Scorecard's results appear under `supply-chain/*` categories**, whatever the
+  upload step names.
+- **The image scan covers linux/amd64 only.** A multi-arch image cannot be loaded
+  into the local daemon for Trivy to read.
+- **The image has no `latest` tag**, only `X.Y.Z` and `X.Y`.
+- **`release.sh` does not push.** disgracelands' does, but `main` here only takes
+  PRs, so the changelog section is merged first and the script refuses without it.
+- **`full-suite` runs without the setup-go cache**, so that a poisoned cache
+  cannot reach what ships. zizmor flags it otherwise.
+- **`full-suite` repeats `ci.yml`'s steps** instead of calling it as a reusable
+  workflow, so that one job produces and checks the release files.
+- **`make ci-clean` is a `--clean` mode of `act-guard.sh`**, not a separate
+  `act-clean.sh`.
+- **`main` is protected by a repository ruleset**, not classic branch protection.
+  It requires a PR and the checks `test`, `lint`, `licenses` and `workflows`, and
+  blocks force pushes and deletion, with no bypass actors and no required
+  approvals.
+
+## Not built yet
+
+- **Phase 3:** the `postgres` service in the `test` job, `ANDANTE_REQUIRE_DB=1`,
+  the `contracts` job, `make test-db` and `make run`.
+- **Phase 4:** Spectral and `oasdiff` in `contracts`.
+- **Phase 10:** the end-to-end suite described above. Today `test/e2e` holds one
+  test, that `andante-server --version` reports the stamped version.

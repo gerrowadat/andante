@@ -12,3 +12,5 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   that report their version, Makefile, CI, lint, license check and Dependabot.
 - Container image, security scanning (govulncheck, Trivy, gitleaks, CodeQL),
   dependency review and OpenSSF Scorecard.
+- Release pipeline: reproducible archives, GitHub releases with an SBOM and build
+  provenance, and a multi-arch image on ghcr.io.

@@ -1,0 +1,326 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 Dave O'Connor
+#
+# The release suite, then the release. Nothing is published until full-suite
+# passes, and that includes the tag: a tag is the one part of a release other
+# people fetch and that cannot be quietly taken back. scripts/release.sh
+# dispatches this with publish=true and waits.
+#
+# Other ways in:
+#   - workflow_dispatch without publish=true runs the suite and stops.
+#   - pull_request runs full-suite alone. GitHub only dispatches a workflow once
+#     its file is on the default branch, so this is how changes here prove
+#     themselves before merge.
+#   - A pushed vX.Y.Z tag runs everything against that tag, which already
+#     exists, so publish does not create it.
+name: release
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release, vX.Y.Z when publishing
+        required: false
+        default: v0.0.0-manual
+      commit:
+        description: Commit being released; the suite refuses to run against any other
+        required: false
+        default: ""
+      publish:
+        description: Tag and publish if the suite passes
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  full-suite:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      date: ${{ steps.version.outputs.date }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Before the expensive steps. Inputs reach the shell through env, never
+      # by interpolation. `gh workflow run` sends booleans as strings and the
+      # UI sends real ones, and == casts across types, so PUBLISHING tests both.
+      - name: Determine the version
+        id: version
+        env:
+          EVENT: ${{ github.event_name }}
+          RAW_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+          WANT_COMMIT: ${{ inputs.commit }}
+          PUBLISHING: ${{ inputs.publish == true || inputs.publish == 'true' || github.event_name == 'push' }}
+        run: |
+          set -eu
+          if [ "$EVENT" = "pull_request" ]; then
+            # A PR has no inputs, so there is nothing to validate.
+            v=v0.0.0-pr
+          else
+            v=$RAW_VERSION
+            if [ -n "$WANT_COMMIT" ] && [ "$WANT_COMMIT" != "$GITHUB_SHA" ]; then
+              echo "asked to release $WANT_COMMIT, but this run checked out $GITHUB_SHA."
+              echo "main moved after dispatch; nothing has been published."
+              exit 1
+            fi
+            if ! printf '%s' "$v" | grep -Eq '^v[0-9A-Za-z.-]+$'; then
+              echo "'$v' cannot name an archive"
+              exit 1
+            fi
+            if [ "$PUBLISHING" = "true" ] && ! printf '%s' "$v" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "'$v' is not a vX.Y.Z version; refusing to publish it"
+              exit 1
+            fi
+          fi
+          echo "version=$v" >>"$GITHUB_OUTPUT"
+          echo "date=$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ)" >>"$GITHUB_OUTPUT"
+
+      - name: CHANGELOG.md has a section for this version
+        if: github.event_name == 'push' || inputs.publish == true || inputs.publish == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          awk -v want="## [${VERSION#v}]" 'index($0, want) == 1 { found = 1 } END { exit !found }' CHANGELOG.md
+
+      # No module cache: this job builds what ships, and a poisoned cache from
+      # another run would end up in it.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      # From here to Lint is what ci.yml runs; keep the two in step.
+      - name: Verify go.mod is tidy
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "These files need gofmt:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Test
+        run: go test -race -count=1 ./...
+
+      - name: Every source file carries its header
+        run: ./scripts/license-check.sh
+
+      - name: Run zizmor
+        run: pipx run zizmor==1.32.0 --offline .github/workflows/
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.15.0
+
+      - name: End-to-end suite
+        run: make e2e
+
+      - name: Build the archives
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          COMMIT: ${{ github.sha }}
+        run: ./scripts/build-dist.sh dist
+
+      - name: The archives are reproducible
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          ./scripts/build-dist.sh "$RUNNER_TEMP/dist-again"
+          diff -r dist "$RUNNER_TEMP/dist-again"
+
+      # Only the linux/amd64 archive can run here. The others are checked for
+      # being what they say they are.
+      - name: Smoke-test the archives
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -eu
+          (cd dist && sha256sum -c SHA256SUMS)
+          work=$(mktemp -d)
+          tar -xzf "dist/andante-$VERSION-linux-amd64.tar.gz" -C "$work"
+          dir="$work/andante-$VERSION-linux-amd64"
+          "$dir/andante" version | tee /dev/stderr | grep -q -- "$VERSION"
+          "$dir/andante-server" --version | tee /dev/stderr | grep -q -- "$VERSION"
+          tar -xzf "dist/andante-$VERSION-linux-arm64.tar.gz" -C "$work"
+          file "$work/andante-$VERSION-linux-arm64/andante-server" | grep -q 'ARM aarch64'
+          tar -xzf "dist/andante-$VERSION-darwin-arm64.tar.gz" -C "$work"
+          file "$work/andante-$VERSION-darwin-arm64/andante-server" | grep -q 'Mach-O 64-bit arm64'
+
+      - name: Generate the SBOM
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          path: .
+          format: spdx-json
+          output-file: sbom/andante-${{ steps.version.outputs.version }}.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      # Handed to publish rather than rebuilt there, so that what ships is the
+      # bytes this job checked.
+      - name: Keep the release files
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-files
+          path: |
+            dist/
+            sbom/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+  publish:
+    needs: full-suite
+    if: github.event_name != 'pull_request' && (github.event_name == 'push' || inputs.publish == true || inputs.publish == 'true')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Push the tag and create the release.
+      id-token: write # Sign the attestation.
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: true # This job pushes the tag. # zizmor: ignore[artipacked]
+
+      - name: Fetch the release files
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-files
+          path: release-files
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: release-files/dist/*.tar.gz
+
+      # On the tag-push path the tag exists already. Check it points here.
+      - name: Tag the release
+        env:
+          VERSION: ${{ needs.full-suite.outputs.version }}
+        run: |
+          set -eu
+          if git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null; then
+            at=$(git rev-list -n1 "$VERSION")
+            if [ "$at" != "$GITHUB_SHA" ]; then
+              echo "$VERSION already exists and points at $at, not $GITHUB_SHA"
+              exit 1
+            fi
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$VERSION" -m "Release $VERSION" "$GITHUB_SHA"
+          git push origin "$VERSION"
+
+      # gh release create uploads the assets as part of creating the release,
+      # so there is no moment when it exists with nothing attached.
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.full-suite.outputs.version }}
+        run: |
+          set -eu
+          awk -v want="## [${VERSION#v}]" '
+            index($0, "## [") == 1 { on = (index($0, want) == 1); next }
+            on { print }
+          ' CHANGELOG.md >notes.md
+          gh release create "$VERSION" --title "$VERSION" --notes-file notes.md \
+            release-files/dist/* release-files/sbom/*
+
+  image:
+    needs: [full-suite, publish]
+    if: github.event_name != 'pull_request' && (github.event_name == 'push' || inputs.publish == true || inputs.publish == 'true')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Tags and labels
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ghcr.io/${{ github.repository }}
+          flavor: latest=false
+          # value= because a dispatched release runs on refs/heads/main, where
+          # type=semver finds no version in the ref and yields no tags at all.
+          tags: |
+            type=semver,pattern={{version}},value=${{ needs.full-suite.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.full-suite.outputs.version }}
+
+      # No QEMU: the Dockerfile cross-compiles on the build platform, and
+      # nothing in either image runs during the build.
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      # A multi-arch image cannot be loaded into the local daemon, so the scan
+      # runs on linux/amd64. The push below reuses its layers from the cache.
+      - name: Build the image to scan
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: andante:scan
+          build-args: |
+            VERSION=${{ needs.full-suite.outputs.version }}
+            COMMIT=${{ github.sha }}
+            DATE=${{ needs.full-suite.outputs.date }}
+
+      - name: Scan before pushing
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: andante:scan
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Build and push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: mode=max
+          sbom: true
+          build-args: |
+            VERSION=${{ needs.full-suite.outputs.version }}
+            COMMIT=${{ github.sha }}
+            DATE=${{ needs.full-suite.outputs.date }}
