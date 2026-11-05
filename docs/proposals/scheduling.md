@@ -74,11 +74,11 @@ yet, that is the read's creation time. Changing pacing limits how far back the
 anchor can be: `next_gap` is the gap to entry `from_seq + 1` under the new
 pacing (divided by `speed`, clamped, `default_gap` if undated), so after a long
 quiet spell only that one entry is overdue, and it releases at `now`. Pace is
-the product, so a change of pacing never releases a batch. If that entry is not
-indexed yet there is no `next_gap`, and the anchor is `release_time(from_seq)`.
-Skip and jump release entries now, so the next gap counts from now. Resume keeps the part of the current gap that had
-already elapsed when the pause began (`pause_start`, the paused segment's
-`starts_at`).
+the product, so a change of pacing does not release a backlog. If that entry is
+not indexed yet there is no `next_gap`, and the anchor is
+`release_time(from_seq)`. Skip and jump release entries now, so the next gap
+counts from now. Resume keeps the part of the current gap that had already
+elapsed when the pause began (`pause_start`, the paused segment's `starts_at`).
 
 A read only moves forward. To read a serial again, create a new read: item IDs
 are per read, so a reader shows the entries as new, where going back within a
