@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 Dave O'Connor
+#
+# Postgres for local development. The credentials are for this container only.
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: andante
+      POSTGRES_PASSWORD: andante
+      POSTGRES_DB: andante
+    ports:
+      - 127.0.0.1:5432:5432
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U andante -d andante]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres-data:

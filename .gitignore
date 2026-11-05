@@ -1,0 +1,16 @@
+# Build output
+/out/
+/dist/
+*.test
+*.out
+coverage.txt
+
+# act reads secrets and variables from these by default
+.secrets
+.vars
+.env.act
+
+# Editor and OS files
+*~
+.DS_Store
+.claude/worktrees/
