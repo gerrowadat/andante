@@ -16,3 +16,5 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   provenance, and a multi-arch image on ghcr.io.
 - `andante-server` starts, migrates Postgres, creates a bootstrap API token, and
   serves `/healthz`, `/readyz` and `/metrics` on the admin listener.
+- The v1 admin API contract, with a generated server and client. API tokens and
+  sources work; other endpoints return 501 until they are built.

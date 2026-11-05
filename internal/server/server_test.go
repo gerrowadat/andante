@@ -18,6 +18,7 @@ import (
 
 	"github.com/gerrowadat/andante/internal/buildinfo"
 	"github.com/gerrowadat/andante/internal/config"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 func testConfig() config.Config {
@@ -54,7 +55,7 @@ func (b *lockedBuffer) String() string {
 // what Run returned.
 func start(t *testing.T, cfg config.Config, ready ReadyFunc, logs io.Writer) (*Server, func() error) {
 	t.Helper()
-	s, err := New(cfg, ready, slog.New(slog.NewTextHandler(logs, nil)))
+	s, err := New(cfg, Deps{Ready: ready, Registry: prometheus.NewRegistry(), Logger: slog.New(slog.NewTextHandler(logs, nil))})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,10 +145,27 @@ func TestMetrics(t *testing.T) {
 	}
 }
 
-func TestServersHaveSeparateRegistries(t *testing.T) {
-	// promauto would panic on a duplicate if these shared a registry.
-	start(t, testConfig(), alwaysReady, io.Discard)
-	start(t, testConfig(), alwaysReady, io.Discard)
+func TestAPIIsOnlyOnTheAdminListener(t *testing.T) {
+	cfg := testConfig()
+	api := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusTeapot) })
+	s, err := New(cfg, Deps{Ready: alwaysReady, Registry: prometheus.NewRegistry(), Logger: slog.New(slog.DiscardHandler), API: api})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- s.Run(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+
+	if code, _ := get(t, "http://"+s.AdminAddr().String()+"/api/v1/sources"); code != http.StatusTeapot {
+		t.Errorf("admin /api/v1/sources = %d, want the API", code)
+	}
+	if code, _ := get(t, "http://"+s.PublicAddr().String()+"/api/v1/sources"); code != http.StatusNotFound {
+		t.Errorf("public /api/v1/sources = %d, want 404", code)
+	}
 }
 
 func TestPublicListenerServesNothing(t *testing.T) {
@@ -273,7 +291,8 @@ func TestNewFailsWhenAListenerCannotBind(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			cfg := testConfig()
 			mutate(&cfg)
-			if _, err := New(cfg, alwaysReady, slog.New(slog.DiscardHandler)); err == nil {
+			deps := Deps{Ready: alwaysReady, Registry: prometheus.NewRegistry(), Logger: slog.New(slog.DiscardHandler)}
+			if _, err := New(cfg, deps); err == nil {
 				t.Error("New succeeded, want an error")
 			}
 		})

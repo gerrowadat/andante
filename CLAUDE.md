@@ -81,7 +81,7 @@ CI checks this.
 ## Project layout
 
 ```
-api/openapi.yaml          the admin API contract (source of truth)
+api/openapi.yaml          the admin API contract (source of truth), and the oapi-codegen configs
 cmd/andante-server/       server binary
 cmd/andante/              CLI binary (talks to the API only, via pkg/client)
 internal/buildinfo/       version/commit/date via ldflags
@@ -98,7 +98,7 @@ deploy/nomad/             example Nomad job
 deploy/prometheus/        example alert rules
 test/e2e/                 end-to-end suite (build tag e2e)
 testdata/sites/           fixture sites and feeds (comics, podcasts, blogs) for discovery tests
-scripts/                  release.sh, build-dist.sh, license-check.sh, act-guard.sh
+scripts/                  release.sh, build-dist.sh, license-check.sh, act-guard.sh, spec-diff.sh
 ```
 
 ## Key conventions

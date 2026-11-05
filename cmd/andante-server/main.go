@@ -14,10 +14,14 @@ import (
 	"syscall"
 
 	"github.com/alecthomas/kong"
+	"github.com/gerrowadat/andante/internal/api"
 	"github.com/gerrowadat/andante/internal/buildinfo"
 	"github.com/gerrowadat/andante/internal/config"
+	"github.com/gerrowadat/andante/internal/discovery"
+	"github.com/gerrowadat/andante/internal/discovery/strategies"
 	"github.com/gerrowadat/andante/internal/server"
 	"github.com/gerrowadat/andante/internal/store"
+	"github.com/prometheus/client_golang/prometheus"
 
 	// Embedded because the distroless image has no zoneinfo, and schedules
 	// are evaluated in IANA time zones.
@@ -91,7 +95,18 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		logger.Warn("no API tokens existed, so one was generated; it is shown only this once", "token", generated)
 	}
 
-	srv, err := server.New(cfg, st.Ready, logger)
+	reg := prometheus.NewRegistry()
+	apiHandler, err := api.New(api.Options{
+		Store:      st,
+		Strategies: discovery.NewRegistry(strategies.Crawl{}),
+		Registry:   reg,
+		Logger:     logger,
+	})
+	if err != nil {
+		return err
+	}
+
+	srv, err := server.New(cfg, server.Deps{Ready: st.Ready, Registry: reg, Logger: logger, API: apiHandler})
 	if err != nil {
 		return err
 	}

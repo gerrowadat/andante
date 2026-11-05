@@ -25,8 +25,10 @@ fetches the version CI pins. A different local version can disagree with CI.
 | `make e2e` | The end-to-end suite (build tag `e2e`), against the `compose.yaml` Postgres |
 | `make dist` | The release archives, into `out/dist`; needs GNU tar |
 | `make lint` | golangci-lint with `.golangci.yml` |
+| `make spec-lint` | Spectral over `api/openapi.yaml`, in Docker as CI runs it |
+| `make spec-diff` | Compares `api/openapi.yaml` with `BASE` (default `origin/main`) and fails on a breaking change |
 | `make fmt` | `gofmt` over the tree |
-| `make generate` | Regenerates `internal/store/db/` with sqlc. Needs a C compiler. CI fails if the result differs |
+| `make generate` | Regenerates `internal/store/db/` with sqlc, and `internal/api/gen/` and `pkg/client/` with oapi-codegen. Needs a C compiler. CI fails if the result differs |
 | `make docker` | Builds the image for this machine's platform as `andante:dev` |
 | `make docker-scan` | Builds that image and scans it as CI does; needs Trivy |
 | `make ci` | Runs the `ci` workflow under act |
@@ -47,6 +49,13 @@ Add a numbered file to `internal/store/migrations/`, put queries in
 `internal/store/queries/`, and run `make generate`. `internal/store/db/` is
 generated, so never edit it by hand. Migrations are embedded in the binary and
 run when the server starts.
+
+## Changing the API
+
+Change `api/openapi.yaml` first, then run `make generate`, then write the
+handler. Within `/api/v1` changes are additive only, and `make spec-diff` shows
+whether yours is. When an operation stops returning 501, add it to `implemented`
+in `internal/api/api_test.go`.
 
 ## Running CI locally
 
