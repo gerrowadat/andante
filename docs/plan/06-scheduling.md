@@ -26,7 +26,8 @@ skipped, jumped forward and re-paced, each by appending a segment.
   clamps, undated entries), DST in Europe/Dublin and America/New_York both
   directions (including a non-existent local time), property tests (monotonic, `ReleaseTime(q) ≤ t ⇔ q ≤ Released(t)`, appended
   segments never change earlier release times, a no-op segment changes nothing,
-  a pause followed straight away by a resume changes nothing), long-horizon
+  a pause followed straight away by a resume changes nothing, a change to
+  `replay` after a long quiet spell releases only the next entry), long-horizon
   performance, and `passthrough`/`buffer` behaviour at the end of the index.
   `Segment` carries both `StartsAt` and `CreatedAt`, and the store writes
   `created_at` from the `now` used to compute `from_seq`, never a column default.
