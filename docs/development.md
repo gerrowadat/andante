@@ -4,8 +4,7 @@
 
 - Go 1.21 or later, which fetches the toolchain named in `go.mod`.
 - GCC or another C compiler, for the race detector in `make test`.
-- Docker, for `make ci`, `make docker`, and Postgres through `compose.yaml` in
-  later phases.
+- Docker, for `make ci`, `make docker`, and Postgres through `compose.yaml`.
 - [act](https://github.com/nektos/act), for `make ci`. If it is not installed,
   `make ci` fetches the pinned version with `go run`.
 - [Trivy](https://trivy.dev), for `make docker-scan` only.
@@ -20,18 +19,34 @@ fetches the version CI pins. A different local version can disagree with CI.
 | Target | What it does |
 |---|---|
 | `make build` | Builds `andante-server` and `andante` into `out/`, stamped with version, commit and date |
-| `make test` | `go test -race -count=1 ./...`, as CI runs it |
-| `make e2e` | The end-to-end suite (build tag `e2e`) |
+| `make run` | Starts the `compose.yaml` Postgres, then `andante-server` against it with text logs |
+| `make test` | `go test -race -count=1 ./...`. Database tests skip |
+| `make test-db` | The same tests against the `compose.yaml` Postgres, with no skips |
+| `make e2e` | The end-to-end suite (build tag `e2e`), against the `compose.yaml` Postgres |
 | `make dist` | The release archives, into `out/dist`; needs GNU tar |
 | `make lint` | golangci-lint with `.golangci.yml` |
 | `make fmt` | `gofmt` over the tree |
-| `make generate` | Regenerates generated code; nothing to do yet |
+| `make generate` | Regenerates `internal/store/db/` with sqlc. Needs a C compiler. CI fails if the result differs |
 | `make docker` | Builds the image for this machine's platform as `andante:dev` |
 | `make docker-scan` | Builds that image and scans it as CI does; needs Trivy |
 | `make ci` | Runs the `ci` workflow under act |
 | `make ci-clean` | Removes this repository's act containers, volumes and cache |
 | `make clean` | Removes `out/` |
 | `make version` | Prints the version `make build` stamps |
+
+## Tests that need Postgres
+
+Database tests use `storetest`, which gives each test its own schema. They skip
+when `ANDANTE_TEST_DATABASE_URL` is unset. CI sets `ANDANTE_REQUIRE_DB=1`, which
+turns that skip into a failure, so run `make test-db` before pushing a change
+that touches the database.
+
+## Changing the schema
+
+Add a numbered file to `internal/store/migrations/`, put queries in
+`internal/store/queries/`, and run `make generate`. `internal/store/db/` is
+generated, so never edit it by hand. Migrations are embedded in the binary and
+run when the server starts.
 
 ## Running CI locally
 

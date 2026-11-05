@@ -146,8 +146,6 @@ vulnerability reporting; Dependabot alerts and security updates.
 
 ## Not built yet
 
-- **Phase 3:** the `postgres` service in the `test` job, `ANDANTE_REQUIRE_DB=1`,
-  the `contracts` job, `make test-db` and `make run`.
-- **Phase 4:** Spectral and `oasdiff` in `contracts`.
+- **Phase 4:** Spectral and `oasdiff` in the `contracts` job.
 - **Phase 10:** the end-to-end suite described above. Today `test/e2e` holds one
   test, that `andante-server --version` reports the stamped version.

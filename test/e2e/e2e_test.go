@@ -8,27 +8,195 @@
 package e2e
 
 import (
+	"bufio"
+	"context"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
+	"syscall"
 	"testing"
+	"time"
+
+	"github.com/gerrowadat/andante/internal/store/storetest"
+	"github.com/jackc/pgx/v5"
 )
 
 const version = "v0.0.0-e2e"
 
-func TestServerReportsVersion(t *testing.T) {
+func buildServer(t *testing.T) string {
+	t.Helper()
 	bin := filepath.Join(t.TempDir(), "andante-server")
 	ldflags := "-X github.com/gerrowadat/andante/internal/buildinfo.version=" + version
 	build := exec.Command("go", "build", "-ldflags", ldflags, "-o", bin, "../../cmd/andante-server")
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("go build: %v\n%s", err, out)
 	}
+	return bin
+}
 
-	out, err := exec.Command(bin, "--version").CombinedOutput()
-	if err != nil {
-		t.Fatalf("andante-server --version: %v\n%s", err, out)
+func TestServerReportsVersion(t *testing.T) {
+	bin := buildServer(t)
+	for _, arg := range []string{"--version", "version"} {
+		out, err := exec.Command(bin, arg).CombinedOutput()
+		if err != nil {
+			t.Fatalf("andante-server %s: %v\n%s", arg, err, out)
+		}
+		if !strings.Contains(string(out), version) {
+			t.Errorf("andante-server %s output %q does not contain %q", arg, out, version)
+		}
 	}
-	if !strings.Contains(string(out), version) {
-		t.Errorf("output %q does not contain %q", out, version)
+}
+
+func freeAddr(t *testing.T) string {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	return l.Addr().String()
+}
+
+type process struct {
+	cmd    *exec.Cmd
+	admin  string
+	mu     sync.Mutex
+	logs   strings.Builder
+	waited chan error
+}
+
+func startServer(t *testing.T, bin, dsn string) *process {
+	t.Helper()
+	p := &process{admin: freeAddr(t), waited: make(chan error, 1)}
+	p.cmd = exec.Command(bin,
+		"--database-url="+dsn,
+		"--base-url=https://andante.example",
+		"--listen="+freeAddr(t),
+		"--admin-listen="+p.admin,
+		"--log-format=text",
+	)
+	stderr, err := p.cmd.StderrPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	drained := make(chan struct{})
+	go func() {
+		defer close(drained)
+		scanner := bufio.NewScanner(stderr)
+		for scanner.Scan() {
+			p.mu.Lock()
+			fmt.Fprintln(&p.logs, scanner.Text())
+			p.mu.Unlock()
+		}
+	}()
+	go func() {
+		<-drained
+		p.waited <- p.cmd.Wait()
+	}()
+	t.Cleanup(func() { _ = p.cmd.Process.Kill() })
+	return p
+}
+
+func (p *process) output() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.logs.String()
+}
+
+func (p *process) waitReady(t *testing.T) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		if status(p.admin+"/readyz") == http.StatusOK {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("server did not become ready. Logs:\n%s", p.output())
+}
+
+func status(url string) int {
+	resp, err := http.Get("http://" + url)
+	if err != nil {
+		return 0
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	return resp.StatusCode
+}
+
+func TestTwoServersShareOneDatabase(t *testing.T) {
+	bin := buildServer(t)
+	dsn := storetest.DSN(t)
+
+	a, b := startServer(t, bin, dsn), startServer(t, bin, dsn)
+	a.waitReady(t)
+	b.waitReady(t)
+
+	all := a.output() + b.output()
+	if got := strings.Count(all, "shown only this once"); got != 1 {
+		t.Errorf("bootstrap token logged %d times, want 1. Logs:\n%s", got, all)
+	}
+	if err := storetest.Open(t, dsn).Ready(context.Background()); err != nil {
+		t.Errorf("Ready after both started: %v", err)
+	}
+
+	conn, err := pgx.Connect(context.Background(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close(context.Background())
+	var applied int
+	// goose records one row per migration it applies, and its own table as 0.
+	err = conn.QueryRow(context.Background(), "SELECT count(*) FROM goose_db_version WHERE version_id > 0").Scan(&applied)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if applied != 1 {
+		t.Errorf("recorded %d migrations, want 1", applied)
+	}
+}
+
+func TestSIGTERMShutsDownCleanly(t *testing.T) {
+	bin := buildServer(t)
+	p := startServer(t, bin, storetest.DSN(t))
+	p.waitReady(t)
+
+	if err := p.cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-p.waited:
+		if err != nil {
+			t.Errorf("server exited with %v. Logs:\n%s", err, p.output())
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatalf("server did not exit. Logs:\n%s", p.output())
+	}
+}
+
+func TestRestartKeepsTheBootstrapToken(t *testing.T) {
+	bin := buildServer(t)
+	dsn := storetest.DSN(t)
+
+	first := startServer(t, bin, dsn)
+	first.waitReady(t)
+	if err := first.cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	<-first.waited
+
+	second := startServer(t, bin, dsn)
+	second.waitReady(t)
+	if strings.Contains(second.output(), "shown only this once") {
+		t.Errorf("a restart generated another token. Logs:\n%s", second.output())
 	}
 }

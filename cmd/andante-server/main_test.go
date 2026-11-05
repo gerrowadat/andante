@@ -5,6 +5,8 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
 	"go/parser"
 	"go/token"
 	"strconv"
@@ -30,7 +32,7 @@ func runCaptured(t *testing.T, args ...string) (code int, stdout, stderr string)
 			code, stdout, stderr = int(e), out.String(), errOut.String()
 		}
 	}()
-	code = run(args, &out, &errOut, func(c int) { panic(exited(c)) })
+	code = run(context.Background(), args, &out, &errOut, func(c int) { panic(exited(c)) })
 	return code, out.String(), errOut.String()
 }
 
@@ -45,6 +47,51 @@ func TestVersion(t *testing.T) {
 				t.Errorf("stdout = %q, want %q", got, want)
 			}
 		})
+	}
+}
+
+func TestMissingRequiredFlagsFail(t *testing.T) {
+	code, _, stderr := runCaptured(t)
+	if code == 0 {
+		t.Error("exit code = 0, want non-zero")
+	}
+	for _, want := range []string{"--database-url is required", "--base-url is required"} {
+		if !strings.Contains(stderr, want) {
+			t.Errorf("stderr %q does not contain %q", stderr, want)
+		}
+	}
+}
+
+func TestUnreachableDatabaseFails(t *testing.T) {
+	code, _, stderr := runCaptured(t,
+		"--database-url=postgres://andante@127.0.0.1:1/andante?connect_timeout=1",
+		"--base-url=https://andante.example",
+		"--log-format=text",
+	)
+	if code != 1 {
+		t.Errorf("exit code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr, "level=ERROR") {
+		t.Errorf("stderr %q has no error log", stderr)
+	}
+}
+
+func TestNewLogger(t *testing.T) {
+	var buf bytes.Buffer
+	newLogger("json", "warn", &buf).Info("hidden")
+	if buf.Len() != 0 {
+		t.Errorf("info logged at warn level: %s", buf.String())
+	}
+	newLogger("json", "warn", &buf).Warn("shown")
+	var line map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &line); err != nil {
+		t.Errorf("json format is not JSON: %v", err)
+	}
+
+	buf.Reset()
+	newLogger("text", "debug", &buf).Debug("shown")
+	if !strings.Contains(buf.String(), "msg=shown") {
+		t.Errorf("text format output %q", buf.String())
 	}
 }
 

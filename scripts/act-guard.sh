@@ -51,7 +51,15 @@ for name in $(docker ps -a --filter "name=act-" --format "{{.Names}}" 2>/dev/nul
 	dest=$(docker inspect "$name" \
 		--format '{{range .Mounts}}{{if eq .Name "'"$name"'"}}{{.Destination}}{{end}}{{end}}' \
 		2>/dev/null || true)
-	[ -n "$dest" ] || continue
+	if [ -z "$dest" ]; then
+		# A job's service container has no workspace. Its name is the job
+		# container's short name plus a suffix, which ties it to this repo only
+		# through the workflow name, so leave it unless cleaning up.
+		case "$clean:$name" in
+		true:act-ci-*-*) stale="$stale $name" ;;
+		esac
+		continue
+	fi
 	if [ "$clean" = false ] && [ "$dest" = "$workspace" ]; then
 		continue
 	fi

@@ -23,6 +23,20 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: andante
+          POSTGRES_PASSWORD: andante
+          POSTGRES_DB: andante
+        ports:
+          - 55432:5432 # Not 5432, which a developer running act may have in use.
+        options: >-
+          --health-cmd "pg_isready -U andante -d andante"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -53,6 +67,9 @@ jobs:
           fi
 
       - name: Test
+        env:
+          ANDANTE_TEST_DATABASE_URL: postgres://andante:andante@localhost:55432/andante?sslmode=disable
+          ANDANTE_REQUIRE_DB: "1"
         run: go test -race -count=1 ./...
 
   lint:
@@ -71,6 +88,23 @@ jobs:
           # Pinned: .golangci.yml is a v2-schema config, which a v1 binary
           # rejects. Keep in step with GOLANGCI_VERSION in the Makefile.
           version: v2.15.0
+
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Generated code is current
+        run: |
+          make generate
+          git add -N .
+          git diff --exit-code
 
   licenses:
     runs-on: ubuntu-latest
