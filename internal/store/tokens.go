@@ -7,7 +7,9 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
+	"errors"
 	"fmt"
 
 	"github.com/gerrowadat/andante/internal/store/db"
@@ -52,12 +54,88 @@ func (s *Store) BootstrapAPIToken(ctx context.Context, adminToken string) (gener
 			generated = token
 		}
 		hash := sha256.Sum256([]byte(token))
-		return q.InsertAPIToken(ctx, db.InsertAPITokenParams{TokenHash: hash[:], Label: bootstrapLabel})
+		_, err = q.InsertAPIToken(ctx, db.InsertAPITokenParams{TokenHash: hash[:], Label: bootstrapLabel})
+		return err
 	})
 	if err != nil {
 		return "", fmt.Errorf("bootstrap API token: %w", err)
 	}
 	return generated, nil
+}
+
+// CreateAPIToken stores a new token and returns it with its raw value, which
+// exists nowhere else.
+func (s *Store) CreateAPIToken(ctx context.Context, label string) (db.ApiToken, string, error) {
+	raw, err := newToken()
+	if err != nil {
+		return db.ApiToken{}, "", err
+	}
+	hash := sha256.Sum256([]byte(raw))
+	token, err := s.queries.InsertAPIToken(ctx, db.InsertAPITokenParams{TokenHash: hash[:], Label: label})
+	if err != nil {
+		return db.ApiToken{}, "", fmt.Errorf("insert API token: %w", err)
+	}
+	return token, raw, nil
+}
+
+// ListAPITokens returns up to limit tokens with IDs above after.
+func (s *Store) ListAPITokens(ctx context.Context, after int64, limit int32) ([]db.ApiToken, error) {
+	tokens, err := s.queries.ListAPITokens(ctx, db.ListAPITokensParams{ID: after, Limit: limit})
+	if err != nil {
+		return nil, fmt.Errorf("list API tokens: %w", err)
+	}
+	return tokens, nil
+}
+
+// RevokeAPIToken revokes a token. Revoking one already revoked succeeds. It
+// returns ErrLastToken for the last active token: bootstrap only runs on an
+// empty table, so nothing could then use the API to make another.
+func (s *Store) RevokeAPIToken(ctx context.Context, id int64) error {
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		q := s.queries.WithTx(tx)
+		if err := q.LockAPITokenBootstrap(ctx, bootstrapLockID); err != nil {
+			return err
+		}
+		token, err := q.GetAPIToken(ctx, id)
+		if err != nil {
+			return err
+		}
+		if token.RevokedAt != nil {
+			return nil
+		}
+		active, err := q.CountActiveAPITokens(ctx)
+		if err != nil {
+			return err
+		}
+		if active <= 1 {
+			return ErrLastToken
+		}
+		return q.RevokeAPIToken(ctx, id)
+	})
+	if err != nil {
+		return fmt.Errorf("revoke API token %d: %w", id, translate(err))
+	}
+	return nil
+}
+
+// AuthenticateAPIToken reports whether raw is an active API token, and notes
+// its use at most once a minute.
+func (s *Store) AuthenticateAPIToken(ctx context.Context, raw string) (bool, error) {
+	hash := sha256.Sum256([]byte(raw))
+	token, err := s.queries.GetActiveAPITokenByHash(ctx, hash[:])
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("look up API token: %w", err)
+	}
+	if subtle.ConstantTimeCompare(token.TokenHash, hash[:]) != 1 {
+		return false, nil
+	}
+	if err := s.queries.TouchAPIToken(ctx, token.ID); err != nil {
+		return false, fmt.Errorf("record API token use: %w", err)
+	}
+	return true, nil
 }
 
 func newToken() (string, error) {

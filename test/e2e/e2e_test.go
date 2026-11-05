@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"syscall"
@@ -23,6 +24,7 @@ import (
 	"time"
 
 	"github.com/gerrowadat/andante/internal/store/storetest"
+	"github.com/gerrowadat/andante/pkg/client"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -65,6 +67,7 @@ func freeAddr(t *testing.T) string {
 type process struct {
 	cmd    *exec.Cmd
 	admin  string
+	public string
 	mu     sync.Mutex
 	logs   strings.Builder
 	waited chan error
@@ -72,11 +75,11 @@ type process struct {
 
 func startServer(t *testing.T, bin, dsn string) *process {
 	t.Helper()
-	p := &process{admin: freeAddr(t), waited: make(chan error, 1)}
+	p := &process{admin: freeAddr(t), public: freeAddr(t), waited: make(chan error, 1)}
 	p.cmd = exec.Command(bin,
 		"--database-url="+dsn,
 		"--base-url=https://andante.example",
-		"--listen="+freeAddr(t),
+		"--listen="+p.public,
 		"--admin-listen="+p.admin,
 		"--log-format=text",
 	)
@@ -162,6 +165,66 @@ func TestTwoServersShareOneDatabase(t *testing.T) {
 	}
 	if applied != 1 {
 		t.Errorf("recorded %d migrations, want 1", applied)
+	}
+}
+
+func TestAPIThroughTheRealServer(t *testing.T) {
+	bin := buildServer(t)
+	p := startServer(t, bin, storetest.DSN(t))
+	p.waitReady(t)
+
+	match := regexp.MustCompile(`token=([A-Za-z0-9_-]{43})`).FindStringSubmatch(p.output())
+	if match == nil {
+		t.Fatalf("no bootstrap token in the logs:\n%s", p.output())
+	}
+	c, err := client.NewClientWithResponses("http://"+p.admin+"/api/v1",
+		client.WithRequestEditorFn(func(_ context.Context, r *http.Request) error {
+			r.Header.Set("Authorization", "Bearer "+match[1])
+			return nil
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var config client.SourceConfig
+	if err := config.FromCrawlConfig(client.CrawlConfig{Strategy: client.Crawl, StartURL: "https://comic.example/1"}); err != nil {
+		t.Fatal(err)
+	}
+	created, err := c.CreateSourceWithResponse(context.Background(), client.SourceCreate{
+		Slug: "e2e", Title: "E2E", HomeURL: "https://comic.example/", DefaultKind: client.Page, Config: config,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.JSON201 == nil {
+		t.Fatalf("create source: %d %s", created.StatusCode(), created.Body)
+	}
+
+	list, err := c.ListSourcesWithResponse(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list.JSON200 == nil || len(list.JSON200.Items) != 1 {
+		t.Fatalf("list sources: %d %s", list.StatusCode(), list.Body)
+	}
+
+	if code := status(p.admin + "/api/v1/sources"); code != http.StatusUnauthorized {
+		t.Errorf("no token: %d, want 401", code)
+	}
+	if code := status(p.public + "/api/v1/sources"); code != http.StatusNotFound {
+		t.Errorf("public listener: %d, want 404", code)
+	}
+	body, err := http.Get("http://" + p.admin + "/metrics")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer body.Body.Close()
+	metrics, err := io.ReadAll(body.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(metrics), `andante_api_requests_total{route="GET /api/v1/sources",status="200"}`) {
+		t.Errorf("no API metric in /metrics:\n%s", metrics)
 	}
 }
 

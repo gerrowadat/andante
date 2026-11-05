@@ -13,6 +13,8 @@ OUT ?= out
 GOLANGCI_VERSION ?= v2.15.0
 ACT_VERSION      ?= v0.2.97
 SQLC_VERSION     ?= v1.31.1
+OASDIFF_VERSION  ?= v1.35.0
+SPECTRAL_IMAGE   ?= stoplight/spectral:6.17.0@sha256:c8ffae6ee561b70e80402f1ea669e8b37c74fee48a3dbe2147b71359ed987239
 
 # The compose.yaml database, for make run and make test-db.
 DEV_DATABASE_URL ?= postgres://andante:andante@localhost:5432/andante?sslmode=disable
@@ -87,8 +89,19 @@ test-db: ## Run the tests against the compose.yaml Postgres, with no skips
 	ANDANTE_TEST_DATABASE_URL='$(DEV_DATABASE_URL)' ANDANTE_REQUIRE_DB=1 $(GO) test -race -count=1 $(PKG)
 
 .PHONY: generate
-generate: ## Regenerate generated code with sqlc
+generate: ## Regenerate generated code with sqlc and oapi-codegen
 	$(GO) run github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION) generate
+	$(GO) tool oapi-codegen -config api/oapi-client.yaml api/openapi.yaml
+	$(GO) tool oapi-codegen -config api/oapi-server.yaml api/openapi.yaml
+
+.PHONY: spec-lint
+spec-lint: ## Lint api/openapi.yaml with Spectral, in Docker as CI does
+	docker run --rm -v "$(CURDIR):/work:ro" -w /work $(SPECTRAL_IMAGE) \
+	  lint api/openapi.yaml --ruleset .spectral.yaml --fail-severity=warn
+
+.PHONY: spec-diff
+spec-diff: ## Compare api/openapi.yaml with BASE (default origin/main), failing on breaking changes
+	BASE=$(or $(BASE),origin/main) OASDIFF_VERSION=$(OASDIFF_VERSION) ./scripts/spec-diff.sh
 
 ##@ Containers
 

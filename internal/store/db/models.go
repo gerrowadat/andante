@@ -5,6 +5,8 @@
 package db
 
 import (
+	"time"
+
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -12,20 +14,20 @@ type ApiToken struct {
 	ID         int64
 	TokenHash  []byte
 	Label      string
-	CreatedAt  pgtype.Timestamptz
-	RevokedAt  pgtype.Timestamptz
-	LastUsedAt pgtype.Timestamptz
+	CreatedAt  time.Time
+	RevokedAt  *time.Time
+	LastUsedAt *time.Time
 }
 
 type CrawlLog struct {
 	ID           int64
 	SourceID     int64
 	Url          string
-	Status       pgtype.Int4
-	Etag         pgtype.Text
-	LastModified pgtype.Text
-	FetchedAt    pgtype.Timestamptz
-	Error        pgtype.Text
+	Status       *int32
+	Etag         *string
+	LastModified *string
+	FetchedAt    time.Time
+	Error        *string
 }
 
 type Entry struct {
@@ -33,19 +35,19 @@ type Entry struct {
 	SourceID     int64
 	Seq          int32
 	Kind         string
-	Url          pgtype.Text
-	Guid         pgtype.Text
-	Title        pgtype.Text
-	Summary      pgtype.Text
-	ContentHtml  pgtype.Text
+	Url          *string
+	Guid         *string
+	Title        *string
+	Summary      *string
+	ContentHtml  *string
 	Images       []string
-	AltText      pgtype.Text
+	AltText      *string
 	Enclosures   []byte
 	Duration     pgtype.Interval
 	Extra        []byte
-	OriginalDate pgtype.Timestamptz
+	OriginalDate *time.Time
 	ContentHash  []byte
-	DiscoveredAt pgtype.Timestamptz
+	DiscoveredAt time.Time
 }
 
 type FeedToken struct {
@@ -54,9 +56,9 @@ type FeedToken struct {
 	TokenHash  []byte
 	Role       string
 	Label      string
-	CreatedAt  pgtype.Timestamptz
-	RevokedAt  pgtype.Timestamptz
-	LastSeenAt pgtype.Timestamptz
+	CreatedAt  time.Time
+	RevokedAt  *time.Time
+	LastSeenAt *time.Time
 }
 
 type Read struct {
@@ -66,16 +68,16 @@ type Read struct {
 	CatchUp   string
 	Buffer    int32
 	Config    []byte
-	CreatedAt pgtype.Timestamptz
+	CreatedAt time.Time
 }
 
 type ReadSegment struct {
 	ID         int64
 	ReadID     int64
 	FromSeq    int32
-	StartsAt   pgtype.Timestamptz
+	StartsAt   time.Time
 	Pacing     string
-	Rrule      pgtype.Text
+	Rrule      *string
 	Timezone   string
 	PerRelease int32
 	Speed      pgtype.Numeric
@@ -83,7 +85,7 @@ type ReadSegment struct {
 	MaxGap     pgtype.Interval
 	DefaultGap pgtype.Interval
 	Reason     string
-	CreatedAt  pgtype.Timestamptz
+	CreatedAt  time.Time
 }
 
 type Source struct {
@@ -92,14 +94,14 @@ type Source struct {
 	Title         string
 	HomeUrl       string
 	DefaultKind   string
-	ImageUrl      pgtype.Text
+	ImageUrl      *string
 	Extra         []byte
 	Strategy      string
 	Config        []byte
 	Cursor        []byte
 	State         string
-	DueAt         pgtype.Timestamptz
-	LastCrawledAt pgtype.Timestamptz
-	LastError     pgtype.Text
-	CreatedAt     pgtype.Timestamptz
+	DueAt         *time.Time
+	LastCrawledAt *time.Time
+	LastError     *string
+	CreatedAt     time.Time
 }

@@ -94,6 +94,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0 # spec-diff reads the base branch's spec.
           persist-credentials: false
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -105,6 +106,16 @@ jobs:
           make generate
           git add -N .
           git diff --exit-code
+
+      - name: Lint the API description
+        run: make spec-lint
+
+      # A breaking change within /api/v1 needs /api/v2, not a waiver.
+      - name: The API description keeps its promises
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: make spec-diff
 
   licenses:
     runs-on: ubuntu-latest

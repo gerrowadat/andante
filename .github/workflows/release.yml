@@ -149,6 +149,9 @@ jobs:
           git add -N .
           git diff --exit-code
 
+      - name: Lint the API description
+        run: make spec-lint
+
       - name: Every source file carries its header
         run: ./scripts/license-check.sh
 

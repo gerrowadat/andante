@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"sync"
 
+	"github.com/gerrowadat/andante/internal/api"
 	"github.com/gerrowadat/andante/internal/buildinfo"
 	"github.com/gerrowadat/andante/internal/config"
 	"github.com/prometheus/client_golang/prometheus"
@@ -22,6 +23,15 @@ import (
 
 // ReadyFunc reports whether the server can serve, by returning nil.
 type ReadyFunc func(context.Context) error
+
+// Deps are what the server is built from.
+type Deps struct {
+	Ready    ReadyFunc
+	Registry *prometheus.Registry
+	Logger   *slog.Logger
+	// API is the admin API, mounted at api.BasePath. It may be nil.
+	API http.Handler
+}
 
 // Server holds andante's two listeners. Admin routes are only ever mounted on
 // the admin listener.
@@ -37,12 +47,13 @@ type listener struct {
 }
 
 // New binds both listeners. Run serves them.
-func New(cfg config.Config, ready ReadyFunc, logger *slog.Logger) (*Server, error) {
+func New(cfg config.Config, deps Deps) (*Server, error) {
+	logger := deps.Logger
 	public, err := newListener(cfg, cfg.Listen, http.NewServeMux(), logger)
 	if err != nil {
 		return nil, fmt.Errorf("public listener: %w", err)
 	}
-	admin, err := newListener(cfg, cfg.AdminListen, adminMux(cfg, ready, logger), logger)
+	admin, err := newListener(cfg, cfg.AdminListen, adminMux(cfg, deps), logger)
 	if err != nil {
 		_ = public.net.Close()
 		return nil, fmt.Errorf("admin listener: %w", err)
@@ -64,8 +75,8 @@ func newListener(cfg config.Config, addr string, handler http.Handler, logger *s
 	}}, nil
 }
 
-func adminMux(cfg config.Config, ready ReadyFunc, logger *slog.Logger) *http.ServeMux {
-	reg := prometheus.NewRegistry()
+func adminMux(cfg config.Config, deps Deps) *http.ServeMux {
+	reg := deps.Registry
 	reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 	promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 		Name: "andante_build_info",
@@ -79,14 +90,17 @@ func adminMux(cfg config.Config, ready ReadyFunc, logger *slog.Logger) *http.Ser
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), cfg.ReadinessTimeout)
 		defer cancel()
-		if err := ready(ctx); err != nil {
-			logger.Warn("not ready", "error", err)
+		if err := deps.Ready(ctx); err != nil {
+			deps.Logger.Warn("not ready", "error", err)
 			http.Error(w, "not ready", http.StatusServiceUnavailable)
 			return
 		}
 		_, _ = fmt.Fprintln(w, "ok")
 	})
 	mux.Handle("GET /metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
+	if deps.API != nil {
+		mux.Handle(api.BasePath+"/", deps.API)
+	}
 	return mux
 }
 

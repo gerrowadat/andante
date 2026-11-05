@@ -20,8 +20,55 @@ func (q *Queries) CountAPITokens(ctx context.Context) (int64, error) {
 	return count, err
 }
 
-const insertAPIToken = `-- name: InsertAPIToken :exec
-INSERT INTO api_tokens (token_hash, label) VALUES ($1, $2)
+const countActiveAPITokens = `-- name: CountActiveAPITokens :one
+SELECT count(*) FROM api_tokens WHERE revoked_at IS NULL
+`
+
+func (q *Queries) CountActiveAPITokens(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countActiveAPITokens)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const getAPIToken = `-- name: GetAPIToken :one
+SELECT id, token_hash, label, created_at, revoked_at, last_used_at FROM api_tokens WHERE id = $1
+`
+
+func (q *Queries) GetAPIToken(ctx context.Context, id int64) (ApiToken, error) {
+	row := q.db.QueryRow(ctx, getAPIToken, id)
+	var i ApiToken
+	err := row.Scan(
+		&i.ID,
+		&i.TokenHash,
+		&i.Label,
+		&i.CreatedAt,
+		&i.RevokedAt,
+		&i.LastUsedAt,
+	)
+	return i, err
+}
+
+const getActiveAPITokenByHash = `-- name: GetActiveAPITokenByHash :one
+SELECT id, token_hash, label, created_at, revoked_at, last_used_at FROM api_tokens WHERE token_hash = $1 AND revoked_at IS NULL
+`
+
+func (q *Queries) GetActiveAPITokenByHash(ctx context.Context, tokenHash []byte) (ApiToken, error) {
+	row := q.db.QueryRow(ctx, getActiveAPITokenByHash, tokenHash)
+	var i ApiToken
+	err := row.Scan(
+		&i.ID,
+		&i.TokenHash,
+		&i.Label,
+		&i.CreatedAt,
+		&i.RevokedAt,
+		&i.LastUsedAt,
+	)
+	return i, err
+}
+
+const insertAPIToken = `-- name: InsertAPIToken :one
+INSERT INTO api_tokens (token_hash, label) VALUES ($1, $2) RETURNING id, token_hash, label, created_at, revoked_at, last_used_at
 `
 
 type InsertAPITokenParams struct {
@@ -29,9 +76,54 @@ type InsertAPITokenParams struct {
 	Label     string
 }
 
-func (q *Queries) InsertAPIToken(ctx context.Context, arg InsertAPITokenParams) error {
-	_, err := q.db.Exec(ctx, insertAPIToken, arg.TokenHash, arg.Label)
-	return err
+func (q *Queries) InsertAPIToken(ctx context.Context, arg InsertAPITokenParams) (ApiToken, error) {
+	row := q.db.QueryRow(ctx, insertAPIToken, arg.TokenHash, arg.Label)
+	var i ApiToken
+	err := row.Scan(
+		&i.ID,
+		&i.TokenHash,
+		&i.Label,
+		&i.CreatedAt,
+		&i.RevokedAt,
+		&i.LastUsedAt,
+	)
+	return i, err
+}
+
+const listAPITokens = `-- name: ListAPITokens :many
+SELECT id, token_hash, label, created_at, revoked_at, last_used_at FROM api_tokens WHERE id > $1 ORDER BY id LIMIT $2
+`
+
+type ListAPITokensParams struct {
+	ID    int64
+	Limit int32
+}
+
+func (q *Queries) ListAPITokens(ctx context.Context, arg ListAPITokensParams) ([]ApiToken, error) {
+	rows, err := q.db.Query(ctx, listAPITokens, arg.ID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ApiToken
+	for rows.Next() {
+		var i ApiToken
+		if err := rows.Scan(
+			&i.ID,
+			&i.TokenHash,
+			&i.Label,
+			&i.CreatedAt,
+			&i.RevokedAt,
+			&i.LastUsedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const lockAPITokenBootstrap = `-- name: LockAPITokenBootstrap :exec
@@ -43,5 +135,24 @@ SELECT pg_advisory_xact_lock($1)
 // Copyright (C) 2026 Dave O'Connor
 func (q *Queries) LockAPITokenBootstrap(ctx context.Context, pgAdvisoryXactLock int64) error {
 	_, err := q.db.Exec(ctx, lockAPITokenBootstrap, pgAdvisoryXactLock)
+	return err
+}
+
+const revokeAPIToken = `-- name: RevokeAPIToken :exec
+UPDATE api_tokens SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL
+`
+
+func (q *Queries) RevokeAPIToken(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, revokeAPIToken, id)
+	return err
+}
+
+const touchAPIToken = `-- name: TouchAPIToken :exec
+UPDATE api_tokens SET last_used_at = now()
+WHERE id = $1 AND (last_used_at IS NULL OR last_used_at < now() - interval '1 minute')
+`
+
+func (q *Queries) TouchAPIToken(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, touchAPIToken, id)
 	return err
 }
