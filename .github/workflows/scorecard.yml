@@ -1,0 +1,45 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 Dave O'Connor
+#
+# OpenSSF Scorecard: rates the repository's supply-chain practices. Results go
+# to the Security tab and, published, to the README badge. Scorecard's service
+# only accepts published results from a workflow that keeps to its restrictions,
+# so this file has read-only top-level permissions and no extra steps.
+name: scorecard
+
+on:
+  push:
+    branches: [main]
+  pull_request: # Temporary, to prove this workflow on its PR. Removed before merge.
+  schedule:
+    - cron: "29 6 * * 2" # Tuesdays, 06:29 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  analysis:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      id-token: write # Lets Scorecard's service verify the results came from here.
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run Scorecard
+        uses: ossf/scorecard-action@fa7117db83c52d787ae5a89f350999701505d78e # v2.5.0
+        with:
+          results_file: scorecard.sarif
+          results_format: sarif
+          publish_results: ${{ github.event_name != 'pull_request' }}
+
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: scorecard.sarif
+          category: scorecard

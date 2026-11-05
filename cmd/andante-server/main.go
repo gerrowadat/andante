@@ -12,6 +12,10 @@ import (
 
 	"github.com/alecthomas/kong"
 	"github.com/gerrowadat/andante/internal/buildinfo"
+
+	// Embedded because the distroless image has no zoneinfo, and schedules
+	// are evaluated in IANA time zones.
+	_ "time/tzdata"
 )
 
 type cli struct {

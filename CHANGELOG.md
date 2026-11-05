@@ -10,3 +10,5 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Repository bootstrap: Go module, stub `andante-server` and `andante` binaries
   that report their version, Makefile, CI, lint, license check and Dependabot.
+- Container image, security scanning (govulncheck, Trivy, gitleaks, CodeQL),
+  dependency review and OpenSSF Scorecard.

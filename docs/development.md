@@ -4,9 +4,11 @@
 
 - Go 1.21 or later, which fetches the toolchain named in `go.mod`.
 - GCC or another C compiler, for the race detector in `make test`.
-- Docker, for `make ci` and for Postgres through `compose.yaml` in later phases.
+- Docker, for `make ci`, `make docker`, and Postgres through `compose.yaml` in
+  later phases.
 - [act](https://github.com/nektos/act), for `make ci`. If it is not installed,
   `make ci` fetches the pinned version with `go run`.
+- [Trivy](https://trivy.dev), for `make docker-scan` only.
 
 `make lint` uses `golangci-lint` from your `PATH` if there is one, and otherwise
 fetches the version CI pins. A different local version can disagree with CI.
@@ -22,6 +24,8 @@ fetches the version CI pins. A different local version can disagree with CI.
 | `make lint` | golangci-lint with `.golangci.yml` |
 | `make fmt` | `gofmt` over the tree |
 | `make generate` | Regenerates generated code; nothing to do yet |
+| `make docker` | Builds the image for this machine's platform as `andante:dev` |
+| `make docker-scan` | Builds that image and scans it as CI does; needs Trivy |
 | `make ci` | Runs the `ci` workflow under act |
 | `make ci-clean` | Removes this repository's act containers, volumes and cache |
 | `make clean` | Removes `out/` |
