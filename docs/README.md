@@ -18,9 +18,10 @@ Start at the [project README](../README.md) for what andante is.
 
 - [Build plan](plan/README.md) — phases, and a Claude Code prompt for each.
 - [Development](development.md) — prerequisites, make targets, running CI locally.
+- [Security](security.md) — what is scanned, triaging results, reporting a vulnerability.
 
 ## Using it
 
-Written as features land: `security.md`, `releasing.md`, `configuration.md`
-(flags and env vars), `api.md`, `sources.md`, `reads.md`, `feeds.md`, `cli.md`,
-`deploying.md`, `monitoring.md`, `faq.md`.
+Written as features land: `releasing.md`, `configuration.md` (flags and env
+vars), `api.md`, `sources.md`, `reads.md`, `feeds.md`, `cli.md`, `deploying.md`,
+`monitoring.md`, `faq.md`.

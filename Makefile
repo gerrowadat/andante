@@ -30,7 +30,7 @@ LDFLAGS   := -X $(BUILDINFO).version=$(VERSION) \
 help: ## List the targets
 	@awk 'BEGIN {FS = ":.*##"} \
 	     /^##@/ {printf "\n\033[1m%s\033[0m\n", substr($$0, 5); next} \
-	     /^[a-zA-Z0-9_-]+:.*##/ {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}' \
+	     /^[a-zA-Z0-9_-]+:.*##/ {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}' \
 	     $(MAKEFILE_LIST)
 	@echo
 
@@ -65,6 +65,19 @@ fmt: ## Format the tree with gofmt
 .PHONY: generate
 generate: ## Regenerate generated code (nothing yet; sqlc arrives in phase 3)
 	@echo "nothing to generate"
+
+##@ Containers
+
+.PHONY: docker
+docker: ## Build the image for this machine's platform as andante:dev
+	docker build \
+	  --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg DATE=$(DATE) \
+	  -t andante:dev .
+
+.PHONY: docker-scan
+docker-scan: docker ## Scan andante:dev as CI does (needs Trivy)
+	@command -v trivy >/dev/null 2>&1 || { echo "trivy is not installed"; exit 1; }
+	trivy image --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 andante:dev
 
 ##@ Running CI locally
 

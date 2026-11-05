@@ -1,5 +1,7 @@
 # andante
 
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/gerrowadat/andante/badge)](https://scorecard.dev/viewer/?uri=github.com/gerrowadat/andante)
+
 Read, watch or listen to an archive at the pace of its original run.
 
 andante takes a serial with a long back catalogue — a webcomic, a podcast, a

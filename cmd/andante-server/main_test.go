@@ -5,6 +5,9 @@ package main
 
 import (
 	"bytes"
+	"go/parser"
+	"go/token"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -43,6 +46,21 @@ func TestVersion(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestEmbedsTimeZoneData(t *testing.T) {
+	// A LoadLocation test would pass on any machine with zoneinfo installed,
+	// which is the one case the embedded data is not for.
+	file, err := parser.ParseFile(token.NewFileSet(), "main.go", nil, parser.ImportsOnly)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, imp := range file.Imports {
+		if path, _ := strconv.Unquote(imp.Path.Value); path == "time/tzdata" {
+			return
+		}
+	}
+	t.Error("main.go does not import time/tzdata")
 }
 
 func TestUnknownArgumentFails(t *testing.T) {
