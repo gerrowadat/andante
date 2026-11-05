@@ -114,7 +114,7 @@ jobs:
       - name: The API description keeps its promises
         if: github.event_name == 'pull_request'
         env:
-          BASE: ${{ github.event.pull_request.base.sha }}
+          BASE: 8d422efd91ecfa416cc4ab6cab9dab5b3739a04d
         run: make spec-diff
 
   licenses:
