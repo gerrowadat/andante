@@ -2,8 +2,9 @@
 
 Status: shipped in phases 0–2 of the [build plan](../plan/README.md), except what
 "Not built yet" lists. How to cut a release is in
-[`releasing.md`](../releasing.md). Follows the patterns in gerrowadat/nomad-gitops and gerrowadat/disgracelands,
-adjusted for a service with a Postgres dependency and an API contract.
+[`releasing.md`](../releasing.md). Follows the patterns in
+gerrowadat/nomad-gitops and gerrowadat/disgracelands, adjusted for a service with
+a Postgres dependency and an API contract.
 
 ## Principles
 

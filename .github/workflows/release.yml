@@ -172,6 +172,10 @@ jobs:
           tar -xzf "dist/andante-$VERSION-darwin-arm64.tar.gz" -C "$work"
           file "$work/andante-$VERSION-darwin-arm64/andante-server" | grep -q 'Mach-O 64-bit arm64'
 
+      # The SBOM action does not create the directory it writes to.
+      - name: Prepare the SBOM directory
+        run: mkdir sbom
+
       - name: Generate the SBOM
         uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
