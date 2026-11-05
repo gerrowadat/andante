@@ -1,0 +1,137 @@
+# andante — Claude instructions
+
+andante replays the archive of any serial — webcomics, podcasts, blogs, news
+sites — as a paced feed. It indexes the archive (from its feed, or by crawling
+its pages), releases entries on a schedule you choose or at the timing of the
+original run, and serves the result as a feed (Atom, RSS 2.0, JSON Feed) that
+any reader or podcast app can poll and that you can share with other people.
+
+Webcomics are the first and most demanding case (their feeds rarely hold the
+archive, so they need crawling), but nothing in the core may assume an entry is
+a comic page. Kind-specific behaviour lives in extractors and decorators.
+
+Read `docs/philosophy.md` before making design decisions, and the relevant
+document in `docs/proposals/` (not built yet) or `docs/design/` (built) before
+working on a component. `docs/prior-art.md` surveys existing tools — check
+it before designing a feature. `docs/plan/` holds the phased build plan and the prompt
+for each phase.
+
+## Rules
+
+**Always update tests.** Every code change has test coverage. No exceptions.
+CI never makes a network request to a real website: crawler and extractor tests
+run against fixture sites in `testdata/` served by `httptest`.
+
+**A skipped test is not a passing test.** Tests that need Postgres skip
+locally when `ANDANTE_TEST_DATABASE_URL` is unset, but CI sets
+`ANDANTE_REQUIRE_DB=1`, which turns that skip into a failure. Do not add a
+skip that CI cannot catch.
+
+**Always update docs.** Docs are a set under `docs/` indexed by
+`docs/README.md`; the top-level `README.md` stays a lean landing page.
+- Server flag or env var added/changed → `docs/configuration.md` (flag *and* env var).
+- API changed → `api/openapi.yaml` first, then regenerate, then the handler. The spec is the contract.
+- Behaviour changed → the relevant guide in `docs/`.
+- Design rationale → `docs/design/`; cross-cutting "why" → `docs/philosophy.md`.
+
+**Proposals graduate to design docs when implemented.** `docs/proposals/` is
+for not-yet-built ideas; `docs/design/` is the record of *why* a shipped
+feature is the way it is. When a feature lands, `git mv` its proposal to
+`docs/design/`, retitle it `# Design: …`, record what shipped and where it
+diverged, and leave unbuilt parts behind in `docs/proposals/`. Do this in the
+feature's own PR.
+
+**Open standards first.** Before inventing a format, protocol, convention or
+schema, find the open or common one and use it (see `docs/philosophy.md`,
+"Open standards first", for the current list). If you deviate, write down why
+in `docs/design/`.
+
+**Do not re-implement incumbents.** Before writing a library or utility, check
+for a well-established, actively maintained Go package that does the job and
+use it.
+
+**Generated code is never hand-edited.** `internal/api/gen/`, `pkg/client/`
+and `internal/store/db/` are generated (oapi-codegen, sqlc). Change the spec or
+the SQL and run `make generate`. CI fails if generated code is stale.
+
+**API versions are a promise.** Within `/api/v1`, changes are additive only.
+CI runs `oasdiff breaking` against `main`; a breaking change needs `/api/v2`,
+not a waiver.
+
+**Add Prometheus metrics for observable behaviour.** Anything that can fail, be
+counted or be timed gets a metric, registered via `promauto.With(reg)` in the
+constructor, under the `andante_` prefix. Tests use per-test registries.
+
+**Do not merge PRs.** Branch, commit, push, open the PR — then stop.
+
+**Never push directly to main.** All changes go through a branch and PR,
+including docs and config-only changes. Branch from `origin/main`, not from
+whatever is checked out.
+
+**Write plain commit messages and PR descriptions.** What changed and why. No
+superlatives, no "seamlessly", no "robust", no sales pitch. A PR description
+reads like a code review.
+
+**Every source file carries its SPDX header.** `SPDX-License-Identifier: Apache-2.0`
+plus `Copyright (C) 2026 Dave O'Connor`, in the file's comment syntax. Source
+files are `.go`, `.sh`, `.sql`, `.yml`, `.yaml`, `Makefile` and `Dockerfile`.
+Markdown and generated files (`// Code generated … DO NOT EDIT.`) are exempt.
+CI checks this.
+
+## Project layout
+
+```
+api/openapi.yaml          the admin API contract (source of truth)
+cmd/andante-server/       server binary
+cmd/andante/              CLI binary (talks to the API only, via pkg/client)
+internal/buildinfo/       version/commit/date via ldflags
+internal/config/          server flags + env (kong)
+internal/store/           Postgres: migrations/, queries/, db/ (sqlc output)
+internal/discovery/       Strategy interface, crawler, politeness, strategies/
+internal/extract/         page metadata extraction (JSON-LD, Open Graph, rel=next, selectors)
+internal/schedule/        pacing (RRULE, replay) + segment math — pure, no I/O
+internal/feed/            Atom, RSS 2.0 and JSON Feed rendering, decorators
+internal/api/             admin API handlers; gen/ is oapi-codegen output
+internal/server/          listeners, middleware, wiring, public feed routes
+pkg/client/               generated API client (public: the CLI and other tools import it)
+deploy/nomad/             example Nomad job
+deploy/prometheus/        example alert rules
+test/e2e/                 end-to-end suite (build tag e2e)
+testdata/sites/           fixture sites and feeds (comics, podcasts, blogs) for discovery tests
+scripts/                  release.sh, build-dist.sh, license-check.sh, act-guard.sh
+```
+
+## Key conventions
+
+- The server is configured by flags with env var counterparts (`ANDANTE_*`),
+  for bootstrap only. Everything the user configures lives in the database and
+  is changed through the API. There are no config files.
+- Two listeners: public (feeds only) and admin (API, `/healthz`, `/readyz`,
+  `/metrics`). Admin routes are never mounted on the public listener.
+- Public feed requests read the index and never trigger a crawl.
+- Strategy config is `jsonb`, decoded into a typed struct per strategy and
+  validated on write, not at crawl time.
+- Timestamps are RFC 3339 in UTC in storage and APIs; schedules carry an IANA
+  time zone and are evaluated in it.
+- Go 1.22+ ServeMux patterns (`GET /f/{file}`); no router library.
+- `log/slog`, JSON in production.
+
+## Vocabulary
+
+| Term | Meaning |
+|---|---|
+| Source | A serial (comic, podcast, blog, news site), plus the strategy used to discover its archive. |
+| Strategy | How a source's archive is discovered: `crawl`, `numeric`, `feed`, `feed-paged`. |
+| Entry | One item of a serial — a comic page, an episode, a post — with a sequence number (`seq`) in reading order. |
+| Kind | What an entry is: `page` (image-led), `episode` (has an audio/video enclosure), `article` (text-led). Decides which extractor and decorators apply. |
+| Enclosure | A media file attached to an entry (URL, MIME type, length), as in RSS/Atom. Passed through, never rehosted. |
+| Extractor | Pulls title, images, text, enclosures, date and next link out of a page or feed item. |
+| Pacing | How a segment releases entries: `rrule` (fixed schedule) or `replay` (the original run's gaps, optionally sped up). |
+| Probe | A dry-run discovery that returns the first N entries without saving anything. |
+| Tail mode | A source whose crawl has reached the live end and now only checks for new pages. |
+| Read | A paced replay of a source: a schedule plus a position. The thing a feed serves. |
+| Segment | One append-only row of a read's history: from this `seq`, at this time, under this pacing (or paused). |
+| Release | An entry becoming visible in a read's feed. |
+| Feed token | A secret in a feed URL. Role `owner` (feed + controls) or `viewer` (feed only). |
+| API token | A bearer token for the admin API. Separate from feed tokens. |
+| Decorator | A step that adds content to a rendered feed item (image, origin, controls, links). |
