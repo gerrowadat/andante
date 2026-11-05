@@ -49,6 +49,14 @@ build: ## Build both binaries into out/, version-stamped
 test: ## Run the tests with the race detector, as CI does
 	$(GO) test -race -count=1 $(PKG)
 
+.PHONY: e2e
+e2e: ## Run the end-to-end suite, which only the release workflow runs in CI
+	$(GO) test -tags=e2e -race -count=1 ./test/e2e/...
+
+.PHONY: dist
+dist: ## Build the release archives into out/dist, as the release workflow does
+	VERSION=$(VERSION) COMMIT=$(COMMIT) ./scripts/build-dist.sh $(OUT)/dist
+
 .PHONY: lint
 lint: ## Run golangci-lint, fetching the pinned version if it is not installed
 	@if command -v golangci-lint >/dev/null 2>&1; then \

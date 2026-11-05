@@ -2,6 +2,10 @@
 # Copyright (C) 2026 Dave O'Connor
 version: "2"
 
+run:
+  build-tags:
+    - e2e
+
 linters:
   enable:
     - errcheck

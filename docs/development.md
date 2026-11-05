@@ -21,6 +21,8 @@ fetches the version CI pins. A different local version can disagree with CI.
 |---|---|
 | `make build` | Builds `andante-server` and `andante` into `out/`, stamped with version, commit and date |
 | `make test` | `go test -race -count=1 ./...`, as CI runs it |
+| `make e2e` | The end-to-end suite (build tag `e2e`) |
+| `make dist` | The release archives, into `out/dist`; needs GNU tar |
 | `make lint` | golangci-lint with `.golangci.yml` |
 | `make fmt` | `gofmt` over the tree |
 | `make generate` | Regenerates generated code; nothing to do yet |
