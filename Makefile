@@ -12,6 +12,10 @@ OUT ?= out
 # skipping: a lint that silently does not run looks like a lint that passed.
 GOLANGCI_VERSION ?= v2.15.0
 ACT_VERSION      ?= v0.2.97
+SQLC_VERSION     ?= v1.31.1
+
+# The compose.yaml database, for make run and make test-db.
+DEV_DATABASE_URL ?= postgres://andante:andante@localhost:5432/andante?sslmode=disable
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
@@ -25,6 +29,12 @@ LDFLAGS   := -X $(BUILDINFO).version=$(VERSION) \
 .DEFAULT_GOAL := help
 
 ##@ Getting started
+
+.PHONY: run
+run: ## Run andante-server against the compose.yaml Postgres with text logs
+	docker compose up -d --wait postgres
+	$(GO) run -ldflags='$(LDFLAGS)' ./cmd/andante-server \
+	  --database-url='$(DEV_DATABASE_URL)' --base-url=http://localhost:8080 --log-format=text
 
 .PHONY: help
 help: ## List the targets
@@ -51,7 +61,8 @@ test: ## Run the tests with the race detector, as CI does
 
 .PHONY: e2e
 e2e: ## Run the end-to-end suite, which only the release workflow runs in CI
-	$(GO) test -tags=e2e -race -count=1 ./test/e2e/...
+	docker compose up -d --wait postgres
+	ANDANTE_TEST_DATABASE_URL='$(DEV_DATABASE_URL)' ANDANTE_REQUIRE_DB=1 $(GO) test -tags=e2e -race -count=1 ./test/e2e/...
 
 .PHONY: dist
 dist: ## Build the release archives into out/dist, as the release workflow does
@@ -70,9 +81,14 @@ lint: ## Run golangci-lint, fetching the pinned version if it is not installed
 fmt: ## Format the tree with gofmt
 	gofmt -l -w .
 
+.PHONY: test-db
+test-db: ## Run the tests against the compose.yaml Postgres, with no skips
+	docker compose up -d --wait postgres
+	ANDANTE_TEST_DATABASE_URL='$(DEV_DATABASE_URL)' ANDANTE_REQUIRE_DB=1 $(GO) test -race -count=1 $(PKG)
+
 .PHONY: generate
-generate: ## Regenerate generated code (nothing yet; sqlc arrives in phase 3)
-	@echo "nothing to generate"
+generate: ## Regenerate generated code with sqlc
+	$(GO) run github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION) generate
 
 ##@ Containers
 

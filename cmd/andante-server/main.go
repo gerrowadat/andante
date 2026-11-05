@@ -1,17 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 Dave O'Connor
 
-// Command andante-server is the andante server. For now it only reports its
-// version.
+// Command andante-server is the andante server.
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/alecthomas/kong"
 	"github.com/gerrowadat/andante/internal/buildinfo"
+	"github.com/gerrowadat/andante/internal/config"
+	"github.com/gerrowadat/andante/internal/server"
+	"github.com/gerrowadat/andante/internal/store"
 
 	// Embedded because the distroless image has no zoneinfo, and schedules
 	// are evaluated in IANA time zones.
@@ -21,14 +27,22 @@ import (
 type cli struct {
 	Version kong.VersionFlag `help:"Print the version and exit."`
 
+	// A default command, not root flags, so that the version command and flag
+	// work without the settings the server needs.
+	Serve struct {
+		config.Config `embed:""`
+	} `cmd:"" default:"withargs" help:"Run the server (the default)."`
 	VersionCmd struct{} `cmd:"" name:"version" help:"Print the version."`
 }
 
 func main() {
-	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr, os.Exit))
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	code := run(ctx, os.Args[1:], os.Stdout, os.Stderr, os.Exit)
+	stop()
+	os.Exit(code)
 }
 
-func run(args []string, stdout, stderr io.Writer, exit func(int)) int {
+func run(ctx context.Context, args []string, stdout, stderr io.Writer, exit func(int)) int {
 	var c cli
 	parser, err := kong.New(&c,
 		kong.Name("andante-server"),
@@ -41,10 +55,56 @@ func run(args []string, stdout, stderr io.Writer, exit func(int)) int {
 		_, _ = fmt.Fprintln(stderr, err)
 		return 1
 	}
-	if _, err := parser.Parse(args); err != nil {
+	parsed, err := parser.Parse(args)
+	if err != nil {
 		_, _ = fmt.Fprintln(stderr, err)
 		return 2
 	}
-	_, _ = fmt.Fprintln(stdout, buildinfo.String())
+	if parsed.Command() == "version" {
+		_, _ = fmt.Fprintln(stdout, buildinfo.String())
+		return 0
+	}
+
+	logger := newLogger(c.Serve.LogFormat, c.Serve.LogLevel, stderr)
+	if err := serve(ctx, c.Serve.Config, logger); err != nil {
+		logger.Error("exiting", "error", err)
+		return 1
+	}
 	return 0
+}
+
+func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
+	st, err := store.Open(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+
+	if err := st.Migrate(ctx); err != nil {
+		return err
+	}
+	generated, err := st.BootstrapAPIToken(ctx, cfg.AdminToken)
+	if err != nil {
+		return err
+	}
+	if generated != "" {
+		logger.Warn("no API tokens existed, so one was generated; it is shown only this once", "token", generated)
+	}
+
+	srv, err := server.New(cfg, st.Ready, logger)
+	if err != nil {
+		return err
+	}
+	return srv.Run(ctx)
+}
+
+func newLogger(format, level string, w io.Writer) *slog.Logger {
+	var l slog.Level
+	// config.Config restricts level to names slog accepts.
+	_ = l.UnmarshalText([]byte(level))
+	opts := &slog.HandlerOptions{Level: l}
+	if format == "text" {
+		return slog.New(slog.NewTextHandler(w, opts))
+	}
+	return slog.New(slog.NewJSONHandler(w, opts))
 }

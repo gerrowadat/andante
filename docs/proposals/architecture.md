@@ -49,7 +49,13 @@ Bootstrap only, via flags with env var counterparts (kong):
 | `--crawl-interval` | `ANDANTE_CRAWL_INTERVAL` | `5s` | Minimum gap between requests to one host |
 | `--admin-token` | `ANDANTE_ADMIN_TOKEN` | generated on first run | Bootstrap API token |
 | `--log-format` | `ANDANTE_LOG_FORMAT` | `json` | `json` or `text` |
-| `--log-level` | `ANDANTE_LOG_LEVEL` | `info` | |
+| `--log-level` | `ANDANTE_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
+| `--read-header-timeout` | `ANDANTE_READ_HEADER_TIMEOUT` | `5s` | Time allowed to read request headers |
+| `--read-timeout` | `ANDANTE_READ_TIMEOUT` | `30s` | Time allowed to read a whole request |
+| `--write-timeout` | `ANDANTE_WRITE_TIMEOUT` | `30s` | Time allowed to write a response |
+| `--idle-timeout` | `ANDANTE_IDLE_TIMEOUT` | `2m` | How long an idle keep-alive connection stays open |
+| `--shutdown-timeout` | `ANDANTE_SHUTDOWN_TIMEOUT` | `15s` | Time allowed for in-flight requests on shutdown |
+| `--readiness-timeout` | `ANDANTE_READINESS_TIMEOUT` | `2s` | Time allowed for the `/readyz` check |
 
 Every timing parameter is a flag. On first start with no API tokens in the
 database and no `--admin-token`, the server generates one, stores its hash and

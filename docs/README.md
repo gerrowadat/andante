@@ -21,8 +21,11 @@ Start at the [project README](../README.md) for what andante is.
 - [Security](security.md) — what is scanned, triaging results, reporting a vulnerability.
 - [Releasing](releasing.md) — cutting a release, what each job does, verifying an artifact.
 
+## Running it
+
+- [Configuration](configuration.md) — flags, environment variables, and what is not configured here.
+
 ## Using it
 
-Written as features land: `configuration.md` (flags and env vars), `api.md`,
-`sources.md`, `reads.md`, `feeds.md`, `cli.md`, `deploying.md`, `monitoring.md`,
-`faq.md`.
+Written as features land: `api.md`, `sources.md`, `reads.md`, `feeds.md`,
+`cli.md`, `deploying.md`, `monitoring.md`, `faq.md`.

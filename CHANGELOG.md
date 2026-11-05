@@ -14,3 +14,5 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   dependency review and OpenSSF Scorecard.
 - Release pipeline: reproducible archives, GitHub releases with an SBOM and build
   provenance, and a multi-arch image on ghcr.io.
+- `andante-server` starts, migrates Postgres, creates a bootstrap API token, and
+  serves `/healthz`, `/readyz` and `/metrics` on the admin listener.

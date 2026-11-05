@@ -18,6 +18,12 @@ func TestStringUsesStampedValues(t *testing.T) {
 
 	version, commit, date = "v1.2.3", "abc123", "2026-11-05T00:00:00Z"
 
+	if got := Version(); got != "v1.2.3" {
+		t.Errorf("Version() = %q", got)
+	}
+	if got := Commit(); got != "abc123" {
+		t.Errorf("Commit() = %q", got)
+	}
 	want := "v1.2.3 (commit abc123, built 2026-11-05T00:00:00Z)"
 	if got := String(); got != want {
 		t.Errorf("String() = %q, want %q", got, want)

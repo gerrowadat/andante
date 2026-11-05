@@ -34,3 +34,7 @@ jobs:
             MPL-2.0,
             Unlicense,
             Zlib
+          # Detected as BSD-3-Clause plus a Google patent license. That is the Go
+          # project's PATENTS file, which grants users more, not less. Exempted
+          # by package, so that the term stays a failure anywhere else.
+          allow-dependencies-licenses: pkg:golang/golang.org/x/sys

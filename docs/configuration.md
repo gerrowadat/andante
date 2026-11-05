@@ -1,0 +1,50 @@
+# Configuration
+
+## How configuration works
+
+`andante-server` takes flags, each with an `ANDANTE_*` environment variable
+counterpart. A flag wins over its variable. These cover only what the process
+needs to start. Sources, reads, schedules and tokens live in the database and
+change through the API. There are no config files.
+
+## Flags
+
+| Flag | Env | Default | Purpose |
+|---|---|---|---|
+| `--database-url` | `ANDANTE_DATABASE_URL` | required | Postgres DSN |
+| `--base-url` | `ANDANTE_BASE_URL` | required | Public URL used in feed links; absolute http(s) |
+| `--listen` | `ANDANTE_LISTEN` | `:8080` | Public listener (feeds) |
+| `--admin-listen` | `ANDANTE_ADMIN_LISTEN` | `127.0.0.1:8081` | Admin listener (API, health, metrics) |
+| `--default-timezone` | `ANDANTE_DEFAULT_TIMEZONE` | `UTC` | IANA time zone for new reads |
+| `--user-agent` | `ANDANTE_USER_AGENT` | `andante/<version> (+<base-url>)` | Crawler identity |
+| `--crawl-interval` | `ANDANTE_CRAWL_INTERVAL` | `5s` | Minimum gap between requests to one host |
+| `--admin-token` | `ANDANTE_ADMIN_TOKEN` | generated on first run | Bootstrap API token |
+| `--log-format` | `ANDANTE_LOG_FORMAT` | `json` | `json` or `text` |
+| `--log-level` | `ANDANTE_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
+| `--read-header-timeout` | `ANDANTE_READ_HEADER_TIMEOUT` | `5s` | Time allowed to read request headers |
+| `--read-timeout` | `ANDANTE_READ_TIMEOUT` | `30s` | Time allowed to read a whole request |
+| `--write-timeout` | `ANDANTE_WRITE_TIMEOUT` | `30s` | Time allowed to write a response |
+| `--idle-timeout` | `ANDANTE_IDLE_TIMEOUT` | `2m` | How long an idle keep-alive connection stays open |
+| `--shutdown-timeout` | `ANDANTE_SHUTDOWN_TIMEOUT` | `15s` | Time allowed for in-flight requests on shutdown |
+| `--readiness-timeout` | `ANDANTE_READINESS_TIMEOUT` | `2s` | Time allowed for the `/readyz` check |
+
+Durations use Go's format (`500ms`, `5s`, `2m`) and must be positive.
+`--crawl-interval` and `--user-agent` take effect when crawling arrives. The
+server validates them now, so a bad value fails at startup.
+
+## The bootstrap API token
+
+If `api_tokens` is empty when the server starts, it stores `--admin-token`, or
+generates a token and logs it once at WARN. Save a generated token when it
+appears: only its SHA-256 hash is stored, so it cannot be shown again. Once any
+token exists, `--admin-token` is ignored.
+
+## Startup
+
+The server migrates the database before it starts listening. Migrations are
+embedded in the binary and run under a Postgres advisory lock, so several servers
+starting together apply them once. `/readyz` returns 200 once the database is
+reachable with every migration applied.
+
+The admin listener carries `/healthz`, `/readyz` and `/metrics`. Do not expose it
+publicly. The public listener serves only feeds, so it can be.
