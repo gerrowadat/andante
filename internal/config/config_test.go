@@ -143,7 +143,7 @@ func TestCatalogueRejected(t *testing.T) {
 	const (
 		db   = "--database-url=postgres://localhost/andante"
 		base = "--base-url=https://andante.example/"
-		auth = "--api-token=abc"
+		svc  = "--api-token=abc"
 	)
 	tests := []struct {
 		name string
