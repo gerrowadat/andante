@@ -20,3 +20,8 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   sources work; other endpoints return 501 until they are built.
 - Discovery: the `crawl` strategy, page extraction, a polite fetcher, probes, and
   a crawl loop that indexes lazily and watches the live end.
+
+### Security
+
+- Update `golang.org/x/net` to v0.62.0, for GO-2026-6860 and GO-2026-6866 in its
+  HTML parser, which reads pages from other people's sites.
