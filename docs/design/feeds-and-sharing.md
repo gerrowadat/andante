@@ -1,6 +1,8 @@
-# Proposal: Feeds and sharing
+# Design: Feeds and sharing
 
-Status: proposed. Covers phase 7 of the [build plan](../plan/README.md).
+Status: shipped in phase 7 of the [build plan](../plan/README.md). How to use it is
+in [`feeds.md`](../feeds.md). The planned `links` decorator is in the
+[proposal](../proposals/feed-links.md).
 
 ## Output formats
 
@@ -54,12 +56,15 @@ Item-level fields:
 
 ```go
 type ItemContext struct {
-    Read  Read
-    Entry Entry
-    Role  Role // owner | viewer
+    Read    db.Read
+    Entry   db.Entry
+    Role    string // owner | viewer
+    Token   string
+    BaseURL string
 }
 
 type Decorator interface {
+    Applies(entry db.Entry) bool
     Decorate(ctx ItemContext, item *Item)
 }
 ```
@@ -82,11 +87,6 @@ Items pass through an ordered list. v1 ships:
    `/f/{token}/next`.
 
 Decorators declare which kinds they apply to; the core never switches on kind.
-
-Planned, not v1: `links` — per-read link templates from `reads.config`, e.g.
-`{"links": [{"label": "Discuss", "url": "https://forum.example/t/{source}-{seq}"}]}`
-with `{seq}`, `{title}`, `{url}`, `{source}` substituted. This is the
-"discuss it somewhere else" feature, kept outside andante.
 
 ## Tokens and sharing
 
@@ -133,3 +133,30 @@ reader. Raw tokens are never stored or recoverable, so an export can only
 contain tokens created for it, and it is a `POST` because it creates them. Each
 export adds tokens; revoke an old file's tokens by their label. A `viewer`
 export can be handed to a friend.
+
+## Where this diverged from the proposal
+
+- **Decorators declare what they apply to with `Applies(entry)`,** not a list of
+  kinds, because `content` and `enclosure` also apply to any entry with content or
+  enclosures.
+- **All three formats are plain structs over the standard library.** `gorilla/feeds`
+  has no `itunes:` or `podcast:` support and has had no release since 2024. `gofeed`
+  round-trips the output in tests.
+- **The three feed routes are one pattern, `GET /f/{file}`,** because ServeMux
+  wildcards must be a whole path segment.
+- **The control pages send `Referrer-Policy: no-referrer` and `Cache-Control:
+  no-store`.** `/f/{token}/next` holds the token and leads to the publisher's site, so
+  a browser would otherwise send the token along as the `Referer`.
+- **An owner link in a viewer's feed is impossible by construction,** because the
+  `controls` decorator is the only thing that writes one.
+- **A viewer who tries `/next` gets a 404,** like an unknown token.
+- **`Cache-Control` is `public`,** which means a shared cache may hold a feed. The URL
+  is the key, and a feed holds nothing beyond what its URL grants.
+- **The ETag does not cover metadata.** It covers what the doc lists, so an entry
+  retitled in place shows up on the next release, not before.
+- **A token's rate limit lives in memory.** It restarts with the server, and a second
+  replica has its own.
+- **The CSRF token has no separate secret.** It is an HMAC keyed by the feed token,
+  which only someone with the URL has, and is good for 10 to 20 minutes.
+- **Item summaries are escaped, not rendered.** Only `content_html` is trusted as HTML,
+  because it is sanitised when stored. Phase 9 stores it.

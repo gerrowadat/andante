@@ -66,6 +66,7 @@ Bootstrap only, via flags with env var counterparts (kong):
 | `--robots-ttl` | `ANDANTE_ROBOTS_TTL` | `24h` | How long to cache a host's robots.txt |
 | `--probe-timeout` | `ANDANTE_PROBE_TIMEOUT` | `5m` | Time allowed for a probe |
 | `--replay-min-dated-share` | `ANDANTE_REPLAY_MIN_DATED_SHARE` | `0.9` | Share of a source's entries that need dates before replay works without a `default_gap` |
+| `--feed-rate-limit` | `ANDANTE_FEED_RATE_LIMIT` | `60` | Requests a feed token may make per hour |
 
 Every timing parameter is a flag. On first start with no API tokens in the
 database and no `--admin-token`, the server generates one, stores its hash and

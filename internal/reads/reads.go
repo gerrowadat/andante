@@ -292,6 +292,53 @@ func (s *Service) Adjust(ctx context.Context, id int64, adjustment schedule.Adju
 	return s.Get(ctx, id)
 }
 
+// ReleasedEntry is an entry with the time it was released.
+type ReleasedEntry struct {
+	Entry db.Entry
+	At    time.Time
+}
+
+// Released returns the most recent window entries a read has released, newest
+// first, with its position.
+func (s *Service) Released(ctx context.Context, read db.Read, window int) (View, []ReleasedEntry, error) {
+	rows, err := s.opts.Store.Segments(ctx, read.ID)
+	if err != nil {
+		return View{}, nil, err
+	}
+	times, err := s.opts.Store.EntryTimes(ctx, read.SourceID)
+	if err != nil {
+		return View{}, nil, err
+	}
+	segments, err := fromRows(rows)
+	if err != nil {
+		return View{}, nil, err
+	}
+	idx := view(read, times)
+	v, err := position(read, segments, idx, s.opts.Now().UTC())
+	if err != nil {
+		return View{}, nil, err
+	}
+
+	first := max(v.Position-window+1, int(read.StartSeq))
+	if first > v.Position {
+		return v, nil, nil
+	}
+	//nolint:gosec // Seqs are int32 in the database.
+	entries, err := s.opts.Store.EntriesInRange(ctx, read.SourceID, int32(first), int32(v.Position))
+	if err != nil {
+		return View{}, nil, err
+	}
+	released := make([]ReleasedEntry, 0, len(entries))
+	for _, entry := range entries {
+		at, err := schedule.ReleaseTime(segments, int(entry.Seq), idx)
+		if err != nil {
+			return View{}, nil, fmt.Errorf("release time of entry %d: %w", entry.ID, err)
+		}
+		released = append(released, ReleasedEntry{Entry: entry, At: at})
+	}
+	return v, released, nil
+}
+
 func (s *Service) view(ctx context.Context, read db.Read) (View, error) {
 	rows, err := s.opts.Store.Segments(ctx, read.ID)
 	if err != nil {

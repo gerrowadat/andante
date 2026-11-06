@@ -37,6 +37,7 @@ change through the API. There are no config files.
 | `--robots-ttl` | `ANDANTE_ROBOTS_TTL` | `24h` | How long to cache a host's robots.txt |
 | `--probe-timeout` | `ANDANTE_PROBE_TIMEOUT` | `5m` | Time allowed for a probe, which waits out `--crawl-interval` between pages |
 | `--replay-min-dated-share` | `ANDANTE_REPLAY_MIN_DATED_SHARE` | `0.9` | Share of a source's entries that need dates before replay works without a `default_gap` |
+| `--feed-rate-limit` | `ANDANTE_FEED_RATE_LIMIT` | `60` | Requests a feed token may make per hour |
 
 Durations use Go's format (`500ms`, `5s`, `2m`) and must be positive. How the crawl
 settings fit together is in [sources](sources.md).

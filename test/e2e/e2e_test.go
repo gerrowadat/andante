@@ -27,6 +27,7 @@ import (
 	"github.com/gerrowadat/andante/internal/store/storetest"
 	"github.com/gerrowadat/andante/pkg/client"
 	"github.com/jackc/pgx/v5"
+	"github.com/mmcdole/gofeed"
 )
 
 const version = "v0.0.0-e2e"
@@ -253,6 +254,77 @@ func TestAPIThroughTheRealServer(t *testing.T) {
 	}
 	if !strings.Contains(string(metrics), `andante_api_requests_total{route="GET /api/v1/sources",status="200"}`) {
 		t.Errorf("no API metric in /metrics:\n%s", metrics)
+	}
+}
+
+func TestFeedsThroughTheRealServer(t *testing.T) {
+	bin := buildServer(t)
+	site := sitetest.Serve(t, "comiccontrol")
+	p := startServer(t, bin, storetest.DSN(t), crawlFlags...)
+	p.waitReady(t)
+
+	match := regexp.MustCompile(`token=([A-Za-z0-9_-]{43})`).FindStringSubmatch(p.output())
+	if match == nil {
+		t.Fatalf("no bootstrap token in the logs:\n%s", p.output())
+	}
+	c, err := client.NewClientWithResponses("http://"+p.admin+"/api/v1",
+		client.WithRequestEditorFn(func(_ context.Context, r *http.Request) error {
+			r.Header.Set("Authorization", "Bearer "+match[1])
+			return nil
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config client.SourceConfig
+	if err := config.FromCrawlConfig(client.CrawlConfig{Strategy: client.Crawl, StartURL: site.URL + "/1.html"}); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	source, err := c.CreateSourceWithResponse(ctx, client.SourceCreate{
+		Slug: "e2e", Title: "E2E", HomeURL: site.URL, DefaultKind: client.Page, Config: config,
+	})
+	if err != nil || source.JSON201 == nil {
+		t.Fatalf("create source: %v", err)
+	}
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		got, err := c.GetSourceWithResponse(ctx, source.JSON201.ID)
+		if err == nil && got.JSON200 != nil && got.JSON200.State == client.SourceStateTail {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the source never reached tail mode. Logs:\n%s", p.output())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	var pacing client.Pacing
+	if err := pacing.FromRRulePacing(client.RRulePacing{Mode: client.Rrule, Rrule: "FREQ=DAILY", Timezone: "UTC"}); err != nil {
+		t.Fatal(err)
+	}
+	read, err := c.CreateReadWithResponse(ctx, client.ReadCreate{SourceID: source.JSON201.ID, Name: "r", Pacing: pacing})
+	if err != nil || read.JSON201 == nil {
+		t.Fatalf("create read: %v %s", err, read.Body)
+	}
+	token, err := c.CreateFeedTokenWithResponse(ctx, read.JSON201.ID, client.FeedTokenCreate{Role: client.Viewer, Label: "e2e"})
+	if err != nil || token.JSON201 == nil {
+		t.Fatalf("create token: %v", err)
+	}
+
+	resp, err := http.Get("http://" + p.public + "/f/" + token.JSON201.Token + ".rss")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	parsed, err := gofeed.NewParser().Parse(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed.Items) != 1 || parsed.Items[0].Title != "Harbour Lights - Page 1" {
+		t.Errorf("items = %+v", parsed.Items)
+	}
+	if strings.Contains(p.output(), token.JSON201.Token) {
+		t.Error("a feed token reached the logs")
 	}
 }
 

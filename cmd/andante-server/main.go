@@ -119,6 +119,7 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		Strategies:   registry,
 		Prober:       discovery.NewProber(registry, fetcher, metrics),
 		Reads:        readService,
+		BaseURL:      cfg.BaseURL,
 		Registry:     reg,
 		Logger:       logger,
 		ProbeTimeout: cfg.ProbeTimeout,
@@ -127,7 +128,15 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		return err
 	}
 
-	srv, err := server.New(cfg, server.Deps{Ready: st.Ready, Registry: reg, Logger: logger, API: apiHandler})
+	public := server.NewPublic(server.PublicOptions{
+		Store:       st,
+		Reads:       readService,
+		BaseURL:     cfg.BaseURL,
+		RatePerHour: cfg.FeedRateLimit,
+		Registry:    reg,
+		Logger:      logger,
+	})
+	srv, err := server.New(cfg, server.Deps{Ready: st.Ready, Registry: reg, Logger: logger, API: apiHandler, Public: public})
 	if err != nil {
 		return err
 	}
