@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <id>tag:andante.example,2026:read/4</id>
+  <title>Harbour &amp; Lights — Mornings</title>
+  <subtitle>A paced replay of Harbour &amp; Lights, from https://publisher.example/. This feed is not the publisher&#39;s.</subtitle>
+  <updated>2026-11-05T07:00:00Z</updated>
+  <author>
+    <name>A Person</name>
+  </author>
+  <generator version="v0.0.0-test">andante</generator>
+  <logo>https://publisher.example/logo.png</logo>
+  <link rel="self" href="https://andante.example/f/RAWTOKEN.atom" type="application/atom+xml"></link>
+  <link rel="alternate" href="https://publisher.example/"></link>
+  <entry>
+    <id>tag:andante.example,2026:read/4/entry/11</id>
+    <title>Second &lt;one&gt;</title>
+    <updated>2026-11-05T07:00:00Z</updated>
+    <published>2026-11-05T07:00:00Z</published>
+    <link rel="alternate" href="https://publisher.example/2"></link>
+    <link rel="enclosure" href="https://cdn.publisher.example/2.mp3" type="audio/mpeg" length="12345"></link>
+    <content type="html">&lt;p&gt;Show notes&lt;/p&gt;&lt;p&gt;Originally published 8 March 2009. &lt;a href=&#34;https://publisher.example/2&#34;&gt;Original page&lt;/a&gt;&lt;/p&gt;&lt;p&gt;&lt;a href=&#34;https://andante.example/f/RAWTOKEN/next&#34;&gt;next one now →&lt;/a&gt;&lt;/p&gt;</content>
+  </entry>
+  <entry>
+    <id>tag:andante.example,2026:read/4/entry/10</id>
+    <title>Harbour &amp; Lights #0</title>
+    <updated>2026-11-04T07:00:00Z</updated>
+    <published>2026-11-04T07:00:00Z</published>
+    <link rel="enclosure" href="https://cdn.publisher.example/1.mp3" type="audio/mpeg" length="999"></link>
+    <content type="html">&lt;p&gt;&lt;a href=&#34;https://andante.example/f/RAWTOKEN/next&#34;&gt;next one now →&lt;/a&gt;&lt;/p&gt;</content>
+  </entry>
+</feed>

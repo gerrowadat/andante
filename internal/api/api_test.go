@@ -53,6 +53,7 @@ func newFixture(t *testing.T) *fixture {
 		Strategies:   registry,
 		Prober:       discovery.NewProber(registry, fetcher, discovery.NewMetrics(reg)),
 		Reads:        reads.New(reads.Options{Store: st, DefaultTimezone: "UTC", MinDatedShare: 0.9}),
+		BaseURL:      "https://andante.example/",
 		Registry:     reg,
 		Logger:       slog.New(slog.DiscardHandler),
 		ProbeTimeout: time.Minute,
@@ -738,6 +739,140 @@ func TestReplayWithGapsThroughTheAPI(t *testing.T) {
 	}
 }
 
+func TestFeedTokens(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	s := f.createSource(t, "comic")
+	read := f.createRead(t, s.ID, rrulePacing(t))
+
+	created, err := f.client.CreateFeedTokenWithResponse(ctx, read.ID, client.FeedTokenCreate{Role: client.Viewer, Label: "Alex"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.JSON201 == nil {
+		t.Fatalf("create: %d %s", created.StatusCode(), created.Body)
+	}
+	issued := created.JSON201
+	if issued.Suggested != client.IssuedFeedTokenSuggestedAtom {
+		t.Errorf("suggested = %q", issued.Suggested)
+	}
+	want := "https://andante.example/f/" + issued.Token + ".rss"
+	if issued.Urls.Rss != want {
+		t.Errorf("rss = %q, want %q", issued.Urls.Rss, want)
+	}
+	if !strings.HasSuffix(issued.Urls.Atom, ".atom") || !strings.HasSuffix(issued.Urls.JSON, ".json") {
+		t.Errorf("urls = %+v", issued.Urls)
+	}
+
+	list, err := f.client.ListFeedTokensWithResponse(ctx, read.ID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list.JSON200 == nil || len(list.JSON200.Items) != 1 {
+		t.Fatalf("list: %d %s", list.StatusCode(), list.Body)
+	}
+	if strings.Contains(string(list.Body), issued.Token) || strings.Contains(string(list.Body), `"token"`) {
+		t.Errorf("list exposes a raw token: %s", list.Body)
+	}
+
+	revoked, err := f.client.RevokeFeedTokenWithResponse(ctx, issued.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if revoked.StatusCode() != http.StatusNoContent {
+		t.Fatalf("revoke: %d %s", revoked.StatusCode(), revoked.Body)
+	}
+	list, err = f.client.ListFeedTokensWithResponse(ctx, read.ID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list.JSON200.Items[0].RevokedAt.IsNull() {
+		t.Error("revoked_at is empty")
+	}
+
+	again, err := f.client.RevokeFeedTokenWithResponse(ctx, issued.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.StatusCode() != http.StatusNoContent {
+		t.Errorf("revoking twice: %d", again.StatusCode())
+	}
+	missing, err := f.client.RevokeFeedTokenWithResponse(ctx, 9999)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if missing.StatusCode() != http.StatusNotFound {
+		t.Errorf("revoking a missing token: %d", missing.StatusCode())
+	}
+	noRead, err := f.client.CreateFeedTokenWithResponse(ctx, 9999, client.FeedTokenCreate{Role: client.Viewer, Label: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if noRead.StatusCode() != http.StatusNotFound {
+		t.Errorf("token for a missing read: %d", noRead.StatusCode())
+	}
+	noList, err := f.client.ListFeedTokensWithResponse(ctx, 9999, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if noList.StatusCode() != http.StatusNotFound {
+		t.Errorf("tokens of a missing read: %d", noList.StatusCode())
+	}
+}
+
+func TestSuggestedFormatFollowsTheKind(t *testing.T) {
+	f := newFixture(t)
+	created, err := f.client.CreateSourceWithResponse(t.Context(), client.SourceCreate{
+		Slug: "podcast", Title: "P", HomeURL: "https://p.example/", DefaultKind: client.Episode,
+		Config: crawlConfig(t, "https://p.example/1"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	read := f.createRead(t, created.JSON201.ID, rrulePacing(t))
+	token, err := f.client.CreateFeedTokenWithResponse(t.Context(), read.ID, client.FeedTokenCreate{Role: client.Viewer, Label: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token.JSON201 == nil || token.JSON201.Suggested != client.IssuedFeedTokenSuggestedRss {
+		t.Errorf("suggested: %s", token.Body)
+	}
+}
+
+func TestExportOPML(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	s := f.createSource(t, "comic")
+	first, second := f.createRead(t, s.ID, rrulePacing(t)), f.createRead(t, s.ID, rrulePacing(t))
+
+	resp, body := f.do(t, "POST", "/api/v1/exports/opml", "application/json", `{"issue":"viewer","label":"For Alex"}`, f.token)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d: %s", resp.StatusCode, body)
+	}
+	if got := resp.Header.Get("Content-Type"); got != "text/x-opml" {
+		t.Errorf("Content-Type = %q", got)
+	}
+	if got := strings.Count(body, "<outline"); got != 2 {
+		t.Errorf("outlines = %d, want 2: %s", got, body)
+	}
+	if !strings.Contains(body, `version="2.0"`) || !strings.Contains(body, "https://andante.example/f/") {
+		t.Errorf("body = %s", body)
+	}
+	for _, read := range []client.Read{first, second} {
+		tokens, err := f.client.ListFeedTokensWithResponse(ctx, read.ID, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(tokens.JSON200.Items) != 1 || tokens.JSON200.Items[0].Label != "For Alex" || tokens.JSON200.Items[0].Role != client.Viewer {
+			t.Errorf("tokens of read %d: %s", read.ID, tokens.Body)
+		}
+	}
+
+	if bad, data := f.do(t, "POST", "/api/v1/exports/opml", "application/json", `{"label":"x"}`, f.token); bad.StatusCode != http.StatusBadRequest {
+		t.Errorf("no issue: %d %s", bad.StatusCode, data)
+	}
+}
+
 func TestAPITokens(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -997,6 +1132,8 @@ func loadSpec(t *testing.T) *openapi3.T {
 // spec must answer 501, and a phase that builds one moves it here.
 var implemented = map[string]bool{
 	"getSpec":          true,
+	"createProbe":      true,
+	"requestCrawl":     true,
 	"listReads":        true,
 	"createRead":       true,
 	"getRead":          true,
@@ -1004,8 +1141,10 @@ var implemented = map[string]bool{
 	"deleteRead":       true,
 	"createAdjustment": true,
 	"listSegments":     true,
-	"createProbe":      true,
-	"requestCrawl":     true,
+	"listFeedTokens":   true,
+	"createFeedToken":  true,
+	"revokeFeedToken":  true,
+	"exportOPML":       true,
 	"listSources":      true,
 	"createSource":     true,
 	"getSource":        true,

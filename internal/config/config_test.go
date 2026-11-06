@@ -69,6 +69,7 @@ func TestEnvVars(t *testing.T) {
 		"ANDANTE_ROBOTS_TTL":             "14s",
 		"ANDANTE_PROBE_TIMEOUT":          "15s",
 		"ANDANTE_REPLAY_MIN_DATED_SHARE": "0.5",
+		"ANDANTE_FEED_RATE_LIMIT":        "16",
 	}
 	for k, v := range envs {
 		t.Setenv(k, v)
@@ -85,7 +86,7 @@ func TestEnvVars(t *testing.T) {
 		WriteTimeout: 4 * time.Second, IdleTimeout: 5 * time.Second, ShutdownTimeout: 6 * time.Second,
 		ReadinessTimeout: 7 * time.Second, CrawlLookahead: 8, CrawlMaxBody: 9, CrawlAllowPrivate: true,
 		TailInterval: 10 * time.Second, CrawlPollInterval: 11 * time.Second, CrawlRequestTimeout: 12 * time.Second,
-		CrawlBackoffCap: 13 * time.Second, RobotsTTL: 14 * time.Second, ProbeTimeout: 15 * time.Second, ReplayMinDatedShare: 0.5,
+		CrawlBackoffCap: 13 * time.Second, RobotsTTL: 14 * time.Second, ProbeTimeout: 15 * time.Second, ReplayMinDatedShare: 0.5, FeedRateLimit: 16,
 	}
 	if *got != want {
 		t.Errorf("got %+v\nwant %+v", *got, want)
@@ -127,6 +128,7 @@ func TestRejected(t *testing.T) {
 		{"zero lookahead", []string{db, base, "--crawl-lookahead=0"}, "crawl-lookahead"},
 		{"zero body limit", []string{db, base, "--crawl-max-body=0"}, "crawl-max-body"},
 		{"share above one", []string{db, base, "--replay-min-dated-share=1.5"}, "replay-min-dated-share"},
+		{"zero rate limit", []string{db, base, "--feed-rate-limit=0"}, "feed-rate-limit"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

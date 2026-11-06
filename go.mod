@@ -10,6 +10,7 @@ require (
 	github.com/andybalholm/cascadia v1.3.5
 	github.com/getkin/kin-openapi v0.152.0
 	github.com/jackc/pgx/v5 v5.12.0
+	github.com/mmcdole/gofeed v1.5.0
 	github.com/oapi-codegen/nethttp-middleware v1.3.1
 	github.com/oapi-codegen/nullable v1.2.0
 	github.com/oapi-codegen/runtime v1.8.0
@@ -21,6 +22,7 @@ require (
 	github.com/teambition/rrule-go v1.8.2
 	github.com/temoto/robotstxt v1.1.2
 	golang.org/x/text v0.43.0
+	golang.org/x/time v0.14.0
 	pgregory.net/rapid v1.3.0
 	sigs.k8s.io/yaml v1.6.0
 )
@@ -40,6 +42,7 @@ require (
 	github.com/jackc/puddle/v2 v2.2.3 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/mfridman/interpolate v0.0.2 // indirect
+	github.com/mmcdole/goxpp/v2 v2.0.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/oapi-codegen/oapi-codegen/v2 v2.8.2 // indirect
 	github.com/oasdiff/yaml v0.1.1 // indirect

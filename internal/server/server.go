@@ -31,6 +31,8 @@ type Deps struct {
 	Logger   *slog.Logger
 	// API is the admin API, mounted at api.BasePath. It may be nil.
 	API http.Handler
+	// Public serves the public listener. With none, it answers 404.
+	Public http.Handler
 }
 
 // Server holds andante's two listeners. Admin routes are only ever mounted on
@@ -49,7 +51,11 @@ type listener struct {
 // New binds both listeners. Run serves them.
 func New(cfg config.Config, deps Deps) (*Server, error) {
 	logger := deps.Logger
-	public, err := newListener(cfg, cfg.Listen, http.NewServeMux(), logger)
+	var publicHandler http.Handler = http.NewServeMux()
+	if deps.Public != nil {
+		publicHandler = deps.Public
+	}
+	public, err := newListener(cfg, cfg.Listen, publicHandler, logger)
 	if err != nil {
 		return nil, fmt.Errorf("public listener: %w", err)
 	}

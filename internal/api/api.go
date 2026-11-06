@@ -38,6 +38,7 @@ type Options struct {
 	Strategies *discovery.Registry
 	Prober     *discovery.Prober
 	Reads      *reads.Service
+	BaseURL    string
 	Registry   prometheus.Registerer
 	Logger     *slog.Logger
 	// ProbeTimeout bounds POST /probes. It outlasts --write-timeout on purpose.
@@ -49,6 +50,7 @@ type handler struct {
 	strategies *discovery.Registry
 	prober     *discovery.Prober
 	reads      *reads.Service
+	baseURL    string
 	logger     *slog.Logger
 	specJSON   []byte
 	router     routers.Router
@@ -77,7 +79,7 @@ func New(opts Options) (http.Handler, error) {
 	}
 
 	h := &handler{
-		store: opts.Store, strategies: opts.Strategies, prober: opts.Prober, reads: opts.Reads, logger: opts.Logger,
+		store: opts.Store, strategies: opts.Strategies, prober: opts.Prober, reads: opts.Reads, baseURL: opts.BaseURL, logger: opts.Logger,
 		specJSON: specJSON, router: router, probeTimeout: opts.ProbeTimeout,
 	}
 

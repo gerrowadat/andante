@@ -1,0 +1,31 @@
+{
+  "version": "https://jsonfeed.org/version/1.1",
+  "title": "Harbour \u0026 Lights — Mornings",
+  "home_page_url": "https://publisher.example/",
+  "feed_url": "https://andante.example/f/RAWTOKEN.json",
+  "description": "A paced replay of Harbour \u0026 Lights, from https://publisher.example/. This feed is not the publisher's.",
+  "icon": "https://publisher.example/logo.png",
+  "authors": [
+    {
+      "name": "Harbour \u0026 Lights"
+    }
+  ],
+  "items": [
+    {
+      "id": "tag:andante.example,2026:read/4/entry/11",
+      "url": "https://publisher.example/2",
+      "title": "Second \u003cone\u003e",
+      "content_html": "\u003cp\u003eThe whole article.\u003c/p\u003e\u003cp\u003eOriginally published 8 March 2009. \u003ca href=\"https://publisher.example/2\"\u003eOriginal page\u003c/a\u003e\u003c/p\u003e",
+      "date_published": "2026-11-05T07:00:00Z",
+      "date_modified": "2026-11-05T07:00:00Z"
+    },
+    {
+      "id": "tag:andante.example,2026:read/4/entry/10",
+      "url": "https://publisher.example/1",
+      "title": "Harbour \u0026 Lights #0",
+      "content_html": "\u003cp\u003eOnly a summary\u003c/p\u003e\u003cp\u003e\u003ca href=\"https://publisher.example/1\"\u003eRead on the original site\u003c/a\u003e\u003c/p\u003e\u003cp\u003e\u003ca href=\"https://publisher.example/1\"\u003eOriginal page\u003c/a\u003e\u003c/p\u003e",
+      "date_published": "2026-11-04T07:00:00Z",
+      "date_modified": "2026-11-04T07:00:00Z"
+    }
+  ]
+}

@@ -46,6 +46,7 @@ type Config struct {
 	ProbeTimeout        time.Duration `name:"probe-timeout" env:"ANDANTE_PROBE_TIMEOUT" default:"5m" help:"Time allowed for a probe, which waits out --crawl-interval between pages."`
 
 	ReplayMinDatedShare float64 `name:"replay-min-dated-share" env:"ANDANTE_REPLAY_MIN_DATED_SHARE" default:"0.9" help:"Share of a source's entries that need dates before replay works without a default_gap."`
+	FeedRateLimit       int     `name:"feed-rate-limit" env:"ANDANTE_FEED_RATE_LIMIT" default:"60" help:"Requests a feed token may make per hour."`
 }
 
 // Validate checks what the flags' types cannot. kong calls it after parsing.
@@ -94,6 +95,9 @@ func (c *Config) Validate() error {
 	}
 	if c.CrawlMaxBody <= 0 {
 		errs = append(errs, fmt.Errorf("--crawl-max-body must be positive, got %d", c.CrawlMaxBody))
+	}
+	if c.FeedRateLimit <= 0 {
+		errs = append(errs, fmt.Errorf("--feed-rate-limit must be positive, got %d", c.FeedRateLimit))
 	}
 	if c.ReplayMinDatedShare < 0 || c.ReplayMinDatedShare > 1 {
 		errs = append(errs, fmt.Errorf("--replay-min-dated-share must be from 0 to 1, got %v", c.ReplayMinDatedShare))
