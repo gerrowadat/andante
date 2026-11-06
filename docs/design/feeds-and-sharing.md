@@ -1,24 +1,22 @@
-# Design: Feeds and sharing
+# Design: Feeds and Sharing
 
-Status: shipped in phase 7 of the [build plan](../plan/README.md). How to use it is
-in [`feeds.md`](../feeds.md). The planned `links` decorator is in the
-[proposal](../proposals/feed-links.md).
+Shipped in phase 7 of the [build plan](../plan/README.md). How to use it is in
+[`feeds.md`](../feeds.md). The `links` decorator is still a [proposal](../proposals/feed-links.md).
 
-## Output formats
+## Output Formats
 
 Every read is available as:
 
-- **Atom** (RFC 4287), `GET /f/{token}.atom` — the default for feed readers.
-- **RSS 2.0**, `GET /f/{token}.rss` — what podcast apps expect; includes
+- **Atom** (RFC 4287), `GET /f/{token}.atom`. The default for feed readers.
+- **RSS 2.0**, `GET /f/{token}.rss`. It's what podcast apps expect, so it includes
   `<enclosure>`, the `itunes:` channel and item tags (`itunes:image`,
   `itunes:duration`, `itunes:episode`, `itunes:explicit`, …) and
   Podcasting 2.0 `podcast:` tags (`podcast:transcript`, `podcast:chapters`,
   `podcast:guid`) passed through from the source where present.
-- **JSON Feed 1.1**, `GET /f/{token}.json` — with `attachments` for
-  enclosures.
+- **JSON Feed 1.1**, `GET /f/{token}.json`, with `attachments` for enclosures.
 
-All three are rendered from the same internal item model; formats are a small
-registry so another can be added without touching the rest.
+All three are rendered from the same internal item model. Formats are a small registry, so
+another can be added without touching the rest.
 
 Token creation returns all three URLs, and suggests one based on the source's
 `default_kind` (RSS for episodes, Atom otherwise). The feed contains the most
@@ -29,8 +27,8 @@ Feed-level fields: title `"{source title} — {read name}"`, `id` a stable tag
 URI per read, `updated` = the latest release time, `link rel="self"` to the
 feed URL, `link rel="alternate"` to the source's home page, the source's
 artwork as the feed image/logo, `generator` andante plus version. The
-description says plainly that this is a paced replay and links to the
-original, so a shared feed never passes itself off as the publisher's.
+description says that this is a paced replay and links to the original, so a shared feed never
+passes itself off as the publisher's.
 
 Podcast-specific channel tags (`itunes:author`, `itunes:category`, …) are
 copied from the source feed into `sources.extra` so apps display the show
@@ -41,9 +39,8 @@ reason (see below), with the original guid kept in `extra`.
 
 Item-level fields:
 
-- `id`: `tag:{base-url host},{year}:read/{read_id}/entry/{entry_id}` — stable
-  across schedule changes, unique per read so two reads of one serial do not
-  collide in a reader.
+- `id`: `tag:{base-url host},{year}:read/{read_id}/entry/{entry_id}`. Stable across schedule
+  changes, and unique per read so that two reads of one serial don't collide in a reader.
 - `published` and `updated`: the entry's **release time**, never the original
   publication date (otherwise readers file items in 2009). `updated` does not
   change when the entry's metadata is refreshed; changing it makes readers
@@ -71,39 +68,35 @@ type Decorator interface {
 
 Items pass through an ordered list. v1 ships:
 
-1. `image` (kind `page`) — the image(s), hotlinked, never proxied, with alt
-   text shown underneath as text, not only in the `title` attribute (most
-   readers do not show it).
-2. `content` (kind `article`, and any entry with content) — the stored,
-   sanitised content, else the summary plus a "read on the original site"
-   link.
-3. `enclosure` (kind `episode`, and any entry with enclosures) — enclosures as
-   format-native elements (RSS `<enclosure>`, Atom `rel="enclosure"`, JSON
+1. `image` (kind `page`): the image(s), hotlinked, never proxied, with alt text shown underneath
+   as text as well as in the `title` attribute (most readers don't show that).
+2. `content` (kind `article`, and any entry with content): the stored, sanitised content, else
+   the summary plus a "read on the original site" link.
+3. `enclosure` (kind `episode`, and any entry with enclosures): enclosures as format-native
+   elements (RSS `<enclosure>`, Atom `rel="enclosure"`, JSON
    Feed `attachments`), plus show notes from content or summary. Media URLs
    are passed through unchanged.
-4. `origin` — "Originally published {date}" when known, and a link to the
-   original page.
-5. `controls` — owner role only: a "next one now →" link to
-   `/f/{token}/next`.
+4. `origin`: "Originally published {date}" when known, and a link to the original page.
+5. `controls`, owner role only: a "next one now →" link to `/f/{token}/next`.
 
-Decorators declare which kinds they apply to; the core never switches on kind.
+Decorators declare what they apply to, and the core never switches on kind.
 
-## Tokens and sharing
+## Tokens and Sharing
 
 - A read has one or more **feed tokens**. Role `owner` gets the feed plus
   controls; role `viewer` gets the feed only.
 - Give each person their own viewer token with a label, so one can be revoked
   without breaking the others. `last_seen_at` (updated at most once an hour per
   token to keep writes down) shows who is still reading.
-- A group read is just a read with several viewer tokens. Everyone sees the
+- A group read is a read with several viewer tokens. Everyone sees the
   same entries at the same moment because the feed is computed from the
   segments.
 - Feeds are rendered per role, and the feed URL is the only credential. A viewer
   feed never contains an owner link.
-- Tokens are 32 random bytes, base64url, stored hashed (SHA-256 is fine for
-  high-entropy tokens; there is nothing to brute-force).
+- Tokens are 32 random bytes, base64url, stored hashed. SHA-256 is fine for high-entropy tokens,
+  because there's nothing to brute-force.
 
-## The "next one now" control
+## The "Next One Now" Control
 
 `GET /f/{token}/next` shows a small confirmation page (one button). `POST`
 appends a `skip` segment of 1 and redirects to the newly released entry's
@@ -112,7 +105,7 @@ steps because feed readers and link previewers
 prefetch GET links. Basic CSRF protection: the form carries a short-lived token
 derived from the feed token.
 
-## HTTP behaviour
+## HTTP Behaviour
 
 - `ETag` = hash of (read id, released position, latest segment id, role,
   format). `If-None-Match` gets a 304.
@@ -122,7 +115,7 @@ derived from the feed token.
   release, clamped to [60 s, 1 h].
 - Per-token rate limit (default 60 requests/hour, a flag), 429 with
   `Retry-After` beyond it.
-- Unknown or revoked token → 404.
+- An unknown or revoked token gets a 404.
 
 ## OPML
 
@@ -134,7 +127,7 @@ contain tokens created for it, and it is a `POST` because it creates them. Each
 export adds tokens; revoke an old file's tokens by their label. A `viewer`
 export can be handed to a friend.
 
-## Where this diverged from the proposal
+## Where This Diverged From the Proposal
 
 - **Decorators declare what they apply to with `Applies(entry)`,** not a list of
   kinds, because `content` and `enclosure` also apply to any entry with content or
@@ -159,4 +152,4 @@ export can be handed to a friend.
 - **The CSRF token has no separate secret.** It is an HMAC keyed by the feed token,
   which only someone with the URL has, and is good for 10 to 20 minutes.
 - **Item summaries are escaped, not rendered.** Only `content_html` is trusted as HTML,
-  because it is sanitised when stored. Phase 9 stores it.
+  because it is sanitised when stored.

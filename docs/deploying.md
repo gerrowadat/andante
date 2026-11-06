@@ -1,10 +1,14 @@
 # Deploying
 
-andante is one process and a Postgres database. Postgres must already exist, and any
-recent version will do: CI uses 18. Migrations run on start, under a lock, so there is
-nothing to run by hand.
+andante is one process and a Postgres database. If you just want it running, go to
+[running andante](running.md), which walks through Docker Compose and Nomad. This page is
+the rest of it.
 
-## The two listeners
+Postgres has to exist already, unless you're using the Compose stack, and any recent
+version will do (CI uses 18). Migrations run on start, under a lock, so there's nothing to
+run by hand.
+
+## The Two Listeners
 
 | Listener | Default | Carries | Who should reach it |
 |---|---|---|---|
@@ -12,33 +16,23 @@ nothing to run by hand.
 | Admin | `127.0.0.1:8081` | The API, `/healthz`, `/readyz`, `/metrics` | You and Prometheus, and nobody else |
 
 Keep the admin listener on loopback or a private network. Its API needs a token, but
-`/metrics` and the health endpoints do not.
+`/metrics` and the health endpoints don't.
 
 Set `--base-url` to the address readers will use, because feed links are built from it.
 
 On first start with no `--admin-token`, the server generates a token and logs it once.
-Create others with `andante api-token`. See [configuration](configuration.md) for
-every setting.
+Make others with `andante api-token`. [Configuration](configuration.md) has every setting.
 
 ## Nomad
 
-[`deploy/nomad/andante.nomad.hcl`](../deploy/nomad/andante.nomad.hcl) runs one task from
-the ghcr image, with the public and admin ports and a `/readyz` check. Create the Nomad
-Variable it reads, edit `datacenters`, `ANDANTE_BASE_URL` and the image tag, then run it:
-
-```sh
-nomad var put nomad/jobs/andante database_url='postgres://...' admin_token='...'
-nomad job run deploy/nomad/andante.nomad.hcl
-```
-
-The job sets `gitops_managed = "true"`, so [nomad-gitops](https://github.com/gerrowadat/nomad-gitops)
-watches it for drift. Run one replica. A second would serve feeds but not crawl, because
-the crawl loop takes a Postgres advisory lock.
-
-The job maps both ports onto the host, so limit who can reach the admin port with your
-cluster's firewall or by removing that mapping.
+See [running andante](running.md#with-nomad) for the job itself. One thing to be aware of:
+the job maps both ports onto the host, so limit who can reach the admin port with your
+cluster's firewall, or remove that mapping.
 
 ## Docker
+
+Compose is covered in [running andante](running.md#with-docker-compose). If you already
+have a Postgres, a bare container will do:
 
 ```sh
 docker run -d --name andante \
@@ -49,22 +43,22 @@ docker run -d --name andante \
   ghcr.io/gerrowadat/andante:0.1.0
 ```
 
-Inside a container the admin listener must bind to all interfaces to be published, so
-`-p 127.0.0.1:` is what keeps it private. The image holds the `andante` CLI too.
+Inside a container the admin listener has to bind to all interfaces to be published, so
+`-p 127.0.0.1:` is the bit that keeps it private. The image holds the `andante` CLI too.
 
 ## Binary
 
 Download an archive from the [releases page](https://github.com/gerrowadat/andante/releases),
-and [verify it](releasing.md#verifying-an-artifact), then:
+[verify it](releasing.md#verifying-an-artifact), then:
 
 ```sh
 ANDANTE_DATABASE_URL='postgres://...' ANDANTE_BASE_URL=https://feeds.example.com ./andante-server
 ```
 
-## Exposing only the feeds
+## Exposing Only the Feeds
 
-Publish the public listener and nothing else. Either of these works without opening a
-port on your router.
+Publish the public listener and nothing else. Either of these works without opening a port
+on your router.
 
 With [Tailscale Funnel](https://tailscale.com/kb/1223/funnel):
 
@@ -82,7 +76,7 @@ ingress:
   - service: http_status:404
 ```
 
-Then set `--base-url` to the name you chose. Do not route anything to the admin
+Then set `--base-url` to whatever name you chose. Don't route anything to the admin
 listener. On a tailnet, reach it with `ANDANTE_URL=http://<host>:8081`.
 
 ## Backups
@@ -94,7 +88,14 @@ pg_dump --format=custom --file=andante.dump "$ANDANTE_DATABASE_URL"
 pg_restore --clean --if-exists --dbname="$ANDANTE_DATABASE_URL" andante.dump
 ```
 
-Keep dumps private. Tokens are stored as hashes, but a dump holds your reads and history.
-Restored feeds keep their item IDs and positions, because a read's position is
+Under the Compose stack, go through the database container:
+
+```sh
+docker compose exec -T postgres pg_dump --format=custom -U andante andante > andante.dump
+docker compose exec -T postgres pg_restore --clean --if-exists -U andante -d andante < andante.dump
+```
+
+Keep dumps private. Tokens are stored as hashes, but a dump still holds your reads and
+history. Restored feeds keep their item IDs and positions, because a read's position is
 computed from its stored history and the clock. Entries due while the server was down
 appear with the times they were due. See [reads](reads.md).

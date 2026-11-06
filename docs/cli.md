@@ -1,12 +1,12 @@
 # CLI
 
-`andante` manages a server through its admin API, and does nothing else. Anything it does,
+`andante` manages a server through its admin API, and that's all it does. Anything it can do,
 you can do with the API directly.
 
 ## Install
 
-It is in every [release archive](releasing.md) and in the container image, alongside
-`andante-server`. From source:
+It's in every [release archive](releasing.md) and in the container image, alongside
+`andante-server`. To use the one in the image, see [running andante](running.md). From source:
 
 ```sh
 make build   # out/andante
@@ -19,8 +19,8 @@ make build   # out/andante
 | `--url` | `ANDANTE_URL` | `http://127.0.0.1:8081` |
 | `--token` | `ANDANTE_TOKEN` | none |
 
-Prefer the environment variable for the token, which keeps it out of process listings.
-There is no config file, and nothing is stored on disk.
+Use the environment variable for the token, which keeps it out of process listings. There's no
+config file, and nothing is stored on disk.
 
 ## Output
 
@@ -68,12 +68,11 @@ andante source rm my-comic
 template with `{n}`. The other flags are `--full-text`, `--fill-gaps`, `--max-pages`,
 `--page-param`, `--start-id`, `--max-misses`, `--format` and `--field`. See
 [sources](sources.md). `source edit --start-url` changes the same URL on any strategy.
-See [sources](sources.md).
 
 ## Reads
 
-`read create` takes a source and one pacing. The shorthand becomes an RRULE here, because the API
-only takes RRULEs.
+`read create` takes a source and one pacing. The shorthand gets turned into an RRULE here, because
+the API only takes RRULEs.
 
 ```sh
 andante read create my-comic --daily 07:00 --tz Europe/Dublin
@@ -109,7 +108,7 @@ andante read rm 1
 
 See [reads](reads.md).
 
-## Feed tokens
+## Feed Tokens
 
 ```sh
 andante token add 1 --label Alex              # a viewer token. The URLs are shown only once
@@ -129,7 +128,7 @@ andante import opml feeds.opml
 
 Each export issues a new token per read.
 
-## API tokens
+## API Tokens
 
 ```sh
 andante api-token add --label laptop     # shown only once
@@ -137,7 +136,7 @@ andante api-token list
 andante api-token rm 2
 ```
 
-## The API itself
+## The API Itself
 
 ```sh
 andante api spec > openapi.json

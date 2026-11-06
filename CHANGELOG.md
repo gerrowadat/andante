@@ -33,7 +33,8 @@ CLI, a Nomad job and alert rules.
 - The `andante` CLI, covering the whole API, and `GET /api/v1/version`.
 - An end-to-end suite that drives the real server through a comic, a podcast and an
   OPML import. It uses `--test-clock-offset`, which is for tests only.
-- A Nomad job, Prometheus alert rules, and guides for deploying and monitoring.
+- A Docker Compose stack, a Nomad job, Prometheus alert rules, and guides for running,
+  deploying and monitoring.
 - Feeds as sources: the `feed`, `feed-paged` and `numeric` strategies, RFC 5005
   archived feeds, `article` and `episode` extractors, opt-in full text, and OPML
   import. The CLI's `source probe` and `source add` take `--strategy`.

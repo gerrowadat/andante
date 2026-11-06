@@ -1,11 +1,10 @@
 # Configuration
 
-## How configuration works
+## How Configuration Works
 
-`andante-server` takes flags, each with an `ANDANTE_*` environment variable
-counterpart. A flag wins over its variable. These cover only what the process
-needs to start. Sources, reads, schedules and tokens live in the database and
-change through the API. There are no config files.
+`andante-server` takes flags, each with an `ANDANTE_*` environment variable counterpart, and a
+flag wins over its variable. These only cover what the process needs to start. Sources, reads,
+schedules and tokens live in the database and change through the API. There are no config files.
 
 ## Flags
 
@@ -40,22 +39,20 @@ change through the API. There are no config files.
 | `--replay-min-dated-share` | `ANDANTE_REPLAY_MIN_DATED_SHARE` | `0.9` | Share of a source's entries that need dates before replay works without a `default_gap` |
 | `--feed-rate-limit` | `ANDANTE_FEED_RATE_LIMIT` | `60` | Requests a feed token may make per hour |
 
-Durations use Go's format (`500ms`, `5s`, `2m`) and must be positive. How the crawl
-settings fit together is in [sources](sources.md).
+Durations use Go's format (`500ms`, `5s`, `2m`) and must be positive. How the crawl settings fit
+together is in [sources](sources.md).
 
-## The bootstrap API token
+## The Bootstrap API Token
 
-If `api_tokens` is empty when the server starts, it stores `--admin-token`, or
-generates a token and logs it once at WARN. Save a generated token when it
-appears: only its SHA-256 hash is stored, so it cannot be shown again. Once any
-token exists, `--admin-token` is ignored.
+If `api_tokens` is empty when the server starts, it stores `--admin-token`, or generates a token
+and logs it once at WARN. Save a generated token when it appears. Only its SHA-256 hash is
+stored, so it can't be shown again. Once any token exists, `--admin-token` is ignored.
 
 ## Startup
 
-The server migrates the database before it starts listening. Migrations are
-embedded in the binary and run under a Postgres advisory lock, so several servers
-starting together apply them once. `/readyz` returns 200 once the database is
-reachable with every migration applied.
+The server migrates the database before it starts listening. Migrations are embedded in the
+binary and run under a Postgres advisory lock, so several servers starting together apply them
+once. `/readyz` returns 200 once the database is reachable with every migration applied.
 
-The admin listener carries `/healthz`, `/readyz` and `/metrics`. Do not expose it
-publicly. The public listener serves only feeds, so it can be.
+The admin listener carries `/healthz`, `/readyz` and `/metrics`. Don't expose it publicly. The
+public listener only serves feeds, so that one can be.

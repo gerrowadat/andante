@@ -1,8 +1,8 @@
 # Admin API
 
-The admin API is the only way to change andante's state. It listens on the admin
-listener under `/api/v1`. The contract is [`api/openapi.yaml`](../api/openapi.yaml),
-which a running server also serves at `GET /api/v1/openapi.json` without a token.
+The admin API is the only way to change andante's state. It's on the admin listener under
+`/api/v1`. The contract is [`api/openapi.yaml`](../api/openapi.yaml), which a running server
+also serves at `GET /api/v1/openapi.json` without a token.
 
 ## Authentication
 
@@ -12,13 +12,12 @@ Send an API token as a bearer token (RFC 6750):
 curl -H "Authorization: Bearer $ANDANTE_TOKEN" http://127.0.0.1:8081/api/v1/sources
 ```
 
-The first token comes from [bootstrap](configuration.md#the-bootstrap-api-token).
-Make more with `POST /api-tokens`; the raw token appears only in that response.
-Revoking one already revoked succeeds. The last active token cannot be revoked,
-because nothing could then use the API to make another.
+The first token comes from [bootstrap](configuration.md#the-bootstrap-api-token). Make more with
+`POST /api-tokens`. The raw token only appears in that response. Revoking one that's already
+revoked succeeds. The last active token can't be revoked, because then nothing could use the
+API to make another.
 
-API tokens are separate from feed tokens, which appear in feed URLs and grant
-nothing here.
+API tokens are separate from feed tokens, which appear in feed URLs and get you nothing here.
 
 ## Errors
 
@@ -34,33 +33,32 @@ Every error is RFC 9457 problem details, as `application/problem+json`:
 }
 ```
 
-`errors`, when present, lists what was wrong with the request field by field, with
-a JSON pointer into the body. A `type` of `about:blank` means the status says it
-all, as for a 404. The other types are below.
+`errors`, when it's there, lists what was wrong with the request field by field, with a JSON
+pointer into the body. A `type` of `about:blank` means the status says it all, as for a 404. The
+other types are below.
 
-### Invalid request
+### Invalid Request
 
-Status 400. The request does not match the API description: a malformed body, an
-unknown field, a missing field or a bad cursor.
+Status 400. The request doesn't match the API description: a malformed body, an unknown field,
+a missing field or a bad cursor.
 
-### Invalid config
+### Invalid Config
 
-Status 422. The request is well formed, but its source config cannot be used: a
-strategy that is not built yet, or a value the strategy rejects. Configs are
-checked when they are written, so a bad one fails here and not at crawl time.
+Status 422. The request is well formed, but its source config can't be used, because the
+strategy rejects a value. Configs are checked when they're written, so a bad one fails here and
+not at crawl time.
 
-### Invalid read
+### Invalid Read
 
-Status 422. A read or an adjustment cannot be used: a bad RRULE or time zone, a rule
-more frequent than hourly, a gap measured in months, replay on a source with too few
-dated entries and no `default_gap`, or a source that does not exist.
+Status 422. A read or an adjustment can't be used: a bad RRULE or time zone, a rule more
+frequent than hourly, a gap measured in months, replay on a source with too few dated entries
+and no `default_gap`, or a source that doesn't exist.
 
-### Probe failed
+### Probe Failed
 
-Status 422. A probe could not get an answer from the site: robots.txt disallows the
-page, the site is refusing or failing, the links form a cycle, or the URL is a
-private address. `detail` says which. A probe that gets some pages and then stops
-returns them, with a warning instead.
+Status 422. A probe couldn't get an answer from the site: robots.txt disallows the page, the
+site is refusing or failing, the links form a cycle, or the URL is a private address. `detail`
+says which. A probe that gets some pages and then stops returns those, with a warning instead.
 
 ### Conflict
 
@@ -71,54 +69,52 @@ skip with nothing to skip to, pausing a paused read, or resuming one that is not
 
 ### Unauthorized
 
-Status 401, with a `WWW-Authenticate` header. The bearer token is missing, unknown
-or revoked.
+Status 401, with a `WWW-Authenticate` header. The bearer token is missing, unknown or revoked.
 
 ## Importing OPML
 
-`POST /imports/opml` takes an OPML file of at most 5 MiB and creates a paused `feed`
-source for each outline. It answers 200 with a result per outline: `created`,
-`duplicate` or `invalid`. A body that is not OPML gets a 400.
+`POST /imports/opml` takes an OPML file of at most 5 MiB and creates a paused `feed` source for
+each outline. It answers 200 with a result per outline: `created`, `duplicate` or `invalid`. A
+body that isn't OPML gets a 400.
 
-## Probes and crawls
+## Probes and Crawls
 
-`POST /probes` runs discovery without saving anything. It keeps to the same limits
-as crawling, so it waits `--crawl-interval` between pages and a probe of 10 pages
-takes about 45 seconds by default. Set your client's timeout to match. The server
-allows it `--probe-timeout`, whatever `--write-timeout` says.
+`POST /probes` runs discovery without saving anything. It keeps to the same limits as crawling,
+so it waits `--crawl-interval` between pages, and a probe of 10 pages takes about 45 seconds by
+default. Set your client's timeout to match. The server allows it `--probe-timeout`, whatever
+`--write-timeout` says.
 
-`POST /sources/{id}/crawls` marks a source due, and the crawl happens in the
-background. See [sources](sources.md).
+`POST /sources/{id}/crawls` marks a source due, and the crawl happens in the background. See
+[sources](sources.md).
 
 ## Updating
 
-`PATCH` takes a JSON merge patch (RFC 7396), as `application/merge-patch+json`.
-Fields you leave out stay as they are, and `null` clears a field that can be
-cleared. A source's `slug` cannot change. Its `state` can only be set to `paused`
-or `indexing`, because the crawler sets `tail` and `error`.
+`PATCH` takes a JSON merge patch (RFC 7396), as `application/merge-patch+json`. Fields you leave
+out stay as they are, and `null` clears a field that can be cleared. A source's `slug` can't
+change. Its `state` can only be set to `paused` or `indexing`, because the crawler owns `tail`
+and `error`.
 
 ## Pagination
 
-Lists take `limit` (1 to 100, default 50) and `cursor`. A response carries a page
-of `items` and a `next` link, which is `null` on the last page. When there is
-another page the same link is in a `Link` header (RFC 8288). Cursors are opaque, so
-follow the link instead of building one.
+Lists take `limit` (1 to 100, default 50) and `cursor`. A response carries a page of `items` and
+a `next` link, which is `null` on the last page. If there's another page, the same link is in a
+`Link` header (RFC 8288). Cursors are opaque, so follow the link instead of building one.
 
 ## Requests
 
-Every response has an `X-Request-ID` header. It echoes the one you sent if that was
-usable, and the server logs carry it for failed requests.
+Every response has an `X-Request-ID` header. It echoes the one you sent if that was usable, and
+the server logs carry it for failed requests.
 
 ## Versioning
 
-Within `/api/v1` changes are additive only. New endpoints and new optional fields
-can appear, so ignore fields you do not know. Anything that would break a client
-needs `/api/v2`. CI runs `oasdiff breaking` on every pull request to hold this.
+Within `/api/v1` changes are additive only. New endpoints and new optional fields can appear, so
+ignore fields you don't know. Anything that would break a client needs `/api/v2`. CI runs
+`oasdiff breaking` on every pull request to hold this.
 
-## Generating a client
+## Generating a Client
 
-Go programs can import `github.com/gerrowadat/andante/pkg/client`, which the CLI
-uses too. For another language, feed the spec to any OpenAPI 3.1 generator:
+Go programs can import `github.com/gerrowadat/andante/pkg/client`, which is what the CLI uses
+too. For anything else, feed the spec to any OpenAPI 3.1 generator:
 
 ```sh
 curl -o openapi.json http://127.0.0.1:8081/api/v1/openapi.json

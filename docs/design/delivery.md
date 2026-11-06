@@ -1,27 +1,24 @@
-# Design: Delivery — CI, security, releases
+# Design: Delivery
 
-Status: shipped in phases 0–2 of the [build plan](../plan/README.md), except what
-"Not built yet" lists. How to cut a release is in
-[`releasing.md`](../releasing.md). Follows the patterns in
-gerrowadat/nomad-gitops and gerrowadat/disgracelands, adjusted for a service with
-a Postgres dependency and an API contract.
+CI, security scanning and releases. Shipped in phases 0 to 2 of the
+[build plan](../plan/README.md), with the end-to-end suite in phase 10. How to cut a release is in
+[`releasing.md`](../releasing.md). This follows the patterns in gerrowadat/nomad-gitops and
+gerrowadat/disgracelands, adjusted for a service with a Postgres dependency and an API contract.
 
 ## Principles
 
-- **Fast CI on every commit answers one question:** does this compile, pass
-  its tests, meet the lint bar, and keep its contracts (generated code, API
-  compatibility, license headers)?
-- **Releases run the slow, thorough suite, and publish nothing until it
-  passes** — including the tag. `scripts/release.sh` dispatches the release
-  workflow with the version and commit; the workflow tags only after the suite
-  passes. Failed releases leave no trace.
-- **Security scanning results land in the GitHub Security tab** as SARIF, not
-  in workflow logs nobody reads.
+- **Fast CI on every commit** checks that it compiles, passes its tests, meets the lint bar, and
+  keeps its contracts (generated code, API compatibility, licence headers).
+- **Releases run the slow suite, and publish nothing until it passes,** including the tag.
+  `scripts/release.sh` dispatches the release workflow with the version and commit, and the
+  workflow only tags after the suite passes. A failed release leaves no trace.
+- **Security scanning results go to the GitHub Security tab** as SARIF. Nobody reads workflow
+  logs.
 - **The image is the artifact that ships**, so it is the one gated on CVEs.
 
 ## Workflows
 
-### `ci.yml` — every push to main, every PR
+### `ci.yml`: Every Push to Main, Every PR
 
 Concurrency group per ref, `cancel-in-progress` only for pull requests.
 Top-level `permissions: contents: read`.
@@ -33,30 +30,31 @@ Top-level `permissions: contents: read`.
 | `contracts` | `make generate` then `git diff --exit-code` (oapi-codegen and sqlc output current); Spectral lint of `api/openapi.yaml`; on PRs, `oasdiff breaking` against the base branch's spec, failing on errors |
 | `licenses` | `scripts/license-check.sh`: every tracked source file has its SPDX header |
 | `workflows` | zizmor (GitHub Actions static analysis) over `.github/workflows/` |
+| `deploy` | `make deploy-check` with a pinned, checksummed Nomad: the Compose stack, the Nomad job, and `promtool` over the alerts and their tests |
 
-### `security.yml` — push to main, PRs, weekly, manual
+### `security.yml`: Push to Main, PRs, Weekly, Manual
 
 | Job | What |
 |---|---|
-| `govulncheck` | Call-graph-aware Go vulnerability scan → SARIF; fails on reachable findings |
-| `trivy-fs` | Module scan → SARIF, report only |
-| `trivy-image` | Build the image, scan it → SARIF, **fail on fixable CRITICAL/HIGH** |
+| `govulncheck` | Call-graph-aware Go vulnerability scan to SARIF. Fails on reachable findings |
+| `trivy-fs` | Module scan to SARIF, report only |
+| `trivy-image` | Build the image, scan it to SARIF, **fail on fixable CRITICAL/HIGH** |
 | `gitleaks` | Secret scan of history |
 
-### `codeql.yml` — push to main, PRs, weekly
+### `codeql.yml`: Push to Main, PRs, Weekly
 
 Standard Go CodeQL analysis.
 
-### `dependency-review.yml` — PRs
+### `dependency-review.yml`: PRs
 
-`actions/dependency-review-action`: fail PRs that add dependencies with known
-vulnerabilities or incompatible licenses.
+`actions/dependency-review-action` fails PRs that add dependencies with known vulnerabilities or
+incompatible licences.
 
-### `scorecard.yml` — weekly, push to main
+### `scorecard.yml`: Weekly, Push to Main
 
-OpenSSF Scorecard → SARIF, and publish results (badge in README).
+OpenSSF Scorecard to SARIF, and it publishes results (the badge in the README).
 
-### `release.yml` — dispatched by `scripts/release.sh`, a tag push, or a PR
+### `release.yml`: Dispatched by `scripts/release.sh`, a Tag Push, or a PR
 
 On a PR only `full-suite` runs, without version and commit validation.
 
@@ -71,12 +69,12 @@ On a PR only `full-suite` runs, without version and commit validation.
    from `CHANGELOG.md`, attach archives and `SHA256SUMS`, generate an SPDX
    SBOM, and attest build provenance (`actions/attest-build-provenance`).
 3. `image` (needs full-suite, publish): build multi-arch
-   (linux/amd64, linux/arm64) with Go cross-compilation — no QEMU — scan with
+   (linux/amd64, linux/arm64) with Go cross-compilation and no QEMU, scan with
    Trivy before pushing, push to `ghcr.io/gerrowadat/andante` with
    `{{version}}` and `{{major}}.{{minor}}` tags, BuildKit SBOM and provenance
    attestations, OCI labels.
 
-## Supply chain details
+## Supply Chain Details
 
 - **Actions pinned by commit SHA** with the version in a trailing comment;
   Dependabot updates them. (A deliberate step beyond nomad-gitops and
@@ -85,33 +83,33 @@ On a PR only `full-suite` runs, without version and commit validation.
   checkout unless the job pushes.
 - No `pull_request_target`. Workflow inputs reach shell steps through `env:`,
   never `${{ }}` interpolation.
-- Dependabot: `gomod`, `github-actions`, and `docker` once the Dockerfile lands
-  in phase 1; weekly, grouped minor/patch updates.
+- Dependabot covers `gomod`, `github-actions` and `docker`, weekly, with grouped minor and patch
+  updates.
 - `go.mod` uses a `toolchain` line; `setup-go` reads `go-version-file: go.mod`.
 
-## Container image
+## Container Image
 
 Multi-stage: `golang` builder on `$BUILDPLATFORM` cross-compiling with
 `CGO_ENABLED=0`; runtime `gcr.io/distroless/static-debian12:nonroot` (as
 disgracelands does), with time zone data embedded via `import _ "time/tzdata"`.
-Both binaries in the image; `andante-server` is the entrypoint. OCI labels. No shell
-means no `apk upgrade` step to keep CVE-clean.
+Both binaries are in the image, and `andante-server` is the entrypoint. OCI labels. No shell means
+no `apk upgrade` step to keep it clean of CVEs.
 
-## Repository settings (manual, once)
+## Repository Settings
 
-Recorded in `docs/plan/README.md` as a checklist: ruleset on `main` requiring
-`ci` checks and PRs; secret scanning and push protection; private
-vulnerability reporting; Dependabot alerts and security updates.
+These are a manual, one-time checklist in `docs/plan/README.md`: a ruleset on `main` requiring `ci`
+checks and PRs, secret scanning and push protection, private vulnerability reporting, and
+Dependabot alerts and security updates. Merged branches are deleted automatically.
 
-## Local development
+## Local Development
 
 - `make help` (sectioned, disgracelands style), `make build`, `make test`,
   `make test-db` (starts Postgres in Docker and runs the integration tests),
   `make generate`, `make lint`, `make run` (server against local Postgres with
   dev flags).
-- `compose.yaml` for Postgres only.
+- `compose.yaml` is Postgres only. The full stack is in `deploy/compose/`.
 
-## Where this diverged from the proposal
+## Where This Diverged From the Proposal
 
 - **Actions were pinned by SHA in phase 0, not phase 1.** zizmor reports tag pins
   as high-severity findings, so the `workflows` job could not pass otherwise.
@@ -135,19 +133,13 @@ vulnerability reporting; Dependabot alerts and security updates.
   cannot reach what ships. zizmor flags it otherwise.
 - **`full-suite` repeats `ci.yml`'s steps** instead of calling it as a reusable
   workflow, so that one job produces and checks the release files.
-- **`act` was removed.** `make ci` was not run after phase 3, and the `contracts`
-  job needs Docker-in-Docker there. CI runs on GitHub for every PR, so a second way
-  to run it was not worth keeping up.
+- **`act` was removed.** `make ci` wasn't run after phase 3, and the `contracts` job needs
+  Docker-in-Docker there. CI runs on GitHub for every PR, which is enough.
 - **Spectral runs from its Docker image**, pinned by digest, so `make spec-lint`
   and CI run the same thing and neither needs Node.
 - **`oasdiff` skips when the base has no spec**, which only happened on the PR
   that added it.
 - **`main` is protected by a repository ruleset**, not classic branch protection.
-  It requires a PR and the checks `test`, `lint`, `licenses` and `workflows`, and
-  blocks force pushes and deletion, with no bypass actors and no required
-  approvals.
-
-## Not built yet
-
-- **Phase 10:** the end-to-end suite described above. Today `test/e2e` holds one
-  test, that `andante-server --version` reports the stamped version.
+  It requires a PR, up-to-date branches and the checks `test`, `lint`, `licenses`, `workflows` and
+  `contracts`, and blocks force pushes and deletion, with no bypass actors and no required
+  approvals. Approvals can't work on a solo repository.
