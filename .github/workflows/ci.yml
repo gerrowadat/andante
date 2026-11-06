@@ -31,7 +31,7 @@ jobs:
           POSTGRES_PASSWORD: andante
           POSTGRES_DB: andante
         ports:
-          - 55432:5432 # Not 5432, which a developer running act may have in use.
+          - 55432:5432
         options: >-
           --health-cmd "pg_isready -U andante -d andante"
           --health-interval 5s

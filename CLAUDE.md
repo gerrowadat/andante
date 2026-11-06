@@ -98,7 +98,7 @@ deploy/nomad/             example Nomad job
 deploy/prometheus/        example alert rules
 test/e2e/                 end-to-end suite (build tag e2e)
 testdata/sites/           fixture sites and feeds (comics, podcasts, blogs) for discovery tests
-scripts/                  release.sh, build-dist.sh, license-check.sh, act-guard.sh, spec-diff.sh
+scripts/                  release.sh, build-dist.sh, license-check.sh, spec-diff.sh
 ```
 
 ## Key conventions

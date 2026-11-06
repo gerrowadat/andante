@@ -59,6 +59,11 @@ jobs:
           sarif_file: govulncheck.sarif
           category: govulncheck
 
+      # SARIF output always exits 0, so this run is the one that can fail. Text
+      # mode exits non-zero only for vulnerabilities andante actually calls.
+      - name: Fail on reachable vulnerabilities
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+
   trivy-fs:
     runs-on: ubuntu-latest
     permissions:
