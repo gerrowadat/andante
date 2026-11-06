@@ -1,8 +1,8 @@
 # Design: API contract
 
 Why the admin API's contract is the way it is. How to use it is in
-[`api.md`](../api.md). The rest of the API's design is in the
-[architecture proposal](../proposals/architecture.md) until it graduates.
+[`api.md`](../api.md). The rest of the API's design is in
+[architecture](architecture.md).
 
 ## OpenAPI 3.1
 

@@ -1,0 +1,49 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 Dave O'Connor
+#
+# Example alert rules. See docs/monitoring.md.
+groups:
+  - name: andante
+    rules:
+      - alert: AndanteSourceInError
+        expr: andante_source_state{state="error"} == 1
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Source {{ $labels.source }} has stopped on an error"
+          description: "See last_error on the source, fix the cause, then run andante source edit --resume."
+
+      - alert: AndanteCrawlFailures
+        expr: |
+          sum by (source) (rate(andante_crawl_requests_total{status!~"2..|3.."}[30m]))
+            / sum by (source) (rate(andante_crawl_requests_total[30m])) > 0.5
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Most requests for {{ $labels.source }} are failing"
+          description: "More than half of this source's requests have failed for 30 minutes."
+
+      - alert: AndanteFeedErrors
+        expr: |
+          sum(rate(andante_feed_requests_total{status=~"5.."}[5m]))
+            / sum(rate(andante_feed_requests_total[5m])) > 0.05
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "andante is failing feed requests"
+          description: "More than 5% of feed requests have returned a 5xx for 10 minutes."
+
+      # Fires if every source is paused, too. Silence it if that is on purpose.
+      - alert: AndanteNoSuccessfulCrawl
+        expr: |
+          sum(increase(andante_crawl_requests_total{status=~"2..|304"}[24h])) == 0
+            or absent_over_time(andante_crawl_requests_total{status=~"2..|304"}[24h])
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "andante has not crawled anything successfully in 24 hours"
+          description: "Tail checks should succeed every few hours. Check the crawl loop and the server's network."

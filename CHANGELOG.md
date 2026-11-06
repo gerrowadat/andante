@@ -6,6 +6,13 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-06
+
+The first release. andante indexes a serial's archive and replays it as a paced feed.
+It reads archives from feeds, RFC 5005 archived feeds, paged feeds, numbered URLs and
+by crawling, and it serves Atom, RSS 2.0 and JSON Feed. It comes with an admin API, a
+CLI, a Nomad job and alert rules.
+
 ### Added
 
 - Repository bootstrap: Go module, stub `andante-server` and `andante` binaries
@@ -24,6 +31,9 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Feeds: Atom, RSS 2.0 and JSON Feed through per-person tokens, a "next one now"
   control for owners, and OPML export.
 - The `andante` CLI, covering the whole API, and `GET /api/v1/version`.
+- An end-to-end suite that drives the real server through a comic, a podcast and an
+  OPML import. It uses `--test-clock-offset`, which is for tests only.
+- A Nomad job, Prometheus alert rules, and guides for deploying and monitoring.
 - Feeds as sources: the `feed`, `feed-paged` and `numeric` strategies, RFC 5005
   archived feeds, `article` and `episode` extractors, opt-in full text, and OPML
   import. The CLI's `source probe` and `source add` take `--strategy`.

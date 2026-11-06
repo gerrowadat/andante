@@ -14,6 +14,7 @@ GOLANGCI_VERSION ?= v2.15.0
 SQLC_VERSION     ?= v1.31.1
 OASDIFF_VERSION  ?= v1.35.0
 SPECTRAL_IMAGE   ?= stoplight/spectral:6.17.0@sha256:c8ffae6ee561b70e80402f1ea669e8b37c74fee48a3dbe2147b71359ed987239
+PROMETHEUS_IMAGE ?= prom/prometheus:v3.7.3@sha256:49214755b6153f90a597adcbff0252cc61069f8ab69ce8411285cd4a560e8038
 
 # The compose.yaml database, for make run and make test-db.
 DEV_DATABASE_URL ?= postgres://andante:andante@localhost:5432/andante?sslmode=disable
@@ -114,6 +115,16 @@ docker: ## Build the image for this machine's platform as andante:dev
 docker-scan: docker ## Scan andante:dev as CI does (needs Trivy)
 	@command -v trivy >/dev/null 2>&1 || { echo "trivy is not installed"; exit 1; }
 	trivy image --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 andante:dev
+
+##@ Deployment
+
+# NOMAD_ADDR points nowhere on purpose. Nomad then validates the job locally, and
+# this never reaches whichever cluster the shell is set up for.
+.PHONY: deploy-check
+deploy-check: ## Check the Nomad job and the Prometheus alerts (needs nomad and Docker)
+	NOMAD_ADDR=http://127.0.0.1:1 NOMAD_TOKEN= nomad job validate deploy/nomad/andante.nomad.hcl
+	docker run --rm -v "$(CURDIR)/deploy/prometheus:/work:ro" -w /work --entrypoint promtool $(PROMETHEUS_IMAGE) check rules alerts.yml
+	docker run --rm -v "$(CURDIR)/deploy/prometheus:/work:ro" -w /work --entrypoint promtool $(PROMETHEUS_IMAGE) test rules alerts_test.yml
 
 ##@ Housekeeping
 

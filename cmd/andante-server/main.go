@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/alecthomas/kong"
 	"github.com/gerrowadat/andante/internal/api"
@@ -97,6 +98,11 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		logger.Warn("no API tokens existed, so one was generated; it is shown only this once", "token", generated)
 	}
 
+	if cfg.TestClockOffset != 0 {
+		logger.Warn("running ahead of the real clock, which is only for tests", "offset", cfg.TestClockOffset)
+	}
+	now := func() time.Time { return time.Now().Add(cfg.TestClockOffset) }
+
 	reg := prometheus.NewRegistry()
 	registry := discovery.NewRegistry(strategies.All()...)
 	metrics := discovery.NewMetrics(reg)
@@ -113,6 +119,7 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		Store:           st,
 		DefaultTimezone: cfg.DefaultTimezone,
 		MinDatedShare:   cfg.ReplayMinDatedShare,
+		Now:             now,
 	})
 	apiHandler, err := api.New(api.Options{
 		Store:        st,
@@ -135,6 +142,7 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		RatePerHour: cfg.FeedRateLimit,
 		Registry:    reg,
 		Logger:      logger,
+		Now:         now,
 	})
 	srv, err := server.New(cfg, server.Deps{Ready: st.Ready, Registry: reg, Logger: logger, API: apiHandler, Public: public})
 	if err != nil {

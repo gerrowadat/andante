@@ -29,6 +29,7 @@ change through the API. There are no config files.
 | `--readiness-timeout` | `ANDANTE_READINESS_TIMEOUT` | `2s` | Time allowed for the `/readyz` check |
 | `--crawl-lookahead` | `ANDANTE_CRAWL_LOOKAHEAD` | `50` | How far ahead of the furthest read to keep a source indexed |
 | `--crawl-max-body` | `ANDANTE_CRAWL_MAX_BODY` | `5242880` | Largest response body to accept, in bytes |
+| `--test-clock-offset` | `ANDANTE_TEST_CLOCK_OFFSET` | `0` | For the end-to-end suite only: runs reads and feeds this far ahead of the real clock. Never set it in production, because a release cannot be taken back |
 | `--crawl-allow-private` | `ANDANTE_CRAWL_ALLOW_PRIVATE` | off | Allow crawling private and loopback addresses, for tests and trusted networks |
 | `--tail-interval` | `ANDANTE_TAIL_INTERVAL` | `6h` | How often to check a source at its live end |
 | `--crawl-poll-interval` | `ANDANTE_CRAWL_POLL_INTERVAL` | `30s` | How often the crawl loop looks for work when idle |
