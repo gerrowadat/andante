@@ -23,7 +23,10 @@ import (
 	"github.com/oapi-codegen/runtime/types"
 )
 
-const stateIndexing = "indexing"
+const (
+	stateIndexing     = "indexing"
+	defaultProbeLimit = 10
+)
 
 func source(s db.Source) (client.Source, error) {
 	var config client.SourceConfig
@@ -189,6 +192,78 @@ func (h *handler) DeleteSource(ctx context.Context, r gen.DeleteSourceRequestObj
 		return nil, err
 	}
 	return gen.DeleteSource204Response{}, nil
+}
+
+func (h *handler) RequestCrawl(ctx context.Context, r gen.RequestCrawlRequestObject) (gen.RequestCrawlResponseObject, error) {
+	err := h.store.RequestCrawl(ctx, r.ID)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, notFound("source", r.ID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return gen.RequestCrawl202Response{}, nil
+}
+
+func (h *handler) CreateProbe(ctx context.Context, r gen.CreateProbeRequestObject) (gen.CreateProbeResponseObject, error) {
+	strategy, config, err := h.checkConfig(r.Body.Config)
+	if err != nil {
+		return nil, err
+	}
+	req := discovery.ProbeRequest{Strategy: strategy, Config: config, Kind: string(client.Page), Limit: defaultProbeLimit}
+	if r.Body.DefaultKind != nil {
+		req.Kind = string(*r.Body.DefaultKind)
+	}
+	if r.Body.Limit != nil {
+		req.Limit = int(*r.Body.Limit)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, h.probeTimeout)
+	defer cancel()
+	found, err := h.prober.Probe(ctx, req)
+	if err != nil {
+		return nil, newProblem(http.StatusUnprocessableEntity, problemProbeFailed, err.Error())
+	}
+
+	now := time.Now().UTC()
+	entries := make([]client.Entry, 0, len(found.Entries))
+	for i, e := range found.Entries {
+		entries = append(entries, client.Entry{
+			Seq:          int32(i), //nolint:gosec // A probe is 25 entries at most.
+			Kind:         client.Kind(e.Kind),
+			URL:          optionalValue(e.URL),
+			GUID:         nullable.NewNullNullable[string](),
+			Title:        optionalValue(e.Title),
+			Summary:      optionalValue(e.Summary),
+			ContentHTML:  nullable.NewNullNullable[string](),
+			Images:       nonNil(e.Images),
+			AltText:      optionalValue(e.AltText),
+			Enclosures:   []client.Enclosure{},
+			Duration:     nullable.NewNullNullable[types.Duration](),
+			Extra:        map[string]any{},
+			OriginalDate: nullableValue(e.Date),
+			DiscoveredAt: now,
+		})
+	}
+	return gen.CreateProbe200JSONResponse{
+		Entries:    entries,
+		Warnings:   nonNil(found.Warnings),
+		DatedShare: found.DatedShare,
+	}, nil
+}
+
+func optionalValue(s string) nullable.Nullable[string] {
+	if s == "" {
+		return nullable.NewNullNullable[string]()
+	}
+	return nullable.NewNullableWithValue(s)
+}
+
+func nonNil[T any](items []T) []T {
+	if items == nil {
+		return []T{}
+	}
+	return items
 }
 
 func entry(e db.Entry) (client.Entry, error) {

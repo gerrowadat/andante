@@ -20,6 +20,10 @@ func (r *statusRecorder) WriteHeader(status int) {
 	r.ResponseWriter.WriteHeader(status)
 }
 
+// Unwrap lets http.ResponseController reach the connection, which is how a slow
+// handler extends its write deadline.
+func (r *statusRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
+
 // logRequests logs each request by its route pattern, never its path: public
 // paths contain feed tokens, which must not reach the logs.
 func logRequests(logger *slog.Logger, next http.Handler) http.Handler {

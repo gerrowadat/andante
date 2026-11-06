@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 
 	"github.com/alecthomas/kong"
@@ -96,11 +97,24 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	}
 
 	reg := prometheus.NewRegistry()
+	registry := discovery.NewRegistry(strategies.Crawl{})
+	metrics := discovery.NewMetrics(reg)
+	fetcher := discovery.NewFetcher(discovery.FetcherOptions{
+		UserAgent:    cfg.CrawlerUserAgent(),
+		Interval:     cfg.CrawlInterval,
+		Timeout:      cfg.CrawlRequestTimeout,
+		BackoffCap:   cfg.CrawlBackoffCap,
+		RobotsTTL:    cfg.RobotsTTL,
+		MaxBody:      cfg.CrawlMaxBody,
+		AllowPrivate: cfg.CrawlAllowPrivate,
+	})
 	apiHandler, err := api.New(api.Options{
-		Store:      st,
-		Strategies: discovery.NewRegistry(strategies.Crawl{}),
-		Registry:   reg,
-		Logger:     logger,
+		Store:        st,
+		Strategies:   registry,
+		Prober:       discovery.NewProber(registry, fetcher, metrics),
+		Registry:     reg,
+		Logger:       logger,
+		ProbeTimeout: cfg.ProbeTimeout,
 	})
 	if err != nil {
 		return err
@@ -110,7 +124,32 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	return srv.Run(ctx)
+
+	loop := discovery.NewLoop(discovery.LoopOptions{
+		Store:        st,
+		Registry:     registry,
+		Fetcher:      fetcher,
+		Metrics:      metrics,
+		Logger:       logger,
+		Lookahead:    cfg.CrawlLookahead,
+		TailInterval: cfg.TailInterval,
+		PollInterval: cfg.CrawlPollInterval,
+	})
+
+	// The two stop together. A crawl never holds up serving, and serving ending
+	// for any reason ends the crawl.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		if err := loop.Run(ctx); err != nil {
+			logger.Error("crawl loop stopped", "error", err)
+		}
+	})
+	err = srv.Run(ctx)
+	cancel()
+	wg.Wait()
+	return err
 }
 
 func newLogger(format, level string, w io.Writer) *slog.Logger {

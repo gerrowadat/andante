@@ -49,6 +49,13 @@ Status 422. The request is well formed, but its source config cannot be used: a
 strategy that is not built yet, or a value the strategy rejects. Configs are
 checked when they are written, so a bad one fails here and not at crawl time.
 
+### Probe failed
+
+Status 422. A probe could not get an answer from the site: robots.txt disallows the
+page, the site is refusing or failing, the links form a cycle, or the URL is a
+private address. `detail` says which. A probe that gets some pages and then stops
+returns them, with a warning instead.
+
 ### Conflict
 
 Status 409. The request clashes with what exists: a slug already in use, deleting
@@ -63,6 +70,16 @@ or revoked.
 
 Status 501. The endpoint is in the contract but not built yet. The contract covers
 all of v1 ahead of the code, so clients can be generated from it now.
+
+## Probes and crawls
+
+`POST /probes` runs discovery without saving anything. It keeps to the same limits
+as crawling, so it waits `--crawl-interval` between pages and a probe of 10 pages
+takes about 45 seconds by default. Set your client's timeout to match. The server
+allows it `--probe-timeout`, whatever `--write-timeout` says.
+
+`POST /sources/{id}/crawls` marks a source due, and the crawl happens in the
+background. See [sources](sources.md).
 
 ## Updating
 

@@ -11,14 +11,6 @@ import (
 
 // These operations are in the contract, and return 501 until their phase.
 
-func (h *handler) RequestCrawl(context.Context, gen.RequestCrawlRequestObject) (gen.RequestCrawlResponseObject, error) {
-	return nil, notImplemented()
-}
-
-func (h *handler) CreateProbe(context.Context, gen.CreateProbeRequestObject) (gen.CreateProbeResponseObject, error) {
-	return nil, notImplemented()
-}
-
 func (h *handler) ListReads(context.Context, gen.ListReadsRequestObject) (gen.ListReadsResponseObject, error) {
 	return nil, notImplemented()
 }

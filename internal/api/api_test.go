@@ -14,10 +14,12 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	specfile "github.com/gerrowadat/andante/api"
 	"github.com/gerrowadat/andante/internal/api"
 	"github.com/gerrowadat/andante/internal/discovery"
+	"github.com/gerrowadat/andante/internal/discovery/sitetest"
 	"github.com/gerrowadat/andante/internal/discovery/strategies"
 	"github.com/gerrowadat/andante/internal/store"
 	"github.com/gerrowadat/andante/internal/store/storetest"
@@ -43,11 +45,15 @@ func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	st := storetest.New(t)
 	reg := prometheus.NewRegistry()
+	registry := discovery.NewRegistry(strategies.Crawl{})
+	fetcher := discovery.NewFetcher(sitetest.FetcherOptions(sitetest.NewClock()))
 	handler, err := api.New(api.Options{
-		Store:      st,
-		Strategies: discovery.NewRegistry(strategies.Crawl{}),
-		Registry:   reg,
-		Logger:     slog.New(slog.DiscardHandler),
+		Store:        st,
+		Strategies:   registry,
+		Prober:       discovery.NewProber(registry, fetcher, discovery.NewMetrics(reg)),
+		Registry:     reg,
+		Logger:       slog.New(slog.DiscardHandler),
+		ProbeTimeout: time.Minute,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -354,6 +360,97 @@ func TestEntries(t *testing.T) {
 	}
 }
 
+func TestProbe(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	site := sitetest.Serve(t, "wordpress-webcomic")
+
+	limit := int32(3)
+	resp, err := f.client.CreateProbeWithResponse(ctx, client.ProbeRequest{
+		Config: crawlConfig(t, site.URL+"/comic/1/"),
+		Limit:  &limit,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.JSON200 == nil {
+		t.Fatalf("probe: %d %s", resp.StatusCode(), resp.Body)
+	}
+	if got := len(resp.JSON200.Entries); got != 3 {
+		t.Errorf("entries = %d, want 3", got)
+	}
+	if first := resp.JSON200.Entries[0]; first.Title.MustGet() != "Strip 1" || first.Seq != 0 || len(first.Images) != 1 {
+		t.Errorf("first entry = %+v", first)
+	}
+	if resp.JSON200.DatedShare != 1 {
+		t.Errorf("dated share = %v", resp.JSON200.DatedShare)
+	}
+
+	sources, err := f.client.ListSourcesWithResponse(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sources.JSON200 == nil || len(sources.JSON200.Items) != 0 {
+		t.Errorf("a probe saved something: %s", sources.Body)
+	}
+}
+
+func TestProbeFailures(t *testing.T) {
+	f := newFixture(t)
+	site := sitetest.Serve(t, "robots-disallow")
+	var feed client.SourceConfig
+	if err := feed.FromFeedConfig(client.FeedConfig{Strategy: client.Feed, FeedURL: site.URL}); err != nil {
+		t.Fatal(err)
+	}
+	for name, tt := range map[string]struct {
+		config client.SourceConfig
+		suffix string
+	}{
+		"site refuses":           {crawlConfig(t, site.URL+"/comics/1.html"), "#probe-failed"},
+		"strategy not built yet": {feed, "#invalid-config"},
+		"bad config":             {crawlConfig(t, "ftp://comic.example/"), "#invalid-config"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			resp, err := f.client.CreateProbeWithResponse(t.Context(), client.ProbeRequest{Config: tt.config})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if resp.StatusCode() != http.StatusUnprocessableEntity || resp.ApplicationProblemJSONDefault == nil {
+				t.Fatalf("got %d %s", resp.StatusCode(), resp.Body)
+			}
+			if got := resp.ApplicationProblemJSONDefault.Type; !strings.HasSuffix(got, tt.suffix) {
+				t.Errorf("type = %q, want %s", got, tt.suffix)
+			}
+		})
+	}
+}
+
+func TestRequestCrawl(t *testing.T) {
+	f := newFixture(t)
+	s := f.createSource(t, "due")
+	resp, err := f.client.RequestCrawlWithResponse(t.Context(), s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode() != http.StatusAccepted {
+		t.Fatalf("crawl: %d %s", resp.StatusCode(), resp.Body)
+	}
+	got, err := f.client.GetSourceWithResponse(t.Context(), s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.JSON200 == nil || got.JSON200.DueAt.IsNull() {
+		t.Errorf("due_at not set: %s", got.Body)
+	}
+	missing, err := f.client.RequestCrawlWithResponse(t.Context(), 9999)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if missing.StatusCode() != http.StatusNotFound {
+		t.Errorf("crawl of a missing source: %d", missing.StatusCode())
+	}
+}
+
 func TestAPITokens(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -613,6 +710,8 @@ func loadSpec(t *testing.T) *openapi3.T {
 // spec must answer 501, and a phase that builds one moves it here.
 var implemented = map[string]bool{
 	"getSpec":        true,
+	"createProbe":    true,
+	"requestCrawl":   true,
 	"listSources":    true,
 	"createSource":   true,
 	"getSource":      true,

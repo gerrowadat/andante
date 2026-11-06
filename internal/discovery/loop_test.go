@@ -1,0 +1,487 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 Dave O'Connor
+
+package discovery_test
+
+import (
+	"context"
+	"encoding/json"
+	"log/slog"
+	"net/http"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/gerrowadat/andante/internal/discovery"
+	"github.com/gerrowadat/andante/internal/discovery/sitetest"
+	"github.com/gerrowadat/andante/internal/discovery/strategies"
+	"github.com/gerrowadat/andante/internal/store"
+	"github.com/gerrowadat/andante/internal/store/db"
+	"github.com/gerrowadat/andante/internal/store/storetest"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
+)
+
+type harness struct {
+	store    *store.Store
+	clock    *sitetest.Clock
+	loop     *discovery.Loop
+	metrics  *prometheus.Registry
+	furthest atomic.Int32
+	hasRead  atomic.Bool
+}
+
+func newHarness(t *testing.T, lookahead int) *harness {
+	t.Helper()
+	h := &harness{store: storetest.New(t), clock: sitetest.NewClock(), metrics: prometheus.NewRegistry()}
+	h.loop = discovery.NewLoop(discovery.LoopOptions{
+		Store:        h.store,
+		Registry:     discovery.NewRegistry(strategies.Crawl{}),
+		Fetcher:      discovery.NewFetcher(sitetest.FetcherOptions(h.clock)),
+		Metrics:      discovery.NewMetrics(h.metrics),
+		Logger:       slog.New(slog.DiscardHandler),
+		Clock:        h.clock,
+		Lookahead:    lookahead,
+		TailInterval: 6 * time.Hour,
+		PollInterval: time.Minute,
+		Furthest: func(context.Context, int64) (int32, bool, error) {
+			return h.furthest.Load(), h.hasRead.Load(), nil
+		},
+	})
+	return h
+}
+
+func (h *harness) source(t *testing.T, startURL string) db.Source {
+	t.Helper()
+	config, err := json.Marshal(map[string]string{"strategy": "crawl", "start_url": startURL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := h.store.CreateSource(t.Context(), db.InsertSourceParams{
+		Slug: "s", Title: "t", HomeUrl: startURL, DefaultKind: "page", Strategy: "crawl", Config: config, State: "indexing",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func (h *harness) tick(t *testing.T) bool {
+	t.Helper()
+	worked, err := h.loop.Tick(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return worked
+}
+
+// settle ticks until nothing is left to do.
+func (h *harness) settle(t *testing.T) {
+	t.Helper()
+	for range 20 {
+		if !h.tick(t) {
+			return
+		}
+	}
+	t.Fatal("the loop never settled")
+}
+
+func (h *harness) get(t *testing.T, id int64) db.Source {
+	t.Helper()
+	s, err := h.store.GetSource(t.Context(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func (h *harness) entries(t *testing.T, id int64) []db.Entry {
+	t.Helper()
+	entries, err := h.store.ListEntries(t.Context(), id, -1, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return entries
+}
+
+func TestIndexesToTheLiveEndThenTails(t *testing.T) {
+	h := newHarness(t, 50)
+	site := sitetest.Serve(t, "comiccontrol")
+	s := h.source(t, site.URL+"/1.html")
+
+	h.settle(t)
+
+	entries := h.entries(t, s.ID)
+	if len(entries) != 5 {
+		t.Fatalf("entries = %d, want 5", len(entries))
+	}
+	for i, e := range entries {
+		if int(e.Seq) != i {
+			t.Errorf("entry %d has seq %d", i, e.Seq)
+		}
+		if e.Kind != "page" || e.Title == nil || len(e.Images) != 1 {
+			t.Errorf("entry %d: %+v", i, e)
+		}
+	}
+	got := h.get(t, s.ID)
+	if got.State != "tail" {
+		t.Errorf("state = %q, want tail", got.State)
+	}
+	if got.DueAt == nil || got.DueAt.Sub(h.clock.Now()) > 6*time.Hour || got.DueAt.Sub(h.clock.Now()) < 5*time.Hour {
+		t.Errorf("due_at = %v, want about 6h on", got.DueAt)
+	}
+	if got.LastCrawledAt == nil || got.Cursor == nil {
+		t.Errorf("crawled at %v, cursor %s", got.LastCrawledAt, got.Cursor)
+	}
+}
+
+func TestSourceWithNoReadsIndexesOnlyTheLookahead(t *testing.T) {
+	h := newHarness(t, 2)
+	site := sitetest.Serve(t, "comiccontrol")
+	s := h.source(t, site.URL+"/1.html")
+
+	h.settle(t)
+
+	if got := len(h.entries(t, s.ID)); got != 2 {
+		t.Errorf("entries = %d, want the lookahead of 2", got)
+	}
+	if got := site.Count("/3.html"); got != 0 {
+		t.Errorf("/3.html requested %d times past the lookahead", got)
+	}
+	if got := h.get(t, s.ID).State; got != "indexing" {
+		t.Errorf("state = %q", got)
+	}
+}
+
+func TestLookaheadFollowsReadsAndTailPicksUpANewPage(t *testing.T) {
+	h := newHarness(t, 2)
+	site := sitetest.Serve(t, "wordpress-webcomic")
+	s := h.source(t, site.URL+"/comic/1/")
+	h.settle(t)
+	if got := len(h.entries(t, s.ID)); got != 2 {
+		t.Fatalf("entries = %d, want 2", got)
+	}
+
+	// A read at seq 0 keeps the index 2 ahead of it, so up to seq 2.
+	h.hasRead.Store(true)
+	h.settle(t)
+	if got := len(h.entries(t, s.ID)); got != 3 {
+		t.Fatalf("entries = %d, want 3", got)
+	}
+
+	// The read moves on, so the index does.
+	h.furthest.Store(2)
+	h.settle(t)
+	if got := len(h.entries(t, s.ID)); got != 5 {
+		t.Fatalf("entries = %d, want 5", got)
+	}
+	if got := h.get(t, s.ID).State; got != "tail" {
+		t.Fatalf("state = %q, want tail at the live end", got)
+	}
+
+	// Nothing happens before the tail interval.
+	if h.tick(t) {
+		t.Error("a tail source was crawled before it was due")
+	}
+
+	// The site grows while the source is quiet.
+	site.SetPage("/comic/5/", `<title>Strip 5</title><div class="webcomic-image"><img src="/5.png"></div><a rel="next" href="/comic/6/">n</a>`)
+	site.SetPage("/comic/6/", `<title>Strip 6</title><div class="webcomic-image"><img src="/6.png"></div>`)
+	h.clock.Advance(6*time.Hour + time.Minute)
+	h.settle(t)
+
+	entries := h.entries(t, s.ID)
+	if len(entries) != 6 {
+		t.Fatalf("entries = %d, want 6", len(entries))
+	}
+	if last := entries[5]; last.Seq != 5 || *last.Title != "Strip 6" {
+		t.Errorf("new entry = seq %d, %v", last.Seq, last.Title)
+	}
+	if got := h.get(t, s.ID).State; got != "tail" {
+		t.Errorf("state = %q, want back in tail", got)
+	}
+}
+
+func TestSeqNeverChangesWhenAPageIsUpdated(t *testing.T) {
+	h := newHarness(t, 50)
+	site := sitetest.Serve(t, "wordpress-webcomic")
+	s := h.source(t, site.URL+"/comic/1/")
+	h.settle(t)
+	before := h.entries(t, s.ID)
+
+	site.SetPage("/comic/5/", `<meta property="og:title" content="Strip 5, recoloured"><div class="webcomic-image"><img src="/new.png"></div>`)
+	h.clock.Advance(7 * time.Hour)
+	h.settle(t)
+
+	after := h.entries(t, s.ID)
+	if len(after) != len(before) {
+		t.Fatalf("entries = %d, want %d", len(after), len(before))
+	}
+	last := after[4]
+	if last.Seq != before[4].Seq || last.ID != before[4].ID {
+		t.Errorf("the entry moved: seq %d, id %d", last.Seq, last.ID)
+	}
+	if *last.Title != "Strip 5, recoloured" {
+		t.Errorf("title = %q, want it updated in place", *last.Title)
+	}
+}
+
+func TestRequestedCrawlForcesAPass(t *testing.T) {
+	h := newHarness(t, 1)
+	site := sitetest.Serve(t, "comiccontrol")
+	s := h.source(t, site.URL+"/1.html")
+	h.settle(t)
+	if got := len(h.entries(t, s.ID)); got != 1 {
+		t.Fatalf("entries = %d, want 1", got)
+	}
+
+	if err := h.store.RequestCrawl(t.Context(), s.ID); err != nil {
+		t.Fatal(err)
+	}
+	h.clock.Advance(time.Second)
+	if !h.tick(t) {
+		t.Fatal("a requested crawl did nothing")
+	}
+	if got := len(h.entries(t, s.ID)); got != 5 {
+		t.Errorf("entries = %d, want the rest of the batch", got)
+	}
+}
+
+func TestStoppingConditions(t *testing.T) {
+	t.Run("robots disallow", func(t *testing.T) {
+		h := newHarness(t, 50)
+		site := sitetest.Serve(t, "robots-disallow")
+		s := h.source(t, site.URL+"/comics/1.html")
+		h.settle(t)
+		got := h.get(t, s.ID)
+		if got.State != "error" || got.LastError == nil {
+			t.Fatalf("state = %q, error %v", got.State, got.LastError)
+		}
+		if site.Count("/comics/1.html") != 0 {
+			t.Error("a disallowed page was requested")
+		}
+	})
+	t.Run("cycle", func(t *testing.T) {
+		h := newHarness(t, 50)
+		site := sitetest.Serve(t, "cycle")
+		s := h.source(t, site.URL+"/1.html")
+		h.settle(t)
+		got := h.get(t, s.ID)
+		if got.State != "error" || got.LastError == nil {
+			t.Fatalf("state = %q, error %v", got.State, got.LastError)
+		}
+	})
+	t.Run("cycle across batches", func(t *testing.T) {
+		h := newHarness(t, 2)
+		site := sitetest.Serve(t, "cycle")
+		s := h.source(t, site.URL+"/1.html")
+		h.settle(t)
+		if got := h.get(t, s.ID).State; got != "indexing" {
+			t.Fatalf("state = %q", got)
+		}
+		h.hasRead.Store(true)
+		h.furthest.Store(50)
+		h.settle(t)
+		got := h.get(t, s.ID)
+		if got.State != "error" {
+			t.Fatalf("state = %q, want error", got.State)
+		}
+		if got := len(h.entries(t, s.ID)); got > 3 {
+			t.Errorf("entries = %d: the cycle was indexed", got)
+		}
+	})
+	t.Run("backoff waits and recovers", func(t *testing.T) {
+		h := newHarness(t, 50)
+		site := sitetest.Serve(t, "rate-limited")
+		var limited atomic.Bool
+		limited.Store(true)
+		site.Intercept(func(w http.ResponseWriter, r *http.Request) bool {
+			if r.URL.Path != "/1.html" || !limited.Load() {
+				return false
+			}
+			w.Header().Set("Retry-After", "3600")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return true
+		})
+		s := h.source(t, site.URL+"/1.html")
+
+		h.settle(t)
+		got := h.get(t, s.ID)
+		if got.State != "indexing" {
+			t.Errorf("state = %q, want it unchanged", got.State)
+		}
+		if got.DueAt == nil || got.DueAt.Before(h.clock.Now().Add(50*time.Minute)) {
+			t.Errorf("due_at = %v, want about an hour on", got.DueAt)
+		}
+		if got.LastError == nil {
+			t.Error("last_error is empty")
+		}
+
+		limited.Store(false)
+		h.clock.Advance(61 * time.Minute)
+		h.settle(t)
+		got = h.get(t, s.ID)
+		if got.State != "tail" || got.LastError != nil {
+			t.Errorf("after recovery: state %q, error %v", got.State, got.LastError)
+		}
+		if n := len(h.entries(t, s.ID)); n != 5 {
+			t.Errorf("entries = %d", n)
+		}
+	})
+	t.Run("unknown strategy", func(t *testing.T) {
+		h := newHarness(t, 50)
+		s, err := h.store.CreateSource(t.Context(), db.InsertSourceParams{
+			Slug: "f", Title: "t", HomeUrl: "https://feed.example/", DefaultKind: "episode",
+			Strategy: "feed", Config: []byte(`{}`), State: "indexing",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		h.settle(t)
+		if got := h.get(t, s.ID).State; got != "error" {
+			t.Errorf("state = %q", got)
+		}
+	})
+}
+
+func TestPausedSourcesAreLeftAlone(t *testing.T) {
+	h := newHarness(t, 50)
+	site := sitetest.Serve(t, "comiccontrol")
+	s := h.source(t, site.URL+"/1.html")
+	_, err := h.store.UpdateSource(t.Context(), s.ID, func(p *db.UpdateSourceParams) error {
+		p.State = "paused"
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h.tick(t) {
+		t.Error("a paused source was crawled")
+	}
+	if got := len(site.Requests()); got != 0 {
+		t.Errorf("site got %d requests", got)
+	}
+}
+
+func TestSourcePausedDuringACrawlStaysPaused(t *testing.T) {
+	h := newHarness(t, 50)
+	site := sitetest.Serve(t, "comiccontrol")
+	s := h.source(t, site.URL+"/1.html")
+	site.Intercept(func(_ http.ResponseWriter, r *http.Request) bool {
+		if r.URL.Path == "/2.html" {
+			_, err := h.store.UpdateSource(context.Background(), s.ID, func(p *db.UpdateSourceParams) error {
+				p.State = "paused"
+				return nil
+			})
+			if err != nil {
+				t.Error(err)
+			}
+		}
+		return false
+	})
+	h.tick(t)
+	if got := h.get(t, s.ID).State; got != "paused" {
+		t.Errorf("state = %q, want paused", got)
+	}
+}
+
+func TestCrawlLogAndConditionalRequests(t *testing.T) {
+	h := newHarness(t, 50)
+	site := sitetest.Serve(t, "wordpress-webcomic")
+	s := h.source(t, site.URL+"/comic/1/")
+	h.settle(t)
+
+	var logged int
+	err := h.store.Pool().QueryRow(t.Context(), "SELECT count(*) FROM crawl_log WHERE source_id = $1 AND status = 200", s.ID).Scan(&logged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if logged != 5 {
+		t.Errorf("crawl_log rows = %d, want 5", logged)
+	}
+
+	var conditional atomic.Int32
+	site.Intercept(func(_ http.ResponseWriter, r *http.Request) bool {
+		if r.Header.Get("If-Modified-Since") != "" {
+			conditional.Add(1)
+		}
+		return false
+	})
+	h.clock.Advance(7 * time.Hour)
+	h.settle(t)
+	if conditional.Load() == 0 {
+		t.Error("the tail check was not conditional")
+	}
+}
+
+func TestMetrics(t *testing.T) {
+	h := newHarness(t, 50)
+	site := sitetest.Serve(t, "comiccontrol")
+	h.source(t, site.URL+"/1.html")
+	h.settle(t)
+
+	for _, name := range []string{
+		"andante_crawl_requests_total", "andante_crawl_duration_seconds",
+		"andante_entries_discovered_total", "andante_source_state",
+	} {
+		count, err := testutil.GatherAndCount(h.metrics, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if count == 0 {
+			t.Errorf("%s has no series", name)
+		}
+	}
+	families, err := h.metrics.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range families {
+		if f.GetName() != "andante_entries_discovered_total" {
+			continue
+		}
+		if got := f.GetMetric()[0].GetCounter().GetValue(); got != 5 {
+			t.Errorf("entries discovered = %v, want 5", got)
+		}
+	}
+}
+
+func TestOnlyOneReplicaCrawls(t *testing.T) {
+	st := storetest.New(t)
+	first, err := st.TryCrawlLock(t.Context())
+	if err != nil || first == nil {
+		t.Fatalf("first lock: %v, %v", first, err)
+	}
+	second, err := st.TryCrawlLock(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second != nil {
+		t.Error("a second replica took the lock")
+	}
+	if !first.Held(t.Context()) {
+		t.Error("Held = false for a live lock")
+	}
+	first.Release(t.Context())
+	third, err := st.TryCrawlLock(t.Context())
+	if err != nil || third == nil {
+		t.Fatalf("lock after release: %v, %v", third, err)
+	}
+	third.Release(t.Context())
+}
+
+func TestRunStopsWithItsContext(t *testing.T) {
+	h := newHarness(t, 50)
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- h.loop.Run(ctx) }()
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("Run = %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not stop")
+	}
+}

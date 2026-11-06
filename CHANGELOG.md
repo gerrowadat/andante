@@ -18,3 +18,5 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   serves `/healthz`, `/readyz` and `/metrics` on the admin listener.
 - The v1 admin API contract, with a generated server and client. API tokens and
   sources work; other endpoints return 501 until they are built.
+- Discovery: the `crawl` strategy, page extraction, a polite fetcher, probes, and
+  a crawl loop that indexes lazily and watches the live end.

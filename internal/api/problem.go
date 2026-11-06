@@ -19,6 +19,7 @@ const (
 	problemInvalidRequest = problemBase + "invalid-request"
 	problemInvalidConfig  = problemBase + "invalid-config"
 	problemConflict       = problemBase + "conflict"
+	problemProbeFailed    = problemBase + "probe-failed"
 	problemUnauthorized   = problemBase + "unauthorized"
 	problemBlank          = "about:blank"
 )

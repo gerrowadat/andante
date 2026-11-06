@@ -24,6 +24,10 @@ Dependabot opens PRs weekly for Go modules, GitHub Actions and Docker base
 images. Actions are pinned by commit SHA, and base images by digest, with the
 version alongside.
 
+The license allow-list is deliberately permissive: anything that does not restrict
+how andante is distributed is fine, so it holds permissive licenses and leaves out
+copyleft ones. Add a license there if a dependency needs it.
+
 ## Where results appear
 
 SARIF from govulncheck, Trivy, CodeQL and Scorecard appears under
