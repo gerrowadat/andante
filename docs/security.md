@@ -10,7 +10,7 @@ not a public issue. See [`SECURITY.md`](../SECURITY.md).
 
 | What | Tool | Workflow | Runs on | Fails the run? |
 |---|---|---|---|---|
-| Go code reachable from andante | govulncheck | `security.yml` | Pushes to main, PRs, weekly, manual | No, reports only |
+| Go code reachable from andante | govulncheck | `security.yml` | Pushes to main, PRs, weekly, manual | Yes, on vulnerabilities andante calls |
 | Go modules | Trivy | `security.yml` | Same | No, reports only |
 | Container image | Trivy | `security.yml` | Same | Yes, on fixable CRITICAL or HIGH |
 | Git history | gitleaks | `security.yml` | Same | Yes, on any finding |

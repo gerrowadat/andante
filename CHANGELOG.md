@@ -30,5 +30,7 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Security
 
+- The `security` workflow fails when `govulncheck` finds a vulnerability in code
+  andante calls.
 - Update `golang.org/x/net` to v0.62.0, for GO-2026-6860 and GO-2026-6866 in its
   HTML parser, which reads pages from other people's sites.

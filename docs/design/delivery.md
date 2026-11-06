@@ -18,8 +18,6 @@ a Postgres dependency and an API contract.
 - **Security scanning results land in the GitHub Security tab** as SARIF, not
   in workflow logs nobody reads.
 - **The image is the artifact that ships**, so it is the one gated on CVEs.
-- **Workflows can be run locally with `act`** (`make ci`), the same as
-  disgracelands, with `.actrc` and `act-guard.sh` for worktrees.
 
 ## Workflows
 
@@ -40,7 +38,7 @@ Top-level `permissions: contents: read`.
 
 | Job | What |
 |---|---|
-| `govulncheck` | Call-graph-aware Go vulnerability scan → SARIF |
+| `govulncheck` | Call-graph-aware Go vulnerability scan → SARIF; fails on reachable findings |
 | `trivy-fs` | Module scan → SARIF, report only |
 | `trivy-image` | Build the image, scan it → SARIF, **fail on fixable CRITICAL/HIGH** |
 | `gitleaks` | Secret scan of history |
@@ -109,8 +107,8 @@ vulnerability reporting; Dependabot alerts and security updates.
 
 - `make help` (sectioned, disgracelands style), `make build`, `make test`,
   `make test-db` (starts Postgres in Docker and runs the integration tests),
-  `make generate`, `make lint`, `make ci` (act), `make run` (server against
-  local Postgres with dev flags).
+  `make generate`, `make lint`, `make run` (server against local Postgres with
+  dev flags).
 - `compose.yaml` for Postgres only.
 
 ## Where this diverged from the proposal
@@ -137,8 +135,9 @@ vulnerability reporting; Dependabot alerts and security updates.
   cannot reach what ships. zizmor flags it otherwise.
 - **`full-suite` repeats `ci.yml`'s steps** instead of calling it as a reusable
   workflow, so that one job produces and checks the release files.
-- **`make ci-clean` is a `--clean` mode of `act-guard.sh`**, not a separate
-  `act-clean.sh`.
+- **`act` was removed.** `make ci` was not run after phase 3, and the `contracts`
+  job needs Docker-in-Docker there. CI runs on GitHub for every PR, so a second way
+  to run it was not worth keeping up.
 - **Spectral runs from its Docker image**, pinned by digest, so `make spec-lint`
   and CI run the same thing and neither needs Node.
 - **`oasdiff` skips when the base has no spec**, which only happened on the PR

@@ -8,10 +8,9 @@ testdata/rapid/
 *.out
 coverage.txt
 
-# act reads secrets and variables from these by default
+# Local secrets and variables
 .secrets
 .vars
-.env.act
 
 # Editor and OS files
 *~

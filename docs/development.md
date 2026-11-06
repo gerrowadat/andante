@@ -4,9 +4,7 @@
 
 - Go 1.21 or later, which fetches the toolchain named in `go.mod`.
 - GCC or another C compiler, for the race detector in `make test`.
-- Docker, for `make ci`, `make docker`, and Postgres through `compose.yaml`.
-- [act](https://github.com/nektos/act), for `make ci`. If it is not installed,
-  `make ci` fetches the pinned version with `go run`.
+- Docker, for `make docker`, `make spec-lint`, and Postgres through `compose.yaml`.
 - [Trivy](https://trivy.dev), for `make docker-scan` only.
 
 `make lint` uses `golangci-lint` from your `PATH` if there is one, and otherwise
@@ -31,8 +29,6 @@ fetches the version CI pins. A different local version can disagree with CI.
 | `make generate` | Regenerates `internal/store/db/` with sqlc, and `internal/api/gen/` and `pkg/client/` with oapi-codegen. Needs a C compiler. CI fails if the result differs |
 | `make docker` | Builds the image for this machine's platform as `andante:dev` |
 | `make docker-scan` | Builds that image and scans it as CI does; needs Trivy |
-| `make ci` | Runs the `ci` workflow under act |
-| `make ci-clean` | Removes this repository's act containers, volumes and cache |
 | `make clean` | Removes `out/` |
 | `make version` | Prints the version `make build` stamps |
 
@@ -57,19 +53,10 @@ handler. Within `/api/v1` changes are additive only, and `make spec-diff` shows
 whether yours is. When an operation stops returning 501, add it to `implemented`
 in `internal/api/api_test.go`.
 
-## Running CI locally
+## CI
 
-`make ci` runs `.github/workflows/ci.yml` in containers, using the image and
-options in `.actrc`. The first run pulls an image of about 1GB. Later runs reuse
-the containers, so run `make ci-clean` if a run reports on files you no longer
-have.
-
-`scripts/act-guard.sh` runs first. act names containers after the workflow and
-job alone, so without the guard a run could use a container built for another
-worktree.
-
-The workflow also runs on GitHub for every pull request. `make ci` is most useful
-when you are changing a workflow.
+CI runs on GitHub for every pull request, and there is no local equivalent. The `make`
+targets above cover the same checks one at a time.
 
 ## License headers
 
