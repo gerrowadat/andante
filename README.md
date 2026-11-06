@@ -13,7 +13,7 @@ You get a normal feed (Atom, RSS 2.0 or JSON Feed) for whatever feed reader or p
 you already use. Feeds are shareable, so a few friends can read or listen along
 together. Going back to the start is a new read.
 
-> Status: alpha. The features are built and tested, and v0.1.0 is the first release. Expect
+> Status: alpha. The features are built and tested, and v0.0.1 is the first release. Expect
 > rough edges.
 
 ## Quick Start

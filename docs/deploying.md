@@ -40,7 +40,7 @@ docker run -d --name andante \
   -e ANDANTE_DATABASE_URL='postgres://...' \
   -e ANDANTE_BASE_URL=https://feeds.example.com \
   -e ANDANTE_ADMIN_LISTEN=:8081 \
-  ghcr.io/gerrowadat/andante:0.1.0
+  ghcr.io/gerrowadat/andante:0.0.1
 ```
 
 Inside a container the admin listener has to bind to all interfaces to be published, so
