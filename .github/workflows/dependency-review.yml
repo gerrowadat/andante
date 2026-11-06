@@ -23,20 +23,22 @@ jobs:
       - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: high
+          # Permissive licenses only. LicenseRef-scancode-google-patent-license-golang
+          # is how the scanner reports the Go project's PATENTS file, which every
+          # golang.org/x package ships. It grants users more, not less.
           allow-licenses: >-
             0BSD,
             Apache-2.0,
+            BlueOak-1.0.0,
             BSD-2-Clause,
             BSD-3-Clause,
+            BSL-1.0,
+            CC-BY-4.0,
             CC0-1.0,
             ISC,
+            LicenseRef-scancode-google-patent-license-golang,
             MIT,
             MPL-2.0,
+            Unicode-3.0,
             Unlicense,
             Zlib
-          # Detected as BSD-3-Clause plus a Google patent license. That is the Go
-          # project's PATENTS file, which grants users more, not less. Exempted
-          # by package, so that the term stays a failure anywhere else.
-          allow-dependencies-licenses: >-
-            pkg:golang/golang.org/x/sys,
-            pkg:golang/golang.org/x/tools
