@@ -23,7 +23,7 @@ services:
       retries: 10
 
   andante:
-    image: ${ANDANTE_IMAGE:-ghcr.io/gerrowadat/andante:0.1.0}
+    image: ${ANDANTE_IMAGE:-ghcr.io/gerrowadat/andante:0.0.1}
     restart: unless-stopped
     depends_on:
       postgres:

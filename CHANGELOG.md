@@ -6,7 +6,7 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.1.0] - 2026-11-06
+## [0.0.1] - 2026-11-06
 
 The first release. andante indexes a serial's archive and replays it as a paced feed.
 It reads archives from feeds, RFC 5005 archived feeds, paged feeds, numbered URLs and

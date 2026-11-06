@@ -6,13 +6,11 @@ have a cluster.
 
 [Deploying](deploying.md) covers exposing ports, tunnels and backups.
 
-Two caveats:
+The Compose stack below has been run for real, end to end. The Nomad job validates, but it hasn't
+been run on an actual cluster yet. Patches welcome.
 
-- The image at `ghcr.io/gerrowadat/andante` appears when v0.1.0 is released. Until then,
-  run `make docker` and set `ANDANTE_IMAGE=andante:dev` (Compose) or point the job's
-  `image` at your own registry (Nomad).
-- The Compose stack below has been run for real, end to end. The Nomad job validates, but
-  it hasn't been run on an actual cluster yet. Patches welcome.
+To run your own build, use `make docker` and set `ANDANTE_IMAGE=andante:dev` (Compose), or point
+the job's `image` at your own registry (Nomad).
 
 ## With Docker Compose
 

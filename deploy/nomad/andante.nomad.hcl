@@ -61,7 +61,7 @@ job "andante" {
       driver = "docker"
 
       config {
-        image = "ghcr.io/gerrowadat/andante:0.1.0"
+        image = "ghcr.io/gerrowadat/andante:0.0.1"
         ports = ["public", "admin"]
       }
 
