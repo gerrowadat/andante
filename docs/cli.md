@@ -53,6 +53,8 @@ andante source get my-comic
 andante source edit my-comic --title "A Better Title"
 andante source edit my-comic --pause
 andante source edit my-comic --resume                         # also restarts a source in error
+andante source probe https://pod.example/rss --strategy feed --kind episode
+andante source probe 'https://comic.example/{n}' --strategy numeric --start-id 1
 andante source edit my-comic --selector image="#strip img"    # replaces the selectors
 andante source crawl my-comic                                 # ask for a crawl now
 andante source entries my-comic
@@ -60,6 +62,12 @@ andante source rm my-comic
 ```
 
 `--selector` takes `field=css`, where the field is `title`, `image`, `alt_text`, `date` or `next`.
+
+`source probe` and `source add` take `--strategy` (`crawl`, `feed`, `feed-paged` or
+`numeric`), and the URL argument is that strategy's own: a start page, a feed, or a
+template with `{n}`. The other flags are `--full-text`, `--fill-gaps`, `--max-pages`,
+`--page-param`, `--start-id`, `--max-misses`, `--format` and `--field`. See
+[sources](sources.md). `source edit --start-url` changes the same URL on any strategy.
 See [sources](sources.md).
 
 ## Reads

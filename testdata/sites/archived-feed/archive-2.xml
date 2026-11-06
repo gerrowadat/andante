@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <id>urn:feed</id>
+  <title>Archived</title>
+  <updated>2019-01-06T00:00:00Z</updated>
+  <link rel="prev-archive" href="archive-1.xml"/>
+  <entry>
+    <id>urn:post:4</id>
+    <title>Post 4</title>
+    <link rel="alternate" href="https://archived.example/4"/>
+    <updated>2019-01-04T00:00:00Z</updated>
+    <published>2019-01-04T00:00:00Z</published>
+    <summary>Summary 4</summary>
+  </entry>
+  <entry>
+    <id>urn:post:3</id>
+    <title>Post 3</title>
+    <link rel="alternate" href="https://archived.example/3"/>
+    <updated>2019-01-03T00:00:00Z</updated>
+    <published>2019-01-03T00:00:00Z</published>
+    <summary>Summary 3</summary>
+  </entry>
+</feed>

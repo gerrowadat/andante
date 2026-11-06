@@ -5,6 +5,7 @@ package discovery
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -162,6 +163,9 @@ func (l *Loop) process(ctx context.Context, s db.Source) (bool, error) {
 	if err := l.save(ctx, s, batch); err != nil {
 		return true, l.fail(ctx, s, err)
 	}
+	if len(batch.Entries) > 0 {
+		l.opts.Logger.Info("indexed", "source", s.Slug, "entries", len(batch.Entries))
+	}
 	l.opts.Metrics.entries.WithLabelValues(s.Slug).Add(float64(len(batch.Entries)))
 	return true, nil
 }
@@ -178,10 +182,26 @@ func (l *Loop) save(ctx context.Context, s db.Source, batch Batch) error {
 
 	entries := make([]store.NewEntry, 0, len(batch.Entries))
 	for _, e := range batch.Entries {
+		enclosures, err := encode(e.Enclosures, "[]")
+		if err != nil {
+			return err
+		}
+		extra, err := encode(e.Extra, "{}")
+		if err != nil {
+			return err
+		}
 		entries = append(entries, store.NewEntry{
-			Kind: e.Kind, URL: e.URL, Title: optional(e.Title), Summary: optional(e.Summary),
-			Images: images(e.Images), AltText: optional(e.AltText), Date: e.Date, ContentHash: e.ContentHash,
+			Kind: e.Kind, URL: optional(e.URL), GUID: optional(e.GUID), Title: optional(e.Title), Summary: optional(e.Summary),
+			ContentHTML: optional(e.ContentHTML), Images: images(e.Images), AltText: optional(e.AltText),
+			Enclosures: enclosures, Duration: e.Duration, Extra: extra, Date: e.Date, ContentHash: e.ContentHash,
 		})
+	}
+	if batch.Source != nil {
+		extra, err := encode(batch.Source.Extra, "{}")
+		if err != nil {
+			return err
+		}
+		outcome.ImageURL, outcome.Extra = optional(batch.Source.ImageURL), extra
 	}
 	updates := make([]store.EntryUpdate, 0, len(batch.Updates))
 	for _, e := range batch.Updates {
@@ -233,6 +253,18 @@ func (l *Loop) setState(slug, state string) {
 	}
 }
 
+// encode turns a value that may be empty into the JSON a column wants.
+func encode[T any](value T, empty string) ([]byte, error) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil, fmt.Errorf("encode entry: %w", err)
+	}
+	if string(encoded) == "null" {
+		return []byte(empty), nil
+	}
+	return encoded, nil
+}
+
 func optional(s string) *string {
 	if s == "" {
 		return nil
@@ -257,9 +289,13 @@ type loggingFetcher struct {
 
 // Fetch implements PageFetcher.
 func (f *loggingFetcher) Fetch(ctx context.Context, url string) (*Response, error) {
-	l := f.loop
+	return f.fetch(ctx, url, Validators{}, nil, nil)
+}
+
+// Revalidate implements PageFetcher.
+func (f *loggingFetcher) Revalidate(ctx context.Context, url string) (*Response, error) {
 	var validators Validators
-	etag, lastModified, err := l.opts.Store.Validators(ctx, f.source.ID, url)
+	etag, lastModified, err := f.loop.opts.Store.Validators(ctx, f.source.ID, url)
 	if err != nil {
 		return nil, err
 	}
@@ -269,7 +305,23 @@ func (f *loggingFetcher) Fetch(ctx context.Context, url string) (*Response, erro
 	if lastModified != nil {
 		validators.LastModified = *lastModified
 	}
+	return f.fetch(ctx, url, validators, etag, lastModified)
+}
 
+// Head implements PageFetcher.
+func (f *loggingFetcher) Head(ctx context.Context, url string) (*Response, error) {
+	l := f.loop
+	resp, err := l.opts.Fetcher.Head(ctx, url)
+	label := errorLabel(err)
+	if resp != nil {
+		label = strconv.Itoa(resp.Status)
+	}
+	l.opts.Metrics.requests.WithLabelValues(f.source.Slug, label).Inc()
+	return resp, err
+}
+
+func (f *loggingFetcher) fetch(ctx context.Context, url string, validators Validators, etag, lastModified *string) (*Response, error) {
+	l := f.loop
 	start := l.opts.Clock.Now()
 	resp, fetchErr := l.opts.Fetcher.Fetch(ctx, url, validators)
 	if ctx.Err() != nil {

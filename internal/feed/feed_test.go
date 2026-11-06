@@ -320,3 +320,33 @@ func TestBadExtraIsDropped(t *testing.T) {
 		t.Errorf("items = %+v", f.Items)
 	}
 }
+
+func TestParseOPML(t *testing.T) {
+	outlines, err := ParseOPML([]byte(`<opml version="2.0"><body>
+<outline text="Folder"><outline text="Inner" xmlUrl="https://a.example/rss" htmlUrl="https://a.example/"/></outline>
+<outline title="Top" text="ignored" xmlUrl="https://b.example/rss"/>
+</body></opml>`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(outlines) != 2 || outlines[0].Title != "Inner" || outlines[0].HomeURL != "https://a.example/" || outlines[1].Title != "Top" {
+		t.Errorf("outlines = %+v", outlines)
+	}
+	if _, err := ParseOPML([]byte("not xml")); err == nil {
+		t.Error("parsed something that is not XML")
+	}
+}
+
+func TestOPMLRoundTrip(t *testing.T) {
+	data, err := OPML([]Outline{{Title: "A", FeedURL: "https://a.example/rss", HomeURL: "https://a.example/"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	outlines, err := ParseOPML(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(outlines) != 1 || outlines[0].FeedURL != "https://a.example/rss" {
+		t.Errorf("outlines = %+v", outlines)
+	}
+}

@@ -1,8 +1,63 @@
 # Sources
 
-A source is a serial, plus how to discover its archive. So far andante can add
-image-led serials such as webcomics, using the `crawl` strategy, which walks pages by
-their "next" link.
+A source is a serial, plus how to discover its archive.
+
+## Choosing a strategy
+
+Start from what the serial's feed holds, because a feed costs one request and a crawl
+costs one per page. Most podcasts and many blogs keep their whole archive in their
+feed. Most webcomics do not.
+
+| The serial has | Use | Config |
+|---|---|---|
+| A feed with the whole archive, or RFC 5005 archived feeds | `feed` | `feed_url`, optional `fill_gaps`, `full_text` |
+| A WordPress-style feed that takes `?paged=N` | `feed-paged` | `feed_url`, optional `page_param`, `max_pages`, `fill_gaps`, `full_text` |
+| URLs with an incrementing number | `numeric` | `url_template` with `{n}`, `start`, optional `max_consecutive_misses`, `format`, `fields` |
+| Pages with a "next" link | `crawl` | `start_url`, optional `selectors`, `full_text` |
+
+A probe of a `feed` warns when the feed looks cut off at a round number of items. The
+rest of the archive is then not in the feed, so use `feed-paged` or `crawl`.
+
+In a `numeric` source a 404 is a gap, and `max_consecutive_misses` of them in a row
+(5 by default) are the live end. With `format: json`, `fields` says where each value
+is, with dots for nested keys:
+
+```sh
+andante source probe 'https://xkcd.example/{n}/info.0.json' --strategy numeric --start-id 1 --format json \
+  --field title=safe_title --field image=img --field alt_text=alt --field year=year --field month=month --field day=day
+```
+
+`default_kind` sets the entries' kind, and an item with an audio or video enclosure is
+always an `episode`. An entry from a feed is identified by its guid, because podcast
+items often share a link. Enclosures are passed through and never rehosted. Their type
+and length come from the feed or the page, with a `HEAD` request only when these are
+missing.
+
+`fill_gaps` fetches each item's page for what the item lacks, such as a comic image.
+That is one more request per entry, so it is off by default.
+
+## Full text
+
+Full-text extraction of articles is off by default, and `full_text` turns it on for
+one source. Where a publisher's feed gives only a summary, the publisher chose that,
+so andante shows the summary and links to the original. Comic images and podcast
+enclosures differ: they are what every visitor gets, and andante links to them rather
+than copying them.
+
+On a `feed` source, `full_text` needs `fill_gaps`, because the text comes from the
+linked page. Anything stored from a page or a feed passes through an HTML sanitiser,
+which removes scripts, event handlers and iframes.
+
+## Importing OPML
+
+```sh
+andante import opml feeds.opml
+```
+
+This creates a paused `feed` source for each outline, including those in folders, so
+nothing crawls until you have probed one and enabled it. The result lists each
+outline as `created`, `duplicate` (the file or the database already has it) or
+`invalid`. One bad outline does not stop the rest.
 
 ## Adding a comic
 

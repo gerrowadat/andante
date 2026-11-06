@@ -15,7 +15,6 @@ import (
 // Problem type URIs. Each resolves to the section of docs/api.md explaining it.
 const (
 	problemBase           = "https://github.com/gerrowadat/andante/blob/main/docs/api.md#"
-	problemNotImplemented = problemBase + "not-implemented"
 	problemInvalidRequest = problemBase + "invalid-request"
 	problemInvalidConfig  = problemBase + "invalid-config"
 	problemInvalidRead    = problemBase + "invalid-read"
@@ -43,10 +42,6 @@ func newProblem(status int, problemType, detail string) *problemError {
 
 func notFound(what string, id int64) error {
 	return newProblem(http.StatusNotFound, problemBlank, fmt.Sprintf("%s %d does not exist", what, id))
-}
-
-func notImplemented() error {
-	return newProblem(http.StatusNotImplemented, problemNotImplemented, "this endpoint is described but not built yet")
 }
 
 func invalidRequest(detail string) error {

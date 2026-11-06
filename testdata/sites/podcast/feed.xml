@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:podcast="https://podcastindex.org/namespace/1.0">
+  <channel>
+    <title>A Podcast</title>
+    <link>https://podcast.example/</link>
+    <description>Talk</description>
+    <itunes:author>Some People</itunes:author>
+    <itunes:image href="https://cdn.podcast.example/cover.jpg"/>
+    <itunes:category text="Comedy"/>
+    <itunes:explicit>false</itunes:explicit>
+    <podcast:guid>the-original-show-guid</podcast:guid>
+    <item>
+      <title>Episode 5</title>
+      <link>https://podcast.example/</link>
+      <guid isPermaLink="false">episode-5-guid</guid>
+      <pubDate>Mon, 03 Feb 2020 08:00:00 +0000</pubDate>
+      <description>Notes for episode 5</description>
+      <enclosure url="https://cdn.podcast.example/5.mp3" length="5000000" type="audio/mpeg"/>
+      <itunes:duration>50:00</itunes:duration>
+      <itunes:episode>5</itunes:episode>
+      <itunes:season>1</itunes:season>
+      <podcast:transcript url="https://cdn.podcast.example/5.vtt" type="text/vtt"/>
+      <podcast:chapters url="https://cdn.podcast.example/5.json" type="application/json+chapters"/>
+      <itunes:image href="https://cdn.podcast.example/5.jpg"/>
+    </item>
+    <item>
+      <title>Episode 4</title>
+      <link>https://podcast.example/</link>
+      <guid isPermaLink="false">episode-4-guid</guid>
+      <pubDate>Mon, 27 Jan 2020 08:00:00 +0000</pubDate>
+      <description>Notes for episode 4</description>
+      <enclosure url="https://cdn.podcast.example/4.mp3" length="4000000" type="audio/mpeg"/>
+      <itunes:duration>40:00</itunes:duration>
+      <itunes:episode>4</itunes:episode>
+      <itunes:season>1</itunes:season>
+    </item>
+    <item>
+      <title>Episode 3</title>
+      <link>https://podcast.example/</link>
+      <guid isPermaLink="false">episode-3-guid</guid>
+      <pubDate>Mon, 20 Jan 2020 08:00:00 +0000</pubDate>
+      <description>Notes for episode 3</description>
+      <enclosure url="https://cdn.podcast.example/3.mp3" length="3000000" type="audio/mpeg"/>
+      <itunes:duration>30:00</itunes:duration>
+      <itunes:episode>3</itunes:episode>
+      <itunes:season>1</itunes:season>
+    </item>
+    <item>
+      <title>Episode 2</title>
+      <link>https://podcast.example/</link>
+      <guid isPermaLink="false">episode-2-guid</guid>
+      <pubDate>Mon, 13 Jan 2020 08:00:00 +0000</pubDate>
+      <description>Notes for episode 2</description>
+      <enclosure url="https://cdn.podcast.example/2.mp3" length="2000000" type="audio/mpeg"/>
+      <itunes:duration>20:00</itunes:duration>
+      <itunes:episode>2</itunes:episode>
+      <itunes:season>1</itunes:season>
+    </item>
+    <item>
+      <title>Episode 1</title>
+      <link>https://podcast.example/</link>
+      <guid isPermaLink="false">episode-1-guid</guid>
+      <pubDate>Mon, 06 Jan 2020 08:00:00 +0000</pubDate>
+      <description>Notes for episode 1</description>
+      <enclosure url="https://cdn.podcast.example/1.mp3" length="1000000" type="audio/mpeg"/>
+      <itunes:duration>10:00</itunes:duration>
+      <itunes:episode>1</itunes:episode>
+      <itunes:season>1</itunes:season>
+    </item>
+  </channel>
+</rss>

@@ -98,7 +98,7 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	}
 
 	reg := prometheus.NewRegistry()
-	registry := discovery.NewRegistry(strategies.Crawl{})
+	registry := discovery.NewRegistry(strategies.All()...)
 	metrics := discovery.NewMetrics(reg)
 	fetcher := discovery.NewFetcher(discovery.FetcherOptions{
 		UserAgent:    cfg.CrawlerUserAgent(),

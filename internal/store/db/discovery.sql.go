@@ -8,23 +8,34 @@ package db
 import (
 	"context"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const entryKnown = `-- name: EntryKnown :one
 SELECT EXISTS (
     SELECT 1 FROM entries
-    WHERE source_id = $1 AND (url = $2 OR (content_hash IS NOT NULL AND content_hash = $3))
+    WHERE source_id = $1 AND (
+        guid = $2
+        OR ($2::text IS NULL AND (url = $3 OR content_hash = $4))
+    )
 )
 `
 
 type EntryKnownParams struct {
 	SourceID    int64
+	Guid        *string
 	Url         *string
 	ContentHash []byte
 }
 
 func (q *Queries) EntryKnown(ctx context.Context, arg EntryKnownParams) (bool, error) {
-	row := q.db.QueryRow(ctx, entryKnown, arg.SourceID, arg.Url, arg.ContentHash)
+	row := q.db.QueryRow(ctx, entryKnown,
+		arg.SourceID,
+		arg.Guid,
+		arg.Url,
+		arg.ContentHash,
+	)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
@@ -44,6 +55,33 @@ func (q *Queries) EntryStats(ctx context.Context, sourceID int64) (EntryStatsRow
 	row := q.db.QueryRow(ctx, entryStats, sourceID)
 	var i EntryStatsRow
 	err := row.Scan(&i.Count, &i.MaxSeq)
+	return i, err
+}
+
+const findSourceByFeedURL = `-- name: FindSourceByFeedURL :one
+SELECT id, slug, title, home_url, default_kind, image_url, extra, strategy, config, cursor, state, due_at, last_crawled_at, last_error, created_at FROM sources WHERE config->>'feed_url' = $1 ORDER BY id LIMIT 1
+`
+
+func (q *Queries) FindSourceByFeedURL(ctx context.Context, config []byte) (Source, error) {
+	row := q.db.QueryRow(ctx, findSourceByFeedURL, config)
+	var i Source
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Title,
+		&i.HomeUrl,
+		&i.DefaultKind,
+		&i.ImageUrl,
+		&i.Extra,
+		&i.Strategy,
+		&i.Config,
+		&i.Cursor,
+		&i.State,
+		&i.DueAt,
+		&i.LastCrawledAt,
+		&i.LastError,
+		&i.CreatedAt,
+	)
 	return i, err
 }
 
@@ -74,8 +112,10 @@ func (q *Queries) InsertCrawlLog(ctx context.Context, arg InsertCrawlLogParams) 
 }
 
 const insertEntry = `-- name: InsertEntry :exec
-INSERT INTO entries (source_id, seq, kind, url, title, summary, images, alt_text, original_date, content_hash)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+INSERT INTO entries (
+    source_id, seq, kind, url, guid, title, summary, content_html, images, alt_text,
+    enclosures, duration, extra, original_date, content_hash
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 `
 
 type InsertEntryParams struct {
@@ -83,10 +123,15 @@ type InsertEntryParams struct {
 	Seq          int32
 	Kind         string
 	Url          *string
+	Guid         *string
 	Title        *string
 	Summary      *string
+	ContentHtml  *string
 	Images       []string
 	AltText      *string
+	Enclosures   []byte
+	Duration     pgtype.Interval
+	Extra        []byte
 	OriginalDate *time.Time
 	ContentHash  []byte
 }
@@ -97,10 +142,15 @@ func (q *Queries) InsertEntry(ctx context.Context, arg InsertEntryParams) error 
 		arg.Seq,
 		arg.Kind,
 		arg.Url,
+		arg.Guid,
 		arg.Title,
 		arg.Summary,
+		arg.ContentHtml,
 		arg.Images,
 		arg.AltText,
+		arg.Enclosures,
+		arg.Duration,
+		arg.Extra,
 		arg.OriginalDate,
 		arg.ContentHash,
 	)
@@ -242,5 +292,21 @@ func (q *Queries) UpdateEntryContent(ctx context.Context, arg UpdateEntryContent
 		arg.Images,
 		arg.AltText,
 	)
+	return err
+}
+
+const updateSourceMetadata = `-- name: UpdateSourceMetadata :exec
+UPDATE sources SET image_url = coalesce($1, image_url), extra = $2
+WHERE id = $3
+`
+
+type UpdateSourceMetadataParams struct {
+	ImageUrl *string
+	Extra    []byte
+	ID       int64
+}
+
+func (q *Queries) UpdateSourceMetadata(ctx context.Context, arg UpdateSourceMetadataParams) error {
+	_, err := q.db.Exec(ctx, updateSourceMetadata, arg.ImageUrl, arg.Extra, arg.ID)
 	return err
 }

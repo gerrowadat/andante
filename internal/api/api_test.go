@@ -46,7 +46,7 @@ func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	st := storetest.New(t)
 	reg := prometheus.NewRegistry()
-	registry := discovery.NewRegistry(strategies.Crawl{})
+	registry := discovery.NewRegistry(strategies.All()...)
 	fetcher := discovery.NewFetcher(sitetest.FetcherOptions(sitetest.NewClock()))
 	handler, err := api.New(api.Options{
 		Store:        st,
@@ -221,12 +221,12 @@ func TestSourceConfigIsValidatedOnWrite(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
 	var feed client.SourceConfig
-	if err := feed.FromFeedConfig(client.FeedConfig{Strategy: client.Feed, FeedURL: "https://feed.example/rss"}); err != nil {
+	if err := feed.FromFeedConfig(client.FeedConfig{Strategy: client.Feed, FeedURL: "ftp://feed.example/rss"}); err != nil {
 		t.Fatal(err)
 	}
 	for name, config := range map[string]client.SourceConfig{
-		"strategy not built yet": feed,
-		"bad start URL":          crawlConfig(t, "ftp://comic.example/"),
+		"bad feed URL":  feed,
+		"bad start URL": crawlConfig(t, "ftp://comic.example/"),
 	} {
 		t.Run(name, func(t *testing.T) {
 			resp, err := f.client.CreateSourceWithResponse(ctx, client.SourceCreate{
@@ -401,17 +401,12 @@ func TestProbe(t *testing.T) {
 func TestProbeFailures(t *testing.T) {
 	f := newFixture(t)
 	site := sitetest.Serve(t, "robots-disallow")
-	var feed client.SourceConfig
-	if err := feed.FromFeedConfig(client.FeedConfig{Strategy: client.Feed, FeedURL: site.URL}); err != nil {
-		t.Fatal(err)
-	}
 	for name, tt := range map[string]struct {
 		config client.SourceConfig
 		suffix string
 	}{
-		"site refuses":           {crawlConfig(t, site.URL+"/comics/1.html"), "#probe-failed"},
-		"strategy not built yet": {feed, "#invalid-config"},
-		"bad config":             {crawlConfig(t, "ftp://comic.example/"), "#invalid-config"},
+		"site refuses": {crawlConfig(t, site.URL+"/comics/1.html"), "#probe-failed"},
+		"bad config":   {crawlConfig(t, "ftp://comic.example/"), "#invalid-config"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			resp, err := f.client.CreateProbeWithResponse(t.Context(), client.ProbeRequest{Config: tt.config})
@@ -873,6 +868,61 @@ func TestExportOPML(t *testing.T) {
 	}
 }
 
+func TestImportOPML(t *testing.T) {
+	f := newFixture(t)
+	f.do(t, "POST", "/api/v1/sources", "application/json",
+		`{"slug":"known","title":"Known","home_url":"https://k.example/","default_kind":"article","config":{"strategy":"feed","feed_url":"https://k.example/rss"}}`, f.token)
+	const miniflux = `<?xml version="1.0" encoding="UTF-8"?>
+<opml version="2.0">
+  <head><title>Miniflux</title></head>
+  <body>
+    <outline text="All">
+      <outline title="A Blog" text="A Blog" xmlUrl="https://blog.example/feed" htmlUrl="https://blog.example/"></outline>
+      <outline title="Same Title" text="Same Title" xmlUrl="https://one.example/feed"></outline>
+      <outline title="Same Title" text="Same Title" xmlUrl="https://two.example/feed"></outline>
+      <outline title="Repeated" xmlUrl="https://blog.example/feed"></outline>
+      <outline title="Known" xmlUrl="https://k.example/rss"></outline>
+      <outline title="Broken" xmlUrl="ftp://nope.example/feed"></outline>
+      <outline title="No Feed"></outline>
+    </outline>
+  </body>
+</opml>`
+	resp, body := f.do(t, "POST", "/api/v1/imports/opml", "text/x-opml", miniflux, f.token)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d: %s", resp.StatusCode, body)
+	}
+	var result client.OPMLImportResult
+	if err := json.Unmarshal([]byte(body), &result); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, r := range result.Results {
+		got = append(got, string(r.Status))
+	}
+	want := "created,created,created,duplicate,duplicate,invalid,invalid"
+	if strings.Join(got, ",") != want {
+		t.Errorf("results = %v, want %s: %s", got, want, body)
+	}
+
+	sources, err := f.client.ListSourcesWithResponse(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	slugs := map[string]client.SourceState{}
+	for _, s := range sources.JSON200.Items {
+		slugs[s.Slug] = s.State
+	}
+	for _, slug := range []string{"a-blog", "same-title", "same-title-2"} {
+		if slugs[slug] != client.SourceStatePaused {
+			t.Errorf("%s: state %q, want paused: %v", slug, slugs[slug], slugs)
+		}
+	}
+
+	if bad, data := f.do(t, "POST", "/api/v1/imports/opml", "text/x-opml", "not xml", f.token); bad.StatusCode != http.StatusBadRequest {
+		t.Errorf("not OPML: %d %s", bad.StatusCode, data)
+	}
+}
+
 func TestAPITokens(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -1040,7 +1090,6 @@ func TestEveryErrorIsAProblem(t *testing.T) {
 			body: `{"slug":"s","title":"t","home_url":"https://e.example/","default_kind":"page","config":{"strategy":"nope"}}`},
 		{name: "slug in a patch", method: "PATCH", path: "/api/v1/sources/" + itoa(s.ID), contentType: "application/merge-patch+json", body: `{"slug":"new"}`, token: f.token, wantStatus: 400, wantType: "invalid-request"},
 		{name: "state the crawler owns", method: "PATCH", path: "/api/v1/sources/" + itoa(s.ID), contentType: "application/merge-patch+json", body: `{"state":"tail"}`, token: f.token, wantStatus: 400, wantType: "invalid-request"},
-		{name: "not built yet", method: "POST", path: "/api/v1/imports/opml", contentType: "text/x-opml", body: "<opml/>", token: f.token, wantStatus: 501, wantType: "not-implemented"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1138,77 +1187,6 @@ func loadSpec(t *testing.T) *openapi3.T {
 		t.Fatal(err)
 	}
 	return spec
-}
-
-// implemented lists the operations that do real work. Everything else in the
-// spec must answer 501, and a phase that builds one moves it here.
-var implemented = map[string]bool{
-	"getSpec":          true,
-	"getVersion":       true,
-	"createProbe":      true,
-	"requestCrawl":     true,
-	"listReads":        true,
-	"createRead":       true,
-	"getRead":          true,
-	"updateRead":       true,
-	"deleteRead":       true,
-	"createAdjustment": true,
-	"listSegments":     true,
-	"listFeedTokens":   true,
-	"createFeedToken":  true,
-	"revokeFeedToken":  true,
-	"exportOPML":       true,
-	"listSources":      true,
-	"createSource":     true,
-	"getSource":        true,
-	"updateSource":     true,
-	"deleteSource":     true,
-	"listEntries":      true,
-	"listAPITokens":    true,
-	"createAPIToken":   true,
-	"revokeAPIToken":   true,
-}
-
-func TestUnimplementedOperationsAre501(t *testing.T) {
-	f := newFixture(t)
-	spec := loadSpec(t)
-	checked := 0
-	for path, item := range spec.Paths.Map() {
-		for method, op := range item.Operations() {
-			if implemented[op.OperationID] {
-				continue
-			}
-			t.Run(op.OperationID, func(t *testing.T) {
-				contentType, body := "", ""
-				if op.RequestBody != nil {
-					for mediaType, content := range op.RequestBody.Value.Content {
-						contentType = mediaType
-						if text, ok := content.Example.(string); ok {
-							body = text
-						} else if b, err := json.Marshal(content.Example); err == nil {
-							body = string(b)
-						}
-					}
-				}
-				url := api.BasePath + strings.ReplaceAll(path, "{id}", "1")
-				resp, data := f.do(t, method, url, contentType, body, f.token)
-				if resp.StatusCode != http.StatusNotImplemented {
-					t.Fatalf("status = %d, want 501: %s", resp.StatusCode, data)
-				}
-				var p client.Problem
-				if err := json.Unmarshal([]byte(data), &p); err != nil {
-					t.Fatal(err)
-				}
-				if !strings.HasSuffix(p.Type, "#not-implemented") {
-					t.Errorf("type = %q", p.Type)
-				}
-			})
-			checked++
-		}
-	}
-	if checked == 0 {
-		t.Error("no operations were checked")
-	}
 }
 
 func TestEveryOperationIsDocumented(t *testing.T) {
