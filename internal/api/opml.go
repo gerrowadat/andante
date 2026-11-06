@@ -5,18 +5,19 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/gerrowadat/andante/internal/api/gen"
 	"github.com/gerrowadat/andante/internal/feed"
+	"github.com/gerrowadat/andante/internal/httpapi"
+	"github.com/gerrowadat/andante/internal/replica"
 	"github.com/gerrowadat/andante/internal/store"
-	"github.com/gerrowadat/andante/internal/store/db"
 	"github.com/gerrowadat/andante/pkg/client"
 )
 
@@ -70,16 +71,18 @@ func (h *handler) ImportOPML(ctx context.Context, r gen.ImportOPMLRequestObject)
 	return gen.ImportOPML200JSONResponse{Results: results}, nil
 }
 
+func configFor(feedURL string) (client.SourceConfig, error) {
+	var config client.SourceConfig
+	err := config.FromFeedConfig(client.FeedConfig{Strategy: client.Feed, FeedURL: feedURL})
+	return config, err
+}
+
 func (h *handler) importOutline(ctx context.Context, outline feed.Outline, result *client.OPMLOutlineResult) {
 	invalid := func(detail string) {
 		result.Status, result.Detail = client.OPMLOutlineResultStatusInvalid, &detail
 	}
-	config, err := json.Marshal(map[string]string{"strategy": "feed", "feed_url": outline.FeedURL})
+	config, err := configFor(outline.FeedURL)
 	if err != nil {
-		invalid(err.Error())
-		return
-	}
-	if err := h.strategies.Validate("feed", config); err != nil {
 		invalid(err.Error())
 		return
 	}
@@ -107,19 +110,28 @@ func (h *handler) importOutline(ctx context.Context, outline feed.Outline, resul
 		if attempt > 1 {
 			slug += "-" + strconv.Itoa(attempt)
 		}
-		created, err := h.store.CreateSource(ctx, db.InsertSourceParams{
-			Slug: slug, Title: title, HomeUrl: home, DefaultKind: string(client.Article),
-			Strategy: "feed", Config: config, State: statePaused,
+		created, err := h.catalogue.CreateSource(ctx, replica.SourceCreate{
+			SourceCreate: client.SourceCreate{Slug: slug, Title: title, HomeURL: home, DefaultKind: client.Article, Config: config},
+			State:        statePaused,
 		})
-		if errors.Is(err, store.ErrConflict) {
-			continue
-		}
-		if err != nil {
+		var p *httpapi.Error
+		switch {
+		case err == nil:
+			h.caughtUp(ctx)
+			result.Status, result.SourceID = client.OPMLOutlineResultStatusCreated, &created.ID
+			return
+		case !errors.As(err, &p):
 			invalid("the source could not be saved")
 			return
+		case p.Problem.Status == http.StatusConflict:
+			continue
+		case p.Problem.Detail != nil:
+			invalid(*p.Problem.Detail)
+			return
+		default:
+			invalid(p.Problem.Title)
+			return
 		}
-		result.Status, result.SourceID = client.OPMLOutlineResultStatusCreated, &created.ID
-		return
 	}
 	invalid("no free slug for this title")
 }

@@ -67,6 +67,12 @@ a source a read still uses, revoking the last active API token, changing a read'
 `catch_up` or `buffer`, a jump to or behind the read's position or past the index, a
 skip with nothing to skip to, pausing a paused read, or resuming one that is not.
 
+### Catalogue Unavailable
+
+Status 503. The request needs `andante-catalogue`, and it can't be reached. This covers
+creating or changing sources, crawls, probes and OPML import. Reads, tokens and feeds carry on
+without it, and so does listing sources.
+
 ### Unauthorized
 
 Status 401, with a `WWW-Authenticate` header. The bearer token is missing, unknown or revoked.

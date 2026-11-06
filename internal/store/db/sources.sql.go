@@ -7,24 +7,73 @@ package db
 
 import (
 	"context"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const deleteSource = `-- name: DeleteSource :execrows
+const countReadsOfSource = `-- name: CountReadsOfSource :one
+SELECT count(*) FROM reads WHERE source_id = $1
+`
+
+func (q *Queries) CountReadsOfSource(ctx context.Context, sourceID int64) (int64, error) {
+	row := q.db.QueryRow(ctx, countReadsOfSource, sourceID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const deleteEntriesOfSource = `-- name: DeleteEntriesOfSource :exec
+DELETE FROM entries WHERE source_id = $1
+`
+
+func (q *Queries) DeleteEntriesOfSource(ctx context.Context, sourceID int64) error {
+	_, err := q.db.Exec(ctx, deleteEntriesOfSource, sourceID)
+	return err
+}
+
+const deleteSource = `-- name: DeleteSource :exec
 DELETE FROM sources WHERE id = $1
 `
 
-func (q *Queries) DeleteSource(ctx context.Context, id int64) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteSource, id)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
+func (q *Queries) DeleteSource(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, deleteSource, id)
+	return err
+}
+
+const findSourceByFeedURL = `-- name: FindSourceByFeedURL :one
+SELECT id, slug, title, home_url, default_kind, image_url, extra, strategy, config, state, due_at, last_crawled_at, last_error, created_at FROM sources WHERE config->>'feed_url' = $1 ORDER BY id LIMIT 1
+`
+
+func (q *Queries) FindSourceByFeedURL(ctx context.Context, config []byte) (Source, error) {
+	row := q.db.QueryRow(ctx, findSourceByFeedURL, config)
+	var i Source
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Title,
+		&i.HomeUrl,
+		&i.DefaultKind,
+		&i.ImageUrl,
+		&i.Extra,
+		&i.Strategy,
+		&i.Config,
+		&i.State,
+		&i.DueAt,
+		&i.LastCrawledAt,
+		&i.LastError,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const getSource = `-- name: GetSource :one
-SELECT id, slug, title, home_url, default_kind, image_url, extra, strategy, config, cursor, state, due_at, last_crawled_at, last_error, created_at FROM sources WHERE id = $1
+
+SELECT id, slug, title, home_url, default_kind, image_url, extra, strategy, config, state, due_at, last_crawled_at, last_error, created_at FROM sources WHERE id = $1
 `
 
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 Dave O'Connor
 func (q *Queries) GetSource(ctx context.Context, id int64) (Source, error) {
 	row := q.db.QueryRow(ctx, getSource, id)
 	var i Source
@@ -38,86 +87,6 @@ func (q *Queries) GetSource(ctx context.Context, id int64) (Source, error) {
 		&i.Extra,
 		&i.Strategy,
 		&i.Config,
-		&i.Cursor,
-		&i.State,
-		&i.DueAt,
-		&i.LastCrawledAt,
-		&i.LastError,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
-const getSourceForUpdate = `-- name: GetSourceForUpdate :one
-SELECT id, slug, title, home_url, default_kind, image_url, extra, strategy, config, cursor, state, due_at, last_crawled_at, last_error, created_at FROM sources WHERE id = $1 FOR UPDATE
-`
-
-func (q *Queries) GetSourceForUpdate(ctx context.Context, id int64) (Source, error) {
-	row := q.db.QueryRow(ctx, getSourceForUpdate, id)
-	var i Source
-	err := row.Scan(
-		&i.ID,
-		&i.Slug,
-		&i.Title,
-		&i.HomeUrl,
-		&i.DefaultKind,
-		&i.ImageUrl,
-		&i.Extra,
-		&i.Strategy,
-		&i.Config,
-		&i.Cursor,
-		&i.State,
-		&i.DueAt,
-		&i.LastCrawledAt,
-		&i.LastError,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
-const insertSource = `-- name: InsertSource :one
-
-INSERT INTO sources (slug, title, home_url, default_kind, image_url, strategy, config, state)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, slug, title, home_url, default_kind, image_url, extra, strategy, config, cursor, state, due_at, last_crawled_at, last_error, created_at
-`
-
-type InsertSourceParams struct {
-	Slug        string
-	Title       string
-	HomeUrl     string
-	DefaultKind string
-	ImageUrl    *string
-	Strategy    string
-	Config      []byte
-	State       string
-}
-
-// SPDX-License-Identifier: Apache-2.0
-// Copyright (C) 2026 Dave O'Connor
-func (q *Queries) InsertSource(ctx context.Context, arg InsertSourceParams) (Source, error) {
-	row := q.db.QueryRow(ctx, insertSource,
-		arg.Slug,
-		arg.Title,
-		arg.HomeUrl,
-		arg.DefaultKind,
-		arg.ImageUrl,
-		arg.Strategy,
-		arg.Config,
-		arg.State,
-	)
-	var i Source
-	err := row.Scan(
-		&i.ID,
-		&i.Slug,
-		&i.Title,
-		&i.HomeUrl,
-		&i.DefaultKind,
-		&i.ImageUrl,
-		&i.Extra,
-		&i.Strategy,
-		&i.Config,
-		&i.Cursor,
 		&i.State,
 		&i.DueAt,
 		&i.LastCrawledAt,
@@ -128,7 +97,7 @@ func (q *Queries) InsertSource(ctx context.Context, arg InsertSourceParams) (Sou
 }
 
 const listEntries = `-- name: ListEntries :many
-SELECT id, source_id, seq, kind, url, guid, title, summary, content_html, images, alt_text, enclosures, duration, extra, original_date, content_hash, discovered_at FROM entries WHERE source_id = $1 AND seq > $2 ORDER BY seq LIMIT $3
+SELECT id, source_id, seq, kind, url, guid, title, summary, content_html, images, alt_text, enclosures, duration, extra, original_date, discovered_at, available_at FROM entries WHERE source_id = $1 AND seq > $2 ORDER BY seq LIMIT $3
 `
 
 type ListEntriesParams struct {
@@ -162,8 +131,8 @@ func (q *Queries) ListEntries(ctx context.Context, arg ListEntriesParams) ([]Ent
 			&i.Duration,
 			&i.Extra,
 			&i.OriginalDate,
-			&i.ContentHash,
 			&i.DiscoveredAt,
+			&i.AvailableAt,
 		); err != nil {
 			return nil, err
 		}
@@ -175,8 +144,32 @@ func (q *Queries) ListEntries(ctx context.Context, arg ListEntriesParams) ([]Ent
 	return items, nil
 }
 
+const listSourceIDs = `-- name: ListSourceIDs :many
+SELECT id FROM sources ORDER BY id
+`
+
+func (q *Queries) ListSourceIDs(ctx context.Context) ([]int64, error) {
+	rows, err := q.db.Query(ctx, listSourceIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSources = `-- name: ListSources :many
-SELECT id, slug, title, home_url, default_kind, image_url, extra, strategy, config, cursor, state, due_at, last_crawled_at, last_error, created_at FROM sources WHERE id > $1 ORDER BY id LIMIT $2
+SELECT id, slug, title, home_url, default_kind, image_url, extra, strategy, config, state, due_at, last_crawled_at, last_error, created_at FROM sources WHERE id > $1 ORDER BY id LIMIT $2
 `
 
 type ListSourcesParams struct {
@@ -203,7 +196,6 @@ func (q *Queries) ListSources(ctx context.Context, arg ListSourcesParams) ([]Sou
 			&i.Extra,
 			&i.Strategy,
 			&i.Config,
-			&i.Cursor,
 			&i.State,
 			&i.DueAt,
 			&i.LastCrawledAt,
@@ -220,52 +212,134 @@ func (q *Queries) ListSources(ctx context.Context, arg ListSourcesParams) ([]Sou
 	return items, nil
 }
 
-const updateSource = `-- name: UpdateSource :one
-UPDATE sources
-SET title = $2, home_url = $3, default_kind = $4, image_url = $5, strategy = $6, config = $7, state = $8
-WHERE id = $1
-RETURNING id, slug, title, home_url, default_kind, image_url, extra, strategy, config, cursor, state, due_at, last_crawled_at, last_error, created_at
+const peekSyncRevision = `-- name: PeekSyncRevision :one
+SELECT revision FROM sync_state
 `
 
-type UpdateSourceParams struct {
-	ID          int64
-	Title       string
-	HomeUrl     string
-	DefaultKind string
-	ImageUrl    *string
-	Strategy    string
-	Config      []byte
-	State       string
+func (q *Queries) PeekSyncRevision(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, peekSyncRevision)
+	var revision int64
+	err := row.Scan(&revision)
+	return revision, err
 }
 
-func (q *Queries) UpdateSource(ctx context.Context, arg UpdateSourceParams) (Source, error) {
-	row := q.db.QueryRow(ctx, updateSource,
+const setSyncRevision = `-- name: SetSyncRevision :exec
+UPDATE sync_state SET revision = $1
+`
+
+func (q *Queries) SetSyncRevision(ctx context.Context, revision int64) error {
+	_, err := q.db.Exec(ctx, setSyncRevision, revision)
+	return err
+}
+
+const syncRevision = `-- name: SyncRevision :one
+SELECT revision FROM sync_state FOR UPDATE
+`
+
+func (q *Queries) SyncRevision(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, syncRevision)
+	var revision int64
+	err := row.Scan(&revision)
+	return revision, err
+}
+
+const upsertEntry = `-- name: UpsertEntry :exec
+INSERT INTO entries (id, source_id, seq, kind, url, guid, title, summary, content_html, images,
+                     alt_text, enclosures, duration, extra, original_date, discovered_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+ON CONFLICT (id) DO UPDATE
+SET kind = excluded.kind, url = excluded.url, guid = excluded.guid, title = excluded.title,
+    summary = excluded.summary, content_html = excluded.content_html, images = excluded.images,
+    alt_text = excluded.alt_text, enclosures = excluded.enclosures, duration = excluded.duration,
+    extra = excluded.extra, original_date = excluded.original_date
+`
+
+type UpsertEntryParams struct {
+	ID           int64
+	SourceID     int64
+	Seq          int32
+	Kind         string
+	Url          *string
+	Guid         *string
+	Title        *string
+	Summary      *string
+	ContentHtml  *string
+	Images       []string
+	AltText      *string
+	Enclosures   []byte
+	Duration     pgtype.Interval
+	Extra        []byte
+	OriginalDate *time.Time
+	DiscoveredAt time.Time
+}
+
+func (q *Queries) UpsertEntry(ctx context.Context, arg UpsertEntryParams) error {
+	_, err := q.db.Exec(ctx, upsertEntry,
 		arg.ID,
+		arg.SourceID,
+		arg.Seq,
+		arg.Kind,
+		arg.Url,
+		arg.Guid,
+		arg.Title,
+		arg.Summary,
+		arg.ContentHtml,
+		arg.Images,
+		arg.AltText,
+		arg.Enclosures,
+		arg.Duration,
+		arg.Extra,
+		arg.OriginalDate,
+		arg.DiscoveredAt,
+	)
+	return err
+}
+
+const upsertSource = `-- name: UpsertSource :exec
+INSERT INTO sources (id, slug, title, home_url, default_kind, image_url, extra, strategy, config,
+                     state, due_at, last_crawled_at, last_error, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+ON CONFLICT (id) DO UPDATE
+SET slug = excluded.slug, title = excluded.title, home_url = excluded.home_url,
+    default_kind = excluded.default_kind, image_url = excluded.image_url, extra = excluded.extra,
+    strategy = excluded.strategy, config = excluded.config, state = excluded.state,
+    due_at = excluded.due_at, last_crawled_at = excluded.last_crawled_at,
+    last_error = excluded.last_error
+`
+
+type UpsertSourceParams struct {
+	ID            int64
+	Slug          string
+	Title         string
+	HomeUrl       string
+	DefaultKind   string
+	ImageUrl      *string
+	Extra         []byte
+	Strategy      string
+	Config        []byte
+	State         string
+	DueAt         *time.Time
+	LastCrawledAt *time.Time
+	LastError     *string
+	CreatedAt     time.Time
+}
+
+func (q *Queries) UpsertSource(ctx context.Context, arg UpsertSourceParams) error {
+	_, err := q.db.Exec(ctx, upsertSource,
+		arg.ID,
+		arg.Slug,
 		arg.Title,
 		arg.HomeUrl,
 		arg.DefaultKind,
 		arg.ImageUrl,
+		arg.Extra,
 		arg.Strategy,
 		arg.Config,
 		arg.State,
+		arg.DueAt,
+		arg.LastCrawledAt,
+		arg.LastError,
+		arg.CreatedAt,
 	)
-	var i Source
-	err := row.Scan(
-		&i.ID,
-		&i.Slug,
-		&i.Title,
-		&i.HomeUrl,
-		&i.DefaultKind,
-		&i.ImageUrl,
-		&i.Extra,
-		&i.Strategy,
-		&i.Config,
-		&i.Cursor,
-		&i.State,
-		&i.DueAt,
-		&i.LastCrawledAt,
-		&i.LastError,
-		&i.CreatedAt,
-	)
-	return i, err
+	return err
 }

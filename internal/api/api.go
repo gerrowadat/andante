@@ -13,12 +13,12 @@ import (
 	"github.com/gerrowadat/andante/api"
 	"github.com/gerrowadat/andante/internal/api/gen"
 	"github.com/gerrowadat/andante/internal/buildinfo"
-	"github.com/gerrowadat/andante/internal/discovery"
+	"github.com/gerrowadat/andante/internal/httpapi"
 	"github.com/gerrowadat/andante/internal/reads"
+	"github.com/gerrowadat/andante/internal/replica"
 	"github.com/gerrowadat/andante/internal/store"
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/openapi3filter"
-	"github.com/getkin/kin-openapi/routers"
 	"github.com/getkin/kin-openapi/routers/gorillamux"
 	middleware "github.com/oapi-codegen/nethttp-middleware"
 	"github.com/prometheus/client_golang/prometheus"
@@ -35,28 +35,26 @@ func init() {
 
 // Options are what the API needs from the rest of the server.
 type Options struct {
-	Store      *store.Store
-	Strategies *discovery.Registry
-	Prober     *discovery.Prober
-	Reads      *reads.Service
-	BaseURL    string
-	Registry   prometheus.Registerer
-	Logger     *slog.Logger
+	Store     *store.Store
+	Catalogue *replica.Client
+	Sync      *replica.Syncer
+	Reads     *reads.Service
+	BaseURL   string
+	Registry  prometheus.Registerer
+	Logger    *slog.Logger
 	// ProbeTimeout bounds POST /probes. It outlasts --write-timeout on purpose.
 	ProbeTimeout time.Duration
 }
 
 type handler struct {
-	store      *store.Store
-	strategies *discovery.Registry
-	prober     *discovery.Prober
-	reads      *reads.Service
-	baseURL    string
-	logger     *slog.Logger
-	specJSON   []byte
-	router     routers.Router
-
-	probeTimeout time.Duration
+	store     *store.Store
+	catalogue *replica.Client
+	sync      *replica.Syncer
+	reads     *reads.Service
+	baseURL   string
+	logger    *slog.Logger
+	specJSON  []byte
+	kit       *httpapi.Kit
 }
 
 // New returns the admin API. Mount it at BasePath.
@@ -80,28 +78,33 @@ func New(opts Options) (http.Handler, error) {
 	}
 
 	h := &handler{
-		store: opts.Store, strategies: opts.Strategies, prober: opts.Prober, reads: opts.Reads, baseURL: opts.BaseURL, logger: opts.Logger,
-		specJSON: specJSON, router: router, probeTimeout: opts.ProbeTimeout,
+		store: opts.Store, catalogue: opts.Catalogue, sync: opts.Sync, reads: opts.Reads, baseURL: opts.BaseURL, logger: opts.Logger,
+		specJSON: specJSON,
 	}
+	kit := &httpapi.Kit{
+		Logger: opts.Logger, Router: router, Valid: opts.Store.AuthenticateAPIToken,
+		ProbeRoute: "POST " + BasePath + "/probes", ProbeTimeout: opts.ProbeTimeout,
+	}
+	h.kit = kit
 
 	strict := gen.NewStrictHandlerWithOptions(h, nil, gen.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, err error) {
-			writeProblem(w, requestProblem(err))
+			httpapi.WriteProblem(w, httpapi.RequestProblem(err))
 		},
-		ResponseErrorHandlerFunc: h.writeError,
+		ResponseErrorHandlerFunc: kit.WriteError,
 	})
 	routes := gen.HandlerWithOptions(strict, gen.StdHTTPServerOptions{
 		BaseURL:     BasePath,
 		BaseRouter:  http.NewServeMux(),
-		Middlewares: []gen.MiddlewareFunc{h.extendProbeDeadline, recordRoute},
+		Middlewares: []gen.MiddlewareFunc{kit.ExtendProbeDeadline, httpapi.RecordRoute},
 		ErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, err error) {
-			writeProblem(w, requestProblem(err))
+			httpapi.WriteProblem(w, httpapi.RequestProblem(err))
 		},
 	})
 
 	validate := middleware.OapiRequestValidatorWithOptions(spec, &middleware.Options{
-		Options:               openapi3filter.Options{AuthenticationFunc: h.authenticate},
-		ErrorHandlerWithOpts:  h.validationError,
+		Options:               openapi3filter.Options{AuthenticationFunc: kit.Authenticate},
+		ErrorHandlerWithOpts:  kit.ValidationError,
 		SilenceServersWarning: true,
 	})
 
@@ -110,7 +113,7 @@ func New(opts Options) (http.Handler, error) {
 		Help: "Admin API requests, by route pattern and status.",
 	}, []string{"route", "status"})
 
-	return withRequestID(countRequests(requests, h.recoverPanics(validate(routes)))), nil
+	return httpapi.WithRequestID(httpapi.CountRequests(requests, kit.RecoverPanics(validate(routes)))), nil
 }
 
 // VisitGetSpecResponse sends the document as it is, with no round trip through

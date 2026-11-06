@@ -58,33 +58,6 @@ func (q *Queries) EntryStats(ctx context.Context, sourceID int64) (EntryStatsRow
 	return i, err
 }
 
-const findSourceByFeedURL = `-- name: FindSourceByFeedURL :one
-SELECT id, slug, title, home_url, default_kind, image_url, extra, strategy, config, cursor, state, due_at, last_crawled_at, last_error, created_at FROM sources WHERE config->>'feed_url' = $1 ORDER BY id LIMIT 1
-`
-
-func (q *Queries) FindSourceByFeedURL(ctx context.Context, config []byte) (Source, error) {
-	row := q.db.QueryRow(ctx, findSourceByFeedURL, config)
-	var i Source
-	err := row.Scan(
-		&i.ID,
-		&i.Slug,
-		&i.Title,
-		&i.HomeUrl,
-		&i.DefaultKind,
-		&i.ImageUrl,
-		&i.Extra,
-		&i.Strategy,
-		&i.Config,
-		&i.Cursor,
-		&i.State,
-		&i.DueAt,
-		&i.LastCrawledAt,
-		&i.LastError,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
 const insertCrawlLog = `-- name: InsertCrawlLog :exec
 INSERT INTO crawl_log (source_id, url, status, etag, last_modified, error)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -182,7 +155,7 @@ func (q *Queries) LatestValidators(ctx context.Context, arg LatestValidatorsPara
 
 const listDueSources = `-- name: ListDueSources :many
 
-SELECT id, slug, title, home_url, default_kind, image_url, extra, strategy, config, cursor, state, due_at, last_crawled_at, last_error, created_at FROM sources
+SELECT id, slug, title, home_url, default_kind, image_url, extra, strategy, config, cursor, state, due_at, last_crawled_at, last_error, created_at, demand_seq, revision FROM sources
 WHERE state IN ('indexing', 'tail') AND (due_at IS NULL OR due_at <= $1)
 ORDER BY due_at NULLS LAST, id
 `
@@ -216,6 +189,8 @@ func (q *Queries) ListDueSources(ctx context.Context, dueAt *time.Time) ([]Sourc
 			&i.LastCrawledAt,
 			&i.LastError,
 			&i.CreatedAt,
+			&i.DemandSeq,
+			&i.Revision,
 		); err != nil {
 			return nil, err
 		}

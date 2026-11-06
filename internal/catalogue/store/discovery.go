@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/gerrowadat/andante/internal/store/db"
+	"github.com/gerrowadat/andante/internal/catalogue/store/db"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -126,6 +126,9 @@ func (s *Store) EntryStats(ctx context.Context, sourceID int64) (count int64, ma
 func (s *Store) SaveBatch(ctx context.Context, entries []NewEntry, updates []EntryUpdate, outcome Outcome) error {
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		q := s.queries.WithTx(tx)
+		if err := q.LockRevisions(ctx); err != nil {
+			return err
+		}
 		stats, err := q.EntryStats(ctx, outcome.SourceID)
 		if err != nil {
 			return err
@@ -188,15 +191,6 @@ func interval(d time.Duration) pgtype.Interval {
 		return pgtype.Interval{}
 	}
 	return pgtype.Interval{Microseconds: d.Microseconds(), Valid: true}
-}
-
-// FindSourceByFeedURL returns the source reading a feed, or ErrNotFound.
-func (s *Store) FindSourceByFeedURL(ctx context.Context, feedURL string) (db.Source, error) {
-	source, err := s.queries.FindSourceByFeedURL(ctx, []byte(feedURL))
-	if err != nil {
-		return db.Source{}, fmt.Errorf("find source by feed: %w", translate(err))
-	}
-	return source, nil
 }
 
 // RecordOutcome records a crawl pass that indexed nothing.

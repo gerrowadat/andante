@@ -37,15 +37,6 @@ func translate(err error) error {
 	return err
 }
 
-// CreateSource stores a new source.
-func (s *Store) CreateSource(ctx context.Context, params db.InsertSourceParams) (db.Source, error) {
-	source, err := s.queries.InsertSource(ctx, params)
-	if err != nil {
-		return db.Source{}, fmt.Errorf("insert source: %w", translate(err))
-	}
-	return source, nil
-}
-
 // GetSource returns a source, or ErrNotFound.
 func (s *Store) GetSource(ctx context.Context, id int64) (db.Source, error) {
 	source, err := s.queries.GetSource(ctx, id)
@@ -64,50 +55,31 @@ func (s *Store) ListSources(ctx context.Context, after int64, limit int32) ([]db
 	return sources, nil
 }
 
-// UpdateSource applies change to a source in a transaction that holds its row,
-// so that the read, the merge and the write cannot interleave with another
-// update. A change that returns an error updates nothing.
-func (s *Store) UpdateSource(ctx context.Context, id int64, change func(*db.UpdateSourceParams) error) (db.Source, error) {
-	var updated db.Source
-	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		q := s.queries.WithTx(tx)
-		current, err := q.GetSourceForUpdate(ctx, id)
-		if err != nil {
-			return err
-		}
-		params := db.UpdateSourceParams{
-			ID:          id,
-			Title:       current.Title,
-			HomeUrl:     current.HomeUrl,
-			DefaultKind: current.DefaultKind,
-			ImageUrl:    current.ImageUrl,
-			Strategy:    current.Strategy,
-			Config:      current.Config,
-			State:       current.State,
-		}
-		if err := change(&params); err != nil {
-			return err
-		}
-		updated, err = q.UpdateSource(ctx, params)
-		return err
-	})
+// FindSourceByFeedURL returns the source reading a feed, or ErrNotFound.
+func (s *Store) FindSourceByFeedURL(ctx context.Context, feedURL string) (db.Source, error) {
+	source, err := s.queries.FindSourceByFeedURL(ctx, []byte(feedURL))
 	if err != nil {
-		return db.Source{}, fmt.Errorf("update source %d: %w", id, translate(err))
+		return db.Source{}, fmt.Errorf("find source by feed: %w", translate(err))
 	}
-	return updated, nil
+	return source, nil
 }
 
-// DeleteSource deletes a source and its entries. It returns ErrConflict while a
-// read uses the source.
-func (s *Store) DeleteSource(ctx context.Context, id int64) error {
-	rows, err := s.queries.DeleteSource(ctx, id)
+// ListSourceIDs returns every source's ID.
+func (s *Store) ListSourceIDs(ctx context.Context) ([]int64, error) {
+	ids, err := s.queries.ListSourceIDs(ctx)
 	if err != nil {
-		return fmt.Errorf("delete source %d: %w", id, translate(err))
+		return nil, fmt.Errorf("list source IDs: %w", err)
 	}
-	if rows == 0 {
-		return fmt.Errorf("delete source %d: %w", id, ErrNotFound)
+	return ids, nil
+}
+
+// CountReads returns how many reads use a source.
+func (s *Store) CountReads(ctx context.Context, sourceID int64) (int64, error) {
+	count, err := s.queries.CountReadsOfSource(ctx, sourceID)
+	if err != nil {
+		return 0, fmt.Errorf("count reads of source %d: %w", sourceID, err)
 	}
-	return nil
+	return count, nil
 }
 
 // ListEntries returns up to limit of a source's entries with seq above after, or
@@ -121,4 +93,74 @@ func (s *Store) ListEntries(ctx context.Context, sourceID int64, after, limit in
 		return nil, fmt.Errorf("list entries of source %d: %w", sourceID, err)
 	}
 	return entries, nil
+}
+
+// Change is one change from the catalogue. Exactly one of Source, Entry and
+// DeletedSource is set.
+type Change struct {
+	Revision      int64
+	Source        *db.UpsertSourceParams
+	Entry         *db.UpsertEntryParams
+	DeletedSource *int64
+}
+
+// SyncRevision returns the last catalogue revision applied.
+func (s *Store) SyncRevision(ctx context.Context) (int64, error) {
+	revision, err := s.queries.PeekSyncRevision(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("read sync revision: %w", err)
+	}
+	return revision, nil
+}
+
+// ApplyChanges applies changes and moves the sync revision on, all or nothing.
+// Holding the sync_state row means two syncs take turns, and anything already
+// applied is skipped.
+//
+// A deleted source that a read still uses stays. The catalogue refuses to delete a
+// source with demand, so this takes a race, and a read shouldn't pay for it.
+func (s *Store) ApplyChanges(ctx context.Context, changes []Change) error {
+	if len(changes) == 0 {
+		return nil
+	}
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		q := s.queries.WithTx(tx)
+		revision, err := q.SyncRevision(ctx)
+		if err != nil {
+			return err
+		}
+		for _, c := range changes {
+			if c.Revision <= revision {
+				continue
+			}
+			revision = c.Revision
+			switch {
+			case c.Source != nil:
+				err = q.UpsertSource(ctx, *c.Source)
+			case c.Entry != nil:
+				err = q.UpsertEntry(ctx, *c.Entry)
+			case c.DeletedSource != nil:
+				err = deleteSource(ctx, q, *c.DeletedSource)
+			}
+			if err != nil {
+				return err
+			}
+		}
+		return q.SetSyncRevision(ctx, revision)
+	})
+	if err != nil {
+		return fmt.Errorf("apply changes: %w", err)
+	}
+	return nil
+}
+
+func deleteSource(ctx context.Context, q *db.Queries, id int64) error {
+	reads, err := q.CountReadsOfSource(ctx, id)
+	if err != nil || reads > 0 {
+		return err
+	}
+	if err := q.DeleteEntriesOfSource(ctx, id); err != nil {
+		return err
+	}
+	return q.DeleteSource(ctx, id)
 }

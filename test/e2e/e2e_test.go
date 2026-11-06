@@ -32,29 +32,33 @@ import (
 
 const version = "v0.0.0-e2e"
 
-// crawlFlags let the server crawl the loopback fixture sites, quickly.
+// crawlFlags let the catalogue crawl the loopback fixture sites, quickly.
 var crawlFlags = []string{"--crawl-allow-private", "--crawl-interval=1ms", "--crawl-poll-interval=20ms"}
 
-func buildServer(t *testing.T) string {
+func build(t *testing.T, name string) string {
 	t.Helper()
-	bin := filepath.Join(t.TempDir(), "andante-server")
+	bin := filepath.Join(t.TempDir(), name)
 	ldflags := "-X github.com/gerrowadat/andante/internal/buildinfo.version=" + version
-	build := exec.Command("go", "build", "-ldflags", ldflags, "-o", bin, "../../cmd/andante-server")
-	if out, err := build.CombinedOutput(); err != nil {
+	cmd := exec.Command("go", "build", "-ldflags", ldflags, "-o", bin, "../../cmd/"+name)
+	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("go build: %v\n%s", err, out)
 	}
 	return bin
 }
 
-func TestServerReportsVersion(t *testing.T) {
-	bin := buildServer(t)
-	for _, arg := range []string{"--version", "version"} {
-		out, err := exec.Command(bin, arg).CombinedOutput()
-		if err != nil {
-			t.Fatalf("andante-server %s: %v\n%s", arg, err, out)
-		}
-		if !strings.Contains(string(out), version) {
-			t.Errorf("andante-server %s output %q does not contain %q", arg, out, version)
+func buildServer(t *testing.T) string { return build(t, "andante-server") }
+
+func TestBinariesReportTheirVersion(t *testing.T) {
+	for _, name := range []string{"andante-server", "andante-catalogue"} {
+		bin := build(t, name)
+		for _, arg := range []string{"--version", "version"} {
+			out, err := exec.Command(bin, arg).CombinedOutput()
+			if err != nil {
+				t.Fatalf("%s %s: %v\n%s", name, arg, err, out)
+			}
+			if !strings.Contains(string(out), version) {
+				t.Errorf("%s %s output %q does not contain %q", name, arg, out, version)
+			}
 		}
 	}
 }
@@ -78,16 +82,51 @@ type process struct {
 	waited chan error
 }
 
+const catalogueToken = "e2e-catalogue-token"
+
+// startServer starts andante-server. With no --catalogue-url in flags it points
+// nowhere, which is fine for anything that doesn't touch sources.
 func startServer(t *testing.T, bin, dsn string, flags ...string) *process {
 	t.Helper()
 	p := &process{admin: freeAddr(t), public: freeAddr(t), waited: make(chan error, 1)}
-	p.cmd = exec.Command(bin, append([]string{
+	return p.start(t, exec.Command(bin, append([]string{
 		"--database-url=" + dsn,
 		"--base-url=https://andante.example",
 		"--listen=" + p.public,
 		"--admin-listen=" + p.admin,
 		"--log-format=text",
-	}, flags...)...)
+		"--catalogue-url=http://127.0.0.1:1/v1",
+		"--catalogue-token=" + catalogueToken,
+	}, flags...)...))
+}
+
+// startCatalogue starts andante-catalogue. Its listener is in admin, because that's
+// what waitReady looks at.
+func startCatalogue(t *testing.T, bin, dsn string, flags ...string) *process {
+	t.Helper()
+	p := &process{admin: freeAddr(t), waited: make(chan error, 1)}
+	return p.start(t, exec.Command(bin, append([]string{
+		"--database-url=" + dsn,
+		"--base-url=https://andante.example",
+		"--listen=" + p.admin,
+		"--api-token=" + catalogueToken,
+		"--log-format=text",
+	}, flags...)...))
+}
+
+// startBoth starts a catalogue, with crawlFlags, and a server that uses it.
+func startBoth(t *testing.T, flags ...string) *process {
+	t.Helper()
+	catalogue := startCatalogue(t, build(t, "andante-catalogue"), storetest.DSN(t), crawlFlags...)
+	catalogue.waitReady(t)
+	return startServer(t, buildServer(t), storetest.DSN(t), append([]string{catalogue.flag()}, flags...)...)
+}
+
+func (p *process) flag() string { return "--catalogue-url=http://" + p.admin + "/v1" }
+
+func (p *process) start(t *testing.T, cmd *exec.Cmd) *process {
+	t.Helper()
+	p.cmd = cmd
 	stderr, err := p.cmd.StderrPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -168,15 +207,14 @@ func TestTwoServersShareOneDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if applied != 2 {
-		t.Errorf("recorded %d migrations, want 2", applied)
+	if applied != 1 {
+		t.Errorf("recorded %d migrations, want 1", applied)
 	}
 }
 
 func TestAPIThroughTheRealServer(t *testing.T) {
-	bin := buildServer(t)
 	site := sitetest.Serve(t, "comiccontrol")
-	p := startServer(t, bin, storetest.DSN(t), crawlFlags...)
+	p := startBoth(t)
 	p.waitReady(t)
 
 	match := regexp.MustCompile(`token=([A-Za-z0-9_-]{43})`).FindStringSubmatch(p.output())
@@ -258,9 +296,8 @@ func TestAPIThroughTheRealServer(t *testing.T) {
 }
 
 func TestFeedsThroughTheRealServer(t *testing.T) {
-	bin := buildServer(t)
 	site := sitetest.Serve(t, "comiccontrol")
-	p := startServer(t, bin, storetest.DSN(t), crawlFlags...)
+	p := startBoth(t)
 	p.waitReady(t)
 
 	match := regexp.MustCompile(`token=([A-Za-z0-9_-]{43})`).FindStringSubmatch(p.output())
@@ -332,7 +369,9 @@ func TestProbeOutlivesTheWriteTimeout(t *testing.T) {
 	bin := buildServer(t)
 	site := sitetest.Serve(t, "comiccontrol")
 	// Five pages at this interval take far longer than the write timeout.
-	p := startServer(t, bin, storetest.DSN(t), "--crawl-allow-private", "--crawl-interval=100ms", "--write-timeout=200ms")
+	catalogue := startCatalogue(t, build(t, "andante-catalogue"), storetest.DSN(t), "--crawl-allow-private", "--crawl-interval=100ms")
+	catalogue.waitReady(t)
+	p := startServer(t, bin, storetest.DSN(t), catalogue.flag(), "--write-timeout=200ms")
 	p.waitReady(t)
 
 	match := regexp.MustCompile(`token=([A-Za-z0-9_-]{43})`).FindStringSubmatch(p.output())

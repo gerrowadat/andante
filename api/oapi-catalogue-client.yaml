@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 Dave O'Connor
+package: client
+output: internal/catalogue/client/client.gen.go
+generate:
+  models: true
+  client: true
+output-options:
+  nullable-type: true
+  name-normalizer: ToCamelCaseWithInitialisms

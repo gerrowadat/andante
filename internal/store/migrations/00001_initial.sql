@@ -2,8 +2,11 @@
 -- Copyright (C) 2026 Dave O'Connor
 
 -- +goose Up
+-- sources and entries are a copy of the catalogue's, written only by the sync.
+-- An entry can arrive before its source, because a source's revision moves on
+-- every crawl and an entry's doesn't, so nothing ties one to the other.
 CREATE TABLE sources (
-    id              bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    id              bigint PRIMARY KEY,
     slug            text UNIQUE NOT NULL,
     title           text NOT NULL,
     home_url        text NOT NULL,
@@ -12,17 +15,19 @@ CREATE TABLE sources (
     extra           jsonb NOT NULL DEFAULT '{}',
     strategy        text NOT NULL,
     config          jsonb NOT NULL,
-    cursor          jsonb,
     state           text NOT NULL,
     due_at          timestamptz,
     last_crawled_at timestamptz,
     last_error      text,
-    created_at      timestamptz NOT NULL DEFAULT now()
+    created_at      timestamptz NOT NULL
 );
 
+-- available_at is when this server first had the entry. It's set once, and it's
+-- what a release waits for, so an entry can't count as released before it could
+-- be shown.
 CREATE TABLE entries (
-    id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    source_id     bigint NOT NULL REFERENCES sources ON DELETE CASCADE,
+    id            bigint PRIMARY KEY,
+    source_id     bigint NOT NULL,
     seq           integer NOT NULL,
     kind          text NOT NULL,
     url           text,
@@ -36,20 +41,22 @@ CREATE TABLE entries (
     duration      interval,
     extra         jsonb NOT NULL DEFAULT '{}',
     original_date timestamptz,
-    content_hash  bytea,
-    discovered_at timestamptz NOT NULL DEFAULT now(),
+    discovered_at timestamptz NOT NULL,
+    available_at  timestamptz NOT NULL DEFAULT now(),
     UNIQUE (source_id, seq)
 );
 
--- An entry's identity is its guid where it has one, because podcast items often
--- share a link or have none. Otherwise it is its URL.
-CREATE UNIQUE INDEX entries_source_guid_key ON entries (source_id, guid) WHERE guid IS NOT NULL;
-CREATE UNIQUE INDEX entries_source_url_key ON entries (source_id, url) WHERE guid IS NULL;
+CREATE TABLE sync_state (
+    only_row boolean PRIMARY KEY DEFAULT true CHECK (only_row),
+    revision bigint NOT NULL
+);
+INSERT INTO sync_state (revision) VALUES (0);
 
 CREATE TABLE reads (
     id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     source_id  bigint NOT NULL REFERENCES sources,
     name       text NOT NULL,
+    start_seq  integer NOT NULL DEFAULT 0,
     catch_up   text NOT NULL DEFAULT 'passthrough',
     buffer     integer NOT NULL DEFAULT 0,
     config     jsonb NOT NULL DEFAULT '{}',
@@ -95,22 +102,11 @@ CREATE TABLE api_tokens (
     last_used_at timestamptz
 );
 
-CREATE TABLE crawl_log (
-    id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    source_id     bigint NOT NULL REFERENCES sources ON DELETE CASCADE,
-    url           text NOT NULL,
-    status        integer,
-    etag          text,
-    last_modified text,
-    fetched_at    timestamptz NOT NULL DEFAULT now(),
-    error         text
-);
-
 -- +goose Down
-DROP TABLE crawl_log;
 DROP TABLE api_tokens;
 DROP TABLE feed_tokens;
 DROP TABLE read_segments;
 DROP TABLE reads;
+DROP TABLE sync_state;
 DROP TABLE entries;
 DROP TABLE sources;
