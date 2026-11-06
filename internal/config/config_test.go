@@ -43,31 +43,32 @@ func TestDefaults(t *testing.T) {
 
 func TestEnvVars(t *testing.T) {
 	envs := map[string]string{
-		"ANDANTE_DATABASE_URL":          "postgres://db/andante",
-		"ANDANTE_LISTEN":                ":1",
-		"ANDANTE_ADMIN_LISTEN":          ":2",
-		"ANDANTE_BASE_URL":              "https://env.example",
-		"ANDANTE_DEFAULT_TIMEZONE":      "Europe/Dublin",
-		"ANDANTE_USER_AGENT":            "agent",
-		"ANDANTE_ADMIN_TOKEN":           "token",
-		"ANDANTE_LOG_FORMAT":            "text",
-		"ANDANTE_LOG_LEVEL":             "debug",
-		"ANDANTE_CRAWL_INTERVAL":        "1s",
-		"ANDANTE_READ_HEADER_TIMEOUT":   "2s",
-		"ANDANTE_READ_TIMEOUT":          "3s",
-		"ANDANTE_WRITE_TIMEOUT":         "4s",
-		"ANDANTE_IDLE_TIMEOUT":          "5s",
-		"ANDANTE_SHUTDOWN_TIMEOUT":      "6s",
-		"ANDANTE_READINESS_TIMEOUT":     "7s",
-		"ANDANTE_CRAWL_LOOKAHEAD":       "8",
-		"ANDANTE_CRAWL_MAX_BODY":        "9",
-		"ANDANTE_CRAWL_ALLOW_PRIVATE":   "true",
-		"ANDANTE_TAIL_INTERVAL":         "10s",
-		"ANDANTE_CRAWL_POLL_INTERVAL":   "11s",
-		"ANDANTE_CRAWL_REQUEST_TIMEOUT": "12s",
-		"ANDANTE_CRAWL_BACKOFF_CAP":     "13s",
-		"ANDANTE_ROBOTS_TTL":            "14s",
-		"ANDANTE_PROBE_TIMEOUT":         "15s",
+		"ANDANTE_DATABASE_URL":           "postgres://db/andante",
+		"ANDANTE_LISTEN":                 ":1",
+		"ANDANTE_ADMIN_LISTEN":           ":2",
+		"ANDANTE_BASE_URL":               "https://env.example",
+		"ANDANTE_DEFAULT_TIMEZONE":       "Europe/Dublin",
+		"ANDANTE_USER_AGENT":             "agent",
+		"ANDANTE_ADMIN_TOKEN":            "token",
+		"ANDANTE_LOG_FORMAT":             "text",
+		"ANDANTE_LOG_LEVEL":              "debug",
+		"ANDANTE_CRAWL_INTERVAL":         "1s",
+		"ANDANTE_READ_HEADER_TIMEOUT":    "2s",
+		"ANDANTE_READ_TIMEOUT":           "3s",
+		"ANDANTE_WRITE_TIMEOUT":          "4s",
+		"ANDANTE_IDLE_TIMEOUT":           "5s",
+		"ANDANTE_SHUTDOWN_TIMEOUT":       "6s",
+		"ANDANTE_READINESS_TIMEOUT":      "7s",
+		"ANDANTE_CRAWL_LOOKAHEAD":        "8",
+		"ANDANTE_CRAWL_MAX_BODY":         "9",
+		"ANDANTE_CRAWL_ALLOW_PRIVATE":    "true",
+		"ANDANTE_TAIL_INTERVAL":          "10s",
+		"ANDANTE_CRAWL_POLL_INTERVAL":    "11s",
+		"ANDANTE_CRAWL_REQUEST_TIMEOUT":  "12s",
+		"ANDANTE_CRAWL_BACKOFF_CAP":      "13s",
+		"ANDANTE_ROBOTS_TTL":             "14s",
+		"ANDANTE_PROBE_TIMEOUT":          "15s",
+		"ANDANTE_REPLAY_MIN_DATED_SHARE": "0.5",
 	}
 	for k, v := range envs {
 		t.Setenv(k, v)
@@ -84,7 +85,7 @@ func TestEnvVars(t *testing.T) {
 		WriteTimeout: 4 * time.Second, IdleTimeout: 5 * time.Second, ShutdownTimeout: 6 * time.Second,
 		ReadinessTimeout: 7 * time.Second, CrawlLookahead: 8, CrawlMaxBody: 9, CrawlAllowPrivate: true,
 		TailInterval: 10 * time.Second, CrawlPollInterval: 11 * time.Second, CrawlRequestTimeout: 12 * time.Second,
-		CrawlBackoffCap: 13 * time.Second, RobotsTTL: 14 * time.Second, ProbeTimeout: 15 * time.Second,
+		CrawlBackoffCap: 13 * time.Second, RobotsTTL: 14 * time.Second, ProbeTimeout: 15 * time.Second, ReplayMinDatedShare: 0.5,
 	}
 	if *got != want {
 		t.Errorf("got %+v\nwant %+v", *got, want)
@@ -125,6 +126,7 @@ func TestRejected(t *testing.T) {
 		{"zero tail interval", []string{db, base, "--tail-interval=0s"}, "tail-interval"},
 		{"zero lookahead", []string{db, base, "--crawl-lookahead=0"}, "crawl-lookahead"},
 		{"zero body limit", []string{db, base, "--crawl-max-body=0"}, "crawl-max-body"},
+		{"share above one", []string{db, base, "--replay-min-dated-share=1.5"}, "replay-min-dated-share"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

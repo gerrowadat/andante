@@ -81,11 +81,13 @@ func (l *CrawlLock) Held(ctx context.Context) bool {
 	return l.conn.Ping(ctx) == nil
 }
 
-// Release gives the lock up.
+// Release gives the lock up. It unlocks explicitly: closing the connection frees
+// the lock too, but only once Postgres has noticed, so the next attempt could still
+// find it held. Closing is the fallback, for a connection that cannot answer.
 func (l *CrawlLock) Release(ctx context.Context) {
-	// Destroying the connection ends the session, which frees the lock even if
-	// this context is already cancelled.
-	_ = l.conn.Conn().Close(ctx)
+	if _, err := l.conn.Exec(ctx, "SELECT pg_advisory_unlock($1)", int64(crawlLockID)); err != nil {
+		_ = l.conn.Conn().Close(ctx)
+	}
 	l.conn.Release()
 }
 

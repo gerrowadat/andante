@@ -11,34 +11,6 @@ import (
 
 // These operations are in the contract, and return 501 until their phase.
 
-func (h *handler) ListReads(context.Context, gen.ListReadsRequestObject) (gen.ListReadsResponseObject, error) {
-	return nil, notImplemented()
-}
-
-func (h *handler) CreateRead(context.Context, gen.CreateReadRequestObject) (gen.CreateReadResponseObject, error) {
-	return nil, notImplemented()
-}
-
-func (h *handler) GetRead(context.Context, gen.GetReadRequestObject) (gen.GetReadResponseObject, error) {
-	return nil, notImplemented()
-}
-
-func (h *handler) UpdateRead(context.Context, gen.UpdateReadRequestObject) (gen.UpdateReadResponseObject, error) {
-	return nil, notImplemented()
-}
-
-func (h *handler) DeleteRead(context.Context, gen.DeleteReadRequestObject) (gen.DeleteReadResponseObject, error) {
-	return nil, notImplemented()
-}
-
-func (h *handler) CreateAdjustment(context.Context, gen.CreateAdjustmentRequestObject) (gen.CreateAdjustmentResponseObject, error) {
-	return nil, notImplemented()
-}
-
-func (h *handler) ListSegments(context.Context, gen.ListSegmentsRequestObject) (gen.ListSegmentsResponseObject, error) {
-	return nil, notImplemented()
-}
-
 func (h *handler) ListFeedTokens(context.Context, gen.ListFeedTokensRequestObject) (gen.ListFeedTokensResponseObject, error) {
 	return nil, notImplemented()
 }

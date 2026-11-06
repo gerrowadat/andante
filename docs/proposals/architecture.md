@@ -65,6 +65,7 @@ Bootstrap only, via flags with env var counterparts (kong):
 | `--crawl-backoff-cap` | `ANDANTE_CRAWL_BACKOFF_CAP` | `6h` | Longest wait after a host fails or asks for one |
 | `--robots-ttl` | `ANDANTE_ROBOTS_TTL` | `24h` | How long to cache a host's robots.txt |
 | `--probe-timeout` | `ANDANTE_PROBE_TIMEOUT` | `5m` | Time allowed for a probe |
+| `--replay-min-dated-share` | `ANDANTE_REPLAY_MIN_DATED_SHARE` | `0.9` | Share of a source's entries that need dates before replay works without a `default_gap` |
 
 Every timing parameter is a flag. On first start with no API tokens in the
 database and no `--admin-token`, the server generates one, stores its hash and
@@ -121,6 +122,7 @@ reads (
   id            bigint generated always as identity primary key,
   source_id     bigint not null references sources,
   name          text not null,
+  start_seq     integer not null default 0, -- the first seq this read covers
   catch_up      text not null default 'passthrough', -- passthrough | buffer
   buffer        integer not null default 0,
   config        jsonb not null default '{}',  -- extension point (e.g. discussion links)

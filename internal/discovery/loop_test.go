@@ -470,6 +470,48 @@ func TestOnlyOneReplicaCrawls(t *testing.T) {
 	third.Release(t.Context())
 }
 
+func TestReleasingALockFreesItAtOnce(t *testing.T) {
+	st := storetest.New(t)
+	for i := range 50 {
+		lock, err := st.TryCrawlLock(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if lock == nil {
+			t.Fatalf("round %d: the lock was still held after its release", i)
+		}
+		lock.Release(t.Context())
+	}
+}
+
+func TestReleaseWorksAfterTheContextEnds(t *testing.T) {
+	st := storetest.New(t)
+	lock, err := st.TryCrawlLock(t.Context())
+	if err != nil || lock == nil {
+		t.Fatalf("lock: %v, %v", lock, err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	lock.Release(ctx)
+
+	// The unlock failed, so the fallback closed the session, which takes a moment.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		again, err := st.TryCrawlLock(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if again != nil {
+			again.Release(t.Context())
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the lock was never freed")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func TestRunStopsWithItsContext(t *testing.T) {
 	h := newHarness(t, 50)
 	ctx, cancel := context.WithCancel(t.Context())

@@ -130,4 +130,5 @@ onto the real network fails.
 - **A probe's entries have an `id` of 0,** because they are not saved.
 - **`crawl_log` has no pruning yet.** It grows by one row per request.
 
-Read positions reach the loop through `LoopOptions.Furthest`, which phase 6 supplies.
+Read positions reach the loop through `LoopOptions.Furthest`, which `internal/reads`
+supplies.

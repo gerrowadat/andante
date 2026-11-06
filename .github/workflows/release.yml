@@ -143,6 +143,9 @@ jobs:
           ANDANTE_REQUIRE_DB: "1"
         run: go test -race -count=1 ./...
 
+      - name: Property tests with a fixed seed
+        run: go test -count=1 ./internal/schedule/ -rapid.seed=1
+
       - name: Generated code is current
         run: |
           make generate

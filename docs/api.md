@@ -49,6 +49,12 @@ Status 422. The request is well formed, but its source config cannot be used: a
 strategy that is not built yet, or a value the strategy rejects. Configs are
 checked when they are written, so a bad one fails here and not at crawl time.
 
+### Invalid read
+
+Status 422. A read or an adjustment cannot be used: a bad RRULE or time zone, a rule
+more frequent than hourly, a gap measured in months, replay on a source with too few
+dated entries and no `default_gap`, or a source that does not exist.
+
 ### Probe failed
 
 Status 422. A probe could not get an answer from the site: robots.txt disallows the
@@ -59,7 +65,9 @@ returns them, with a warning instead.
 ### Conflict
 
 Status 409. The request clashes with what exists: a slug already in use, deleting
-a source a read still uses, or revoking the last active API token.
+a source a read still uses, revoking the last active API token, changing a read's
+`catch_up` or `buffer`, a jump to or behind the read's position or past the index, a
+skip with nothing to skip to, pausing a paused read, or resuming one that is not.
 
 ### Unauthorized
 

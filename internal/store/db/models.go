@@ -69,6 +69,7 @@ type Read struct {
 	Buffer    int32
 	Config    []byte
 	CreatedAt time.Time
+	StartSeq  int32
 }
 
 type ReadSegment struct {
@@ -80,7 +81,7 @@ type ReadSegment struct {
 	Rrule      *string
 	Timezone   string
 	PerRelease int32
-	Speed      pgtype.Numeric
+	Speed      *float64
 	MinGap     pgtype.Interval
 	MaxGap     pgtype.Interval
 	DefaultGap pgtype.Interval

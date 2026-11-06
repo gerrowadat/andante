@@ -18,8 +18,10 @@ require (
 	github.com/prometheus/client_golang v1.25.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/spf13/cobra v1.10.2
+	github.com/teambition/rrule-go v1.8.2
 	github.com/temoto/robotstxt v1.1.2
 	golang.org/x/text v0.43.0
+	pgregory.net/rapid v1.3.0
 	sigs.k8s.io/yaml v1.6.0
 )
 

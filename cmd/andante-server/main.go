@@ -20,6 +20,7 @@ import (
 	"github.com/gerrowadat/andante/internal/config"
 	"github.com/gerrowadat/andante/internal/discovery"
 	"github.com/gerrowadat/andante/internal/discovery/strategies"
+	"github.com/gerrowadat/andante/internal/reads"
 	"github.com/gerrowadat/andante/internal/server"
 	"github.com/gerrowadat/andante/internal/store"
 	"github.com/prometheus/client_golang/prometheus"
@@ -108,10 +109,16 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		MaxBody:      cfg.CrawlMaxBody,
 		AllowPrivate: cfg.CrawlAllowPrivate,
 	})
+	readService := reads.New(reads.Options{
+		Store:           st,
+		DefaultTimezone: cfg.DefaultTimezone,
+		MinDatedShare:   cfg.ReplayMinDatedShare,
+	})
 	apiHandler, err := api.New(api.Options{
 		Store:        st,
 		Strategies:   registry,
 		Prober:       discovery.NewProber(registry, fetcher, metrics),
+		Reads:        readService,
 		Registry:     reg,
 		Logger:       logger,
 		ProbeTimeout: cfg.ProbeTimeout,
@@ -134,6 +141,7 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		Lookahead:    cfg.CrawlLookahead,
 		TailInterval: cfg.TailInterval,
 		PollInterval: cfg.CrawlPollInterval,
+		Furthest:     readService.Furthest,
 	})
 
 	// The two stop together. A crawl never holds up serving, and serving ending
