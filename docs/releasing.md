@@ -43,11 +43,15 @@ sha256sum -c SHA256SUMS
 gh attestation verify andante-v0.1.0-linux-amd64.tar.gz --repo gerrowadat/andante
 ```
 
+`gh attestation` needs a recent `gh`. The 2.45 that Ubuntu 24.04 ships doesn't have it, so install
+from [GitHub's apt repo](https://github.com/cli/cli/blob/trunk/docs/install_linux.md).
+
 The archives are reproducible. `scripts/build-dist.sh` at the tagged commit, with the same
 `VERSION` and the Go toolchain named in `go.mod`, produces identical files. Pass the full commit
 as `COMMIT` if you build from anything other than a checkout of it.
 
-For the image, BuildKit attaches its SBOM and provenance attestations to the image index:
+For the image, BuildKit attaches its SBOM and provenance attestations to the image index. They
+aren't stored with GitHub, so `gh attestation verify` answers 404 for the image. Inspect it instead:
 
 ```sh
 docker buildx imagetools inspect ghcr.io/gerrowadat/andante:0.1.0
