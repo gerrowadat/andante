@@ -1,0 +1,8 @@
+ID:            1
+Source:        1
+Name:          Mornings
+State:         active
+Position:      0
+Due:           0
+Index end:     4
+Next release:  <time>

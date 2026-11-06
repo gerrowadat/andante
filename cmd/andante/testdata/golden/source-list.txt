@@ -1,0 +1,2 @@
+ID  SLUG   STATE     KIND  TITLE
+1   comic  indexing  page  A Comic

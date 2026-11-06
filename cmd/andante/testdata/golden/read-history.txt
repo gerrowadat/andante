@@ -1,0 +1,8 @@
+REASON   FROM SEQ  AT                    PACING
+created  0         <time>  FREQ=DAILY;BYHOUR=7;BYMINUTE=0;BYSECOND=0 (Europe/Dublin)
+skip     1         <time>  FREQ=DAILY;BYHOUR=7;BYMINUTE=0;BYSECOND=0 (Europe/Dublin)
+skip     3         <time>  FREQ=DAILY;BYHOUR=7;BYMINUTE=0;BYSECOND=0 (Europe/Dublin)
+pause    3         <time>  paused
+resume   3         <time>  FREQ=DAILY;BYHOUR=7;BYMINUTE=0;BYSECOND=0 (Europe/Dublin)
+jump     4         <time>  FREQ=DAILY;BYHOUR=7;BYMINUTE=0;BYSECOND=0 (Europe/Dublin)
+pacing   4         <time>  replay at 7x

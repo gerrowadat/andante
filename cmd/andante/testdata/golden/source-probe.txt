@@ -1,0 +1,9 @@
+SEQ  TITLE    DATE                  URL
+0    Strip 1  <time>  http://site/comic/1/
+1    Strip 2  <time>  http://site/comic/2/
+2    Strip 3  <time>  http://site/comic/3/
+3    Strip 4  <time>  http://site/comic/4/
+4    Strip 5  <time>  http://site/comic/5/
+
+Dated:  100%
+Warning: no next link on http://site/comic/5/; treating it as the live end

@@ -1,0 +1,6 @@
+SEQ  KIND  TITLE   URL
+0    page  Page 0  https://comic.example/0
+1    page  Page 1  https://comic.example/1
+2    page  Page 2  https://comic.example/2
+3    page  Page 3  https://comic.example/3
+4    page  Page 4  https://comic.example/4

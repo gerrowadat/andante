@@ -31,7 +31,8 @@ Start at the [project README](../README.md) for what andante is.
 - [Sources](sources.md) — adding a serial, what warnings mean, selectors, politeness.
 - [Reads](reads.md) — the two pacing modes, adjustments, catch-up, downtime.
 - [Feeds](feeds.md) — subscribing, sharing, revoking, the "next one now" link.
+- [CLI](cli.md) — every `andante` command, with examples.
 
 ## Using it
 
-Written as features land: `cli.md`, `deploying.md`, `monitoring.md`, `faq.md`.
+Written as features land: `deploying.md`, `monitoring.md`, `faq.md`.

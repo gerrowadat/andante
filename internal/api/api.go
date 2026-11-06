@@ -12,6 +12,7 @@ import (
 
 	"github.com/gerrowadat/andante/api"
 	"github.com/gerrowadat/andante/internal/api/gen"
+	"github.com/gerrowadat/andante/internal/buildinfo"
 	"github.com/gerrowadat/andante/internal/discovery"
 	"github.com/gerrowadat/andante/internal/reads"
 	"github.com/gerrowadat/andante/internal/store"
@@ -124,4 +125,10 @@ func (s specResponse) VisitGetSpecResponse(w http.ResponseWriter) error {
 
 func (h *handler) GetSpec(context.Context, gen.GetSpecRequestObject) (gen.GetSpecResponseObject, error) {
 	return specResponse(h.specJSON), nil
+}
+
+func (h *handler) GetVersion(context.Context, gen.GetVersionRequestObject) (gen.GetVersionResponseObject, error) {
+	return gen.GetVersion200JSONResponse{
+		Version: buildinfo.Version(), Commit: buildinfo.Commit(), Date: buildinfo.Date(),
+	}, nil
 }
