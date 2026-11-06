@@ -210,6 +210,7 @@ A source's strategy is the `strategy` property of its `config`. See
 | `POST /api/v1/imports/opml` | Create `feed`-strategy sources from an OPML file |
 | `GET/POST /api/v1/api-tokens`, `DELETE /api/v1/api-tokens/{id}` | Manage API tokens |
 | `GET /api/v1/openapi.json` | This document (no auth) |
+| `GET /api/v1/version` | The server's version (no auth) |
 
 ## Public routes
 

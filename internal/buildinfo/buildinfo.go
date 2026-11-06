@@ -18,6 +18,9 @@ func Version() string { return version }
 // Commit returns the stamped commit.
 func Commit() string { return commit }
 
+// Date returns the stamped build date.
+func Date() string { return date }
+
 // String returns the version, commit and build date on one line.
 func String() string {
 	return fmt.Sprintf("%s (commit %s, built %s)", version, commit, date)

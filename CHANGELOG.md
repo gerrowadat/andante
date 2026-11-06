@@ -24,6 +24,7 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   pause, resume, jump and re-pacing.
 - Feeds: Atom, RSS 2.0 and JSON Feed through per-person tokens, a "next one now"
   control for owners, and OPML export.
+- The `andante` CLI, covering the whole API, and `GET /api/v1/version`.
 
 ### Security
 

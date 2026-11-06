@@ -1,0 +1,9 @@
+ID:            1
+Slug:          comic
+Title:         A Comic
+Home:          https://comic.example/1
+Kind:          page
+State:         indexing
+Due:           -
+Last crawled:  -
+Last error:    -

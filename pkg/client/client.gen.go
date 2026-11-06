@@ -888,6 +888,13 @@ type SourcePatch struct {
 // SourcePatchState defines model for SourcePatch.State.
 type SourcePatchState string
 
+// Version defines model for Version.
+type Version struct {
+	Commit  string `json:"commit"`
+	Date    string `json:"date"`
+	Version string `json:"version"`
+}
+
 // Cursor defines model for Cursor.
 type Cursor = string
 
@@ -1839,6 +1846,13 @@ type ClientInterface interface {
 	//
 	// Corresponds with DELETE /tokens/{id} (the `RevokeFeedToken` operationId).
 	RevokeFeedToken(ctx context.Context, id ID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetVersion Get the server's version
+	//
+	// Returns the running server's version. Needs no token.
+	//
+	// Corresponds with GET /version (the `GetVersion` operationId).
+	GetVersion(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 // ListAPITokens List API tokens
@@ -2430,6 +2444,23 @@ func (c *Client) ListEntries(ctx context.Context, id ID, params *ListEntriesPara
 // Corresponds with DELETE /tokens/{id} (the `RevokeFeedToken` operationId).
 func (c *Client) RevokeFeedToken(ctx context.Context, id ID, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewRevokeFeedTokenRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetVersion Get the server's version
+//
+// Returns the running server's version. Needs no token.
+//
+// Corresponds with GET /version (the `GetVersion` operationId).
+func (c *Client) GetVersion(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetVersionRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -3539,6 +3570,33 @@ func NewRevokeFeedTokenRequest(server string, id ID) (*http.Request, error) {
 	return req, nil
 }
 
+// NewGetVersionRequest constructs an http.Request for the GetVersion method
+func NewGetVersionRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/version")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -3879,6 +3937,15 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with DELETE /tokens/{id} (the `RevokeFeedToken` operationId).
 	RevokeFeedTokenWithResponse(ctx context.Context, id ID, reqEditors ...RequestEditorFn) (*RevokeFeedTokenResponse, error)
+
+	// GetVersionWithResponse Get the server's version
+	//
+	// Returns the running server's version. Needs no token.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /version (the `GetVersion` operationId).
+	GetVersionWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetVersionResponse, error)
 }
 
 // ListAPITokensResponse200Headers the declared response headers of an HTTP 200 response for ListAPITokens
@@ -5033,6 +5100,54 @@ func (r RevokeFeedTokenResponse) ContentType() string {
 	return ""
 }
 
+type GetVersionResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Version
+	// ApplicationProblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationProblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetVersionResponse) GetJSON200() *Version {
+	return r.JSON200
+}
+
+// GetApplicationProblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r GetVersionResponse) GetApplicationProblemJSONDefault() *Problem {
+	return r.ApplicationProblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetVersionResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetVersionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetVersionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetVersionResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // ListAPITokensWithResponse List API tokens
 //
 // Lists API tokens, revoked ones included. Raw tokens are never returned.
@@ -5526,6 +5641,21 @@ func (c *ClientWithResponses) RevokeFeedTokenWithResponse(ctx context.Context, i
 		return nil, err
 	}
 	return ParseRevokeFeedTokenResponse(rsp)
+}
+
+// GetVersionWithResponse Get the server's version
+//
+// Returns the running server's version. Needs no token.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /version (the `GetVersion` operationId).
+func (c *ClientWithResponses) GetVersionWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetVersionResponse, error) {
+	rsp, err := c.GetVersion(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetVersionResponse(rsp)
 }
 
 // ParseListAPITokensResponse parses an HTTP response from a ListAPITokensWithResponse call
@@ -6358,6 +6488,39 @@ func ParseRevokeFeedTokenResponse(rsp *http.Response) (*RevokeFeedTokenResponse,
 	switch {
 	case rsp.StatusCode == 204:
 		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationProblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetVersionResponse parses an HTTP response from a GetVersionWithResponse call
+func ParseGetVersionResponse(rsp *http.Response) (*GetVersionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetVersionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Version
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Problem

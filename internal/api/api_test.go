@@ -1103,6 +1103,18 @@ func TestDatabaseFailureDuringAuthIsNot401(t *testing.T) {
 	}
 }
 
+func TestVersionNeedsNoToken(t *testing.T) {
+	f := newFixture(t)
+	resp, body := f.do(t, "GET", "/api/v1/version", "", "", "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d: %s", resp.StatusCode, body)
+	}
+	var v client.Version
+	if err := json.Unmarshal([]byte(body), &v); err != nil || v.Version == "" {
+		t.Errorf("version = %+v, %v", v, err)
+	}
+}
+
 func TestSpecNeedsNoToken(t *testing.T) {
 	f := newFixture(t)
 	resp, body := f.do(t, "GET", "/api/v1/openapi.json", "", "", "")
@@ -1132,6 +1144,7 @@ func loadSpec(t *testing.T) *openapi3.T {
 // spec must answer 501, and a phase that builds one moves it here.
 var implemented = map[string]bool{
 	"getSpec":          true,
+	"getVersion":       true,
 	"createProbe":      true,
 	"requestCrawl":     true,
 	"listReads":        true,

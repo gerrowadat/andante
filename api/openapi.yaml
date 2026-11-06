@@ -116,6 +116,26 @@ paths:
                 paths: {}
         default:
           $ref: "#/components/responses/Problem"
+  /version:
+    get:
+      operationId: getVersion
+      tags: [meta]
+      summary: Get the server's version
+      description: Returns the running server's version. Needs no token.
+      security: []
+      responses:
+        "200":
+          description: The server's version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Version"
+              example:
+                version: v0.1.0
+                commit: "2416453"
+                date: 2026-11-05T07:00:00Z
+        default:
+          $ref: "#/components/responses/Problem"
   /sources:
     get:
       operationId: listSources
@@ -731,6 +751,16 @@ components:
             status: 404
             detail: source 7 does not exist
   schemas:
+    Version:
+      type: object
+      required: [version, commit, date]
+      properties:
+        version:
+          type: string
+        commit:
+          type: string
+        date:
+          type: string
     Problem:
       type: object
       description: RFC 9457 problem details.
