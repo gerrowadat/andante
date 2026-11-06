@@ -4,6 +4,7 @@
 package discovery
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"testing"
@@ -13,6 +14,9 @@ type fake struct{ err error }
 
 func (fake) Name() string                     { return "fake" }
 func (f fake) Validate(json.RawMessage) error { return f.err }
+func (fake) Next(context.Context, PageFetcher, Source, Cursor, int) (Batch, error) {
+	return Batch{}, nil
+}
 
 func TestRegistry(t *testing.T) {
 	wantErr := errors.New("bad config")

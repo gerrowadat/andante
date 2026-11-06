@@ -23,12 +23,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gerrowadat/andante/internal/discovery/sitetest"
 	"github.com/gerrowadat/andante/internal/store/storetest"
 	"github.com/gerrowadat/andante/pkg/client"
 	"github.com/jackc/pgx/v5"
 )
 
 const version = "v0.0.0-e2e"
+
+// crawlFlags let the server crawl the loopback fixture sites, quickly.
+var crawlFlags = []string{"--crawl-allow-private", "--crawl-interval=1ms", "--crawl-poll-interval=20ms"}
 
 func buildServer(t *testing.T) string {
 	t.Helper()
@@ -73,16 +77,16 @@ type process struct {
 	waited chan error
 }
 
-func startServer(t *testing.T, bin, dsn string) *process {
+func startServer(t *testing.T, bin, dsn string, flags ...string) *process {
 	t.Helper()
 	p := &process{admin: freeAddr(t), public: freeAddr(t), waited: make(chan error, 1)}
-	p.cmd = exec.Command(bin,
-		"--database-url="+dsn,
+	p.cmd = exec.Command(bin, append([]string{
+		"--database-url=" + dsn,
 		"--base-url=https://andante.example",
-		"--listen="+p.public,
-		"--admin-listen="+p.admin,
+		"--listen=" + p.public,
+		"--admin-listen=" + p.admin,
 		"--log-format=text",
-	)
+	}, flags...)...)
 	stderr, err := p.cmd.StderrPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -170,7 +174,8 @@ func TestTwoServersShareOneDatabase(t *testing.T) {
 
 func TestAPIThroughTheRealServer(t *testing.T) {
 	bin := buildServer(t)
-	p := startServer(t, bin, storetest.DSN(t))
+	site := sitetest.Serve(t, "comiccontrol")
+	p := startServer(t, bin, storetest.DSN(t), crawlFlags...)
 	p.waitReady(t)
 
 	match := regexp.MustCompile(`token=([A-Za-z0-9_-]{43})`).FindStringSubmatch(p.output())
@@ -187,11 +192,11 @@ func TestAPIThroughTheRealServer(t *testing.T) {
 	}
 
 	var config client.SourceConfig
-	if err := config.FromCrawlConfig(client.CrawlConfig{Strategy: client.Crawl, StartURL: "https://comic.example/1"}); err != nil {
+	if err := config.FromCrawlConfig(client.CrawlConfig{Strategy: client.Crawl, StartURL: site.URL + "/1.html"}); err != nil {
 		t.Fatal(err)
 	}
 	created, err := c.CreateSourceWithResponse(context.Background(), client.SourceCreate{
-		Slug: "e2e", Title: "E2E", HomeURL: "https://comic.example/", DefaultKind: client.Page, Config: config,
+		Slug: "e2e", Title: "E2E", HomeURL: site.URL, DefaultKind: client.Page, Config: config,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -206,6 +211,29 @@ func TestAPIThroughTheRealServer(t *testing.T) {
 	}
 	if list.JSON200 == nil || len(list.JSON200.Items) != 1 {
 		t.Fatalf("list sources: %d %s", list.StatusCode(), list.Body)
+	}
+
+	// The crawl loop indexes the source on its own, then settles at the live end.
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		got, err := c.GetSourceWithResponse(context.Background(), created.JSON201.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.JSON200 != nil && got.JSON200.State == client.SourceStateTail {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the source never reached tail mode: %s\nLogs:\n%s", got.Body, p.output())
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	entries, err := c.ListEntriesWithResponse(context.Background(), created.JSON201.ID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entries.JSON200 == nil || len(entries.JSON200.Items) != 5 {
+		t.Fatalf("entries: %d %s", entries.StatusCode(), entries.Body)
 	}
 
 	if code := status(p.admin + "/api/v1/sources"); code != http.StatusUnauthorized {
@@ -225,6 +253,38 @@ func TestAPIThroughTheRealServer(t *testing.T) {
 	}
 	if !strings.Contains(string(metrics), `andante_api_requests_total{route="GET /api/v1/sources",status="200"}`) {
 		t.Errorf("no API metric in /metrics:\n%s", metrics)
+	}
+}
+
+func TestProbeOutlivesTheWriteTimeout(t *testing.T) {
+	bin := buildServer(t)
+	site := sitetest.Serve(t, "comiccontrol")
+	// Five pages at this interval take far longer than the write timeout.
+	p := startServer(t, bin, storetest.DSN(t), "--crawl-allow-private", "--crawl-interval=100ms", "--write-timeout=200ms")
+	p.waitReady(t)
+
+	match := regexp.MustCompile(`token=([A-Za-z0-9_-]{43})`).FindStringSubmatch(p.output())
+	if match == nil {
+		t.Fatalf("no bootstrap token in the logs:\n%s", p.output())
+	}
+	c, err := client.NewClientWithResponses("http://"+p.admin+"/api/v1",
+		client.WithRequestEditorFn(func(_ context.Context, r *http.Request) error {
+			r.Header.Set("Authorization", "Bearer "+match[1])
+			return nil
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config client.SourceConfig
+	if err := config.FromCrawlConfig(client.CrawlConfig{Strategy: client.Crawl, StartURL: site.URL + "/1.html"}); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := c.CreateProbeWithResponse(context.Background(), client.ProbeRequest{Config: config})
+	if err != nil {
+		t.Fatalf("the response was cut off: %v", err)
+	}
+	if resp.JSON200 == nil || len(resp.JSON200.Entries) != 5 {
+		t.Fatalf("probe: %d %s", resp.StatusCode(), resp.Body)
 	}
 }
 

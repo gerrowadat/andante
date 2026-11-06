@@ -56,6 +56,15 @@ Bootstrap only, via flags with env var counterparts (kong):
 | `--idle-timeout` | `ANDANTE_IDLE_TIMEOUT` | `2m` | How long an idle keep-alive connection stays open |
 | `--shutdown-timeout` | `ANDANTE_SHUTDOWN_TIMEOUT` | `15s` | Time allowed for in-flight requests on shutdown |
 | `--readiness-timeout` | `ANDANTE_READINESS_TIMEOUT` | `2s` | Time allowed for the `/readyz` check |
+| `--crawl-lookahead` | `ANDANTE_CRAWL_LOOKAHEAD` | `50` | How far ahead of the furthest read to keep a source indexed |
+| `--crawl-max-body` | `ANDANTE_CRAWL_MAX_BODY` | `5242880` | Largest response body to accept, in bytes |
+| `--crawl-allow-private` | `ANDANTE_CRAWL_ALLOW_PRIVATE` | off | Allow crawling private and loopback addresses |
+| `--tail-interval` | `ANDANTE_TAIL_INTERVAL` | `6h` | How often to check a source at its live end |
+| `--crawl-poll-interval` | `ANDANTE_CRAWL_POLL_INTERVAL` | `30s` | How often the crawl loop looks for work when idle |
+| `--crawl-request-timeout` | `ANDANTE_CRAWL_REQUEST_TIMEOUT` | `30s` | Time allowed for one request to a site |
+| `--crawl-backoff-cap` | `ANDANTE_CRAWL_BACKOFF_CAP` | `6h` | Longest wait after a host fails or asks for one |
+| `--robots-ttl` | `ANDANTE_ROBOTS_TTL` | `24h` | How long to cache a host's robots.txt |
+| `--probe-timeout` | `ANDANTE_PROBE_TIMEOUT` | `5m` | Time allowed for a probe |
 
 Every timing parameter is a flag. On first start with no API tokens in the
 database and no `--admin-token`, the server generates one, stores its hash and

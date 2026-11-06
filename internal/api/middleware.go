@@ -13,6 +13,7 @@ import (
 	"runtime/debug"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gerrowadat/andante/pkg/client"
 	"github.com/getkin/kin-openapi/openapi3"
@@ -26,7 +27,13 @@ import (
 	"golang.org/x/text/message"
 )
 
-const requestIDHeader = "X-Request-ID"
+const (
+	requestIDHeader = "X-Request-ID"
+	probeRoute      = "POST " + BasePath + "/probes"
+
+	// probeDeadlineMargin leaves time to send a probe's answer after it times out.
+	probeDeadlineMargin = 5 * time.Second
+)
 
 // unmatchedRoute is the metric label for requests that matched no route. The raw
 // path would let a client create unbounded label values.
@@ -70,6 +77,9 @@ func (r *statusRecorder) WriteHeader(status int) {
 	r.ResponseWriter.WriteHeader(status)
 }
 
+// Unwrap lets http.ResponseController reach the connection.
+func (r *statusRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
+
 // countRequests records andante_api_requests_total. The route pattern is only
 // known inside the mux, on a request this middleware never sees, so recordRoute
 // passes it back through a pointer in the context.
@@ -88,6 +98,21 @@ func recordRoute(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if route, ok := r.Context().Value(routeKey).(*string); ok {
 			*route = r.Pattern
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// extendProbeDeadline gives a probe longer than --write-timeout. It waits out the
+// crawl interval between pages, so it takes minutes at the default interval, and
+// the server would otherwise cut the response off.
+func (h *handler) extendProbeDeadline(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Pattern == probeRoute {
+			deadline := time.Now().Add(h.probeTimeout + probeDeadlineMargin)
+			if err := http.NewResponseController(w).SetWriteDeadline(deadline); err != nil && !errors.Is(err, http.ErrNotSupported) {
+				h.logger.Warn("could not extend the probe's deadline", "error", err)
+			}
 		}
 		next.ServeHTTP(w, r)
 	})

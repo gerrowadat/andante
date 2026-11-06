@@ -34,6 +34,16 @@ type Config struct {
 	IdleTimeout       time.Duration `name:"idle-timeout" env:"ANDANTE_IDLE_TIMEOUT" default:"2m" help:"How long an idle keep-alive connection stays open."`
 	ShutdownTimeout   time.Duration `name:"shutdown-timeout" env:"ANDANTE_SHUTDOWN_TIMEOUT" default:"15s" help:"Time allowed for in-flight requests on shutdown."`
 	ReadinessTimeout  time.Duration `name:"readiness-timeout" env:"ANDANTE_READINESS_TIMEOUT" default:"2s" help:"Time allowed for the /readyz check."`
+
+	CrawlLookahead      int           `name:"crawl-lookahead" env:"ANDANTE_CRAWL_LOOKAHEAD" default:"50" help:"How far ahead of the furthest read to keep a source indexed."`
+	CrawlMaxBody        int64         `name:"crawl-max-body" env:"ANDANTE_CRAWL_MAX_BODY" default:"5242880" help:"Largest response body to accept, in bytes."`
+	CrawlAllowPrivate   bool          `name:"crawl-allow-private" env:"ANDANTE_CRAWL_ALLOW_PRIVATE" help:"Allow crawling private and loopback addresses. For tests and trusted networks."`
+	TailInterval        time.Duration `name:"tail-interval" env:"ANDANTE_TAIL_INTERVAL" default:"6h" help:"How often to check a source at its live end."`
+	CrawlPollInterval   time.Duration `name:"crawl-poll-interval" env:"ANDANTE_CRAWL_POLL_INTERVAL" default:"30s" help:"How often the crawl loop looks for work when idle."`
+	CrawlRequestTimeout time.Duration `name:"crawl-request-timeout" env:"ANDANTE_CRAWL_REQUEST_TIMEOUT" default:"30s" help:"Time allowed for one request to a site."`
+	CrawlBackoffCap     time.Duration `name:"crawl-backoff-cap" env:"ANDANTE_CRAWL_BACKOFF_CAP" default:"6h" help:"Longest wait after a host fails or asks for one."`
+	RobotsTTL           time.Duration `name:"robots-ttl" env:"ANDANTE_ROBOTS_TTL" default:"24h" help:"How long to cache a host's robots.txt."`
+	ProbeTimeout        time.Duration `name:"probe-timeout" env:"ANDANTE_PROBE_TIMEOUT" default:"5m" help:"Time allowed for a probe, which waits out --crawl-interval between pages."`
 }
 
 // Validate checks what the flags' types cannot. kong calls it after parsing.
@@ -66,10 +76,22 @@ func (c *Config) Validate() error {
 		{"--idle-timeout", c.IdleTimeout},
 		{"--shutdown-timeout", c.ShutdownTimeout},
 		{"--readiness-timeout", c.ReadinessTimeout},
+		{"--tail-interval", c.TailInterval},
+		{"--crawl-poll-interval", c.CrawlPollInterval},
+		{"--crawl-request-timeout", c.CrawlRequestTimeout},
+		{"--crawl-backoff-cap", c.CrawlBackoffCap},
+		{"--robots-ttl", c.RobotsTTL},
+		{"--probe-timeout", c.ProbeTimeout},
 	} {
 		if d.value <= 0 {
 			errs = append(errs, fmt.Errorf("%s must be positive, got %s", d.flag, d.value))
 		}
+	}
+	if c.CrawlLookahead <= 0 {
+		errs = append(errs, fmt.Errorf("--crawl-lookahead must be positive, got %d", c.CrawlLookahead))
+	}
+	if c.CrawlMaxBody <= 0 {
+		errs = append(errs, fmt.Errorf("--crawl-max-body must be positive, got %d", c.CrawlMaxBody))
 	}
 	return errors.Join(errs...)
 }

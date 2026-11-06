@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -165,6 +166,32 @@ func TestAPIIsOnlyOnTheAdminListener(t *testing.T) {
 	}
 	if code, _ := get(t, "http://"+s.PublicAddr().String()+"/api/v1/sources"); code != http.StatusNotFound {
 		t.Errorf("public /api/v1/sources = %d, want 404", code)
+	}
+}
+
+func TestHandlersCanOutliveTheWriteTimeout(t *testing.T) {
+	cfg := testConfig()
+	cfg.WriteTimeout = 20 * time.Millisecond
+	api := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if err := http.NewResponseController(w).SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
+			t.Errorf("SetWriteDeadline: %v", err)
+		}
+		time.Sleep(60 * time.Millisecond)
+		_, _ = fmt.Fprint(w, "finished")
+	})
+	s, err := New(cfg, Deps{Ready: alwaysReady, Registry: prometheus.NewRegistry(), Logger: slog.New(slog.DiscardHandler), API: api})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- s.Run(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+	if code, body := get(t, "http://"+s.AdminAddr().String()+"/api/v1/probes"); code != http.StatusOK || body != "finished" {
+		t.Errorf("got %d %q", code, body)
 	}
 }
 

@@ -1,0 +1,49 @@
+-- SPDX-License-Identifier: Apache-2.0
+-- Copyright (C) 2026 Dave O'Connor
+
+-- name: ListDueSources :many
+-- A source with no due_at is not forced: the crawl loop works out whether it
+-- needs indexing. One with a due_at waits for it.
+SELECT * FROM sources
+WHERE state IN ('indexing', 'tail') AND (due_at IS NULL OR due_at <= $1)
+ORDER BY due_at NULLS LAST, id;
+
+-- name: EntryStats :one
+SELECT count(*)::bigint AS count, coalesce(max(seq), -1)::integer AS max_seq
+FROM entries WHERE source_id = $1;
+
+-- name: EntryKnown :one
+SELECT EXISTS (
+    SELECT 1 FROM entries
+    WHERE source_id = $1 AND (url = $2 OR (content_hash IS NOT NULL AND content_hash = $3))
+);
+
+-- name: InsertEntry :exec
+INSERT INTO entries (source_id, seq, kind, url, title, summary, images, alt_text, original_date, content_hash)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);
+
+-- name: UpdateEntryContent :exec
+UPDATE entries SET title = $3, images = $4, alt_text = $5
+WHERE source_id = $1 AND url = $2;
+
+-- name: RecordSourceOutcome :exec
+-- A source paused during a crawl stays paused.
+UPDATE sources
+SET cursor = coalesce(sqlc.narg(cursor), cursor),
+    state = CASE WHEN state = 'paused' THEN state ELSE sqlc.arg(state)::text END,
+    due_at = sqlc.narg(due_at),
+    last_crawled_at = sqlc.arg(last_crawled_at),
+    last_error = sqlc.narg(last_error)
+WHERE id = sqlc.arg(id);
+
+-- name: RequestCrawl :execrows
+UPDATE sources SET due_at = now() WHERE id = $1;
+
+-- name: InsertCrawlLog :exec
+INSERT INTO crawl_log (source_id, url, status, etag, last_modified, error)
+VALUES ($1, $2, $3, $4, $5, $6);
+
+-- name: LatestValidators :one
+SELECT etag, last_modified FROM crawl_log
+WHERE source_id = $1 AND url = $2 AND status = 200
+ORDER BY id DESC LIMIT 1;

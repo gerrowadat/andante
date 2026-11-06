@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/gerrowadat/andante/api"
 	"github.com/gerrowadat/andante/internal/api/gen"
@@ -34,16 +35,22 @@ func init() {
 type Options struct {
 	Store      *store.Store
 	Strategies *discovery.Registry
+	Prober     *discovery.Prober
 	Registry   prometheus.Registerer
 	Logger     *slog.Logger
+	// ProbeTimeout bounds POST /probes. It outlasts --write-timeout on purpose.
+	ProbeTimeout time.Duration
 }
 
 type handler struct {
 	store      *store.Store
 	strategies *discovery.Registry
+	prober     *discovery.Prober
 	logger     *slog.Logger
 	specJSON   []byte
 	router     routers.Router
+
+	probeTimeout time.Duration
 }
 
 // New returns the admin API. Mount it at BasePath.
@@ -66,7 +73,10 @@ func New(opts Options) (http.Handler, error) {
 		return nil, fmt.Errorf("route API description: %w", err)
 	}
 
-	h := &handler{store: opts.Store, strategies: opts.Strategies, logger: opts.Logger, specJSON: specJSON, router: router}
+	h := &handler{
+		store: opts.Store, strategies: opts.Strategies, prober: opts.Prober, logger: opts.Logger,
+		specJSON: specJSON, router: router, probeTimeout: opts.ProbeTimeout,
+	}
 
 	strict := gen.NewStrictHandlerWithOptions(h, nil, gen.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, err error) {
@@ -77,7 +87,7 @@ func New(opts Options) (http.Handler, error) {
 	routes := gen.HandlerWithOptions(strict, gen.StdHTTPServerOptions{
 		BaseURL:     BasePath,
 		BaseRouter:  http.NewServeMux(),
-		Middlewares: []gen.MiddlewareFunc{recordRoute},
+		Middlewares: []gen.MiddlewareFunc{h.extendProbeDeadline, recordRoute},
 		ErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, err error) {
 			writeProblem(w, requestProblem(err))
 		},
