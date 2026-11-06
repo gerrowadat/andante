@@ -95,7 +95,7 @@ internal/api/             admin API handlers; gen/ is oapi-codegen output
 internal/server/          listeners, middleware, wiring, public feed routes
 pkg/client/               generated API client (public: the CLI and other tools import it)
 deploy/nomad/             example Nomad job
-deploy/prometheus/        example alert rules
+deploy/prometheus/        example alert rules and their tests
 test/e2e/                 end-to-end suite (build tag e2e)
 testdata/sites/           fixture sites and feeds (comics, podcasts, blogs) for discovery tests
 scripts/                  release.sh, build-dist.sh, license-check.sh, spec-diff.sh

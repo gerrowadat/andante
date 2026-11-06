@@ -6,6 +6,7 @@
 - GCC or another C compiler, for the race detector in `make test`.
 - Docker, for `make docker`, `make spec-lint`, and Postgres through `compose.yaml`.
 - [Trivy](https://trivy.dev), for `make docker-scan` only.
+- [Nomad](https://developer.hashicorp.com/nomad/install), for `make deploy-check` only.
 
 `make lint` uses `golangci-lint` from your `PATH` if there is one, and otherwise
 fetches the version CI pins. A different local version can disagree with CI.
@@ -29,6 +30,7 @@ fetches the version CI pins. A different local version can disagree with CI.
 | `make generate` | Regenerates `internal/store/db/` with sqlc, and `internal/api/gen/` and `pkg/client/` with oapi-codegen. Needs a C compiler. CI fails if the result differs |
 | `make docker` | Builds the image for this machine's platform as `andante:dev` |
 | `make docker-scan` | Builds that image and scans it as CI does; needs Trivy |
+| `make deploy-check` | Validates the Nomad job locally and tests the Prometheus alerts; needs `nomad` and Docker |
 | `make clean` | Removes `out/` |
 | `make version` | Prints the version `make build` stamps |
 

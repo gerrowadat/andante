@@ -12,7 +12,32 @@ You get a normal feed — Atom, RSS 2.0 or JSON Feed — for any feed reader or
 podcast app. Feeds are shareable, so a group of friends can read or listen
 along together. Going back to the start is a new read.
 
-> Status: pre-alpha. Nothing works yet. See [`docs/plan/`](docs/plan/).
+> Status: alpha. The features are built and tested, and v0.1.0 is the first release.
+> Expect rough edges.
+
+## Quick start
+
+You need Go and Docker. This starts Postgres and the server, which logs a generated
+API token once:
+
+```sh
+make build
+make run
+```
+
+In another terminal, add a serial and subscribe to it:
+
+```sh
+export ANDANTE_TOKEN=<the token from the log>
+out/andante source probe https://pod.example/rss --strategy feed --kind episode
+out/andante source add https://pod.example/rss --strategy feed --slug my-podcast --title 'My Podcast' \
+  --home-url https://pod.example/ --kind episode
+out/andante read create my-podcast --replay --speed 7
+out/andante token add 1 --label me --owner
+```
+
+Paste the feed URL into your feed reader or podcast app. The URL uses `--base-url`, so
+a reader on another machine needs a real address. See [deploying](docs/deploying.md).
 
 ## How it works
 
@@ -32,6 +57,8 @@ along together. Going back to the start is a new read.
 - [Design philosophy](docs/philosophy.md)
 - [Documentation index](docs/README.md)
 - [Build plan](docs/plan/README.md)
+- [Deploying](docs/deploying.md)
+- [FAQ](docs/faq.md)
 
 ## License
 

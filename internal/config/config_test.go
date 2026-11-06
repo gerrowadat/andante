@@ -114,6 +114,7 @@ func TestRejected(t *testing.T) {
 		{"missing database URL", []string{base}, "database-url"},
 		{"missing base URL", []string{db}, "base-url"},
 		{"bad DSN", []string{"--database-url=postgres://u:hunter2@host:notaport/db", base}, "database-url"},
+		{"negative test clock", []string{db, base, "--test-clock-offset=-1h"}, "test-clock-offset"},
 		{"relative base URL", []string{db, "--base-url=/feeds"}, "base-url"},
 		{"base URL with no host", []string{db, "--base-url=https://"}, "base-url"},
 		{"non-http base URL", []string{db, "--base-url=ftp://andante.example"}, "base-url"},

@@ -1,0 +1,104 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 Dave O'Connor
+#
+# Unit tests for alerts.yml. Run by make deploy-check.
+rule_files:
+  - alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: a source in error
+    interval: 5m
+    input_series:
+      - series: 'andante_source_state{source="comic", state="error"}'
+        values: "1x24"
+      - series: 'andante_source_state{source="comic", state="tail"}'
+        values: "0x24"
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: AndanteSourceInError
+      - eval_time: 90m
+        alertname: AndanteSourceInError
+        exp_alerts:
+          - exp_labels: { severity: warning, source: comic, state: error }
+            exp_annotations:
+              summary: "Source comic has stopped on an error"
+              description: "See last_error on the source, fix the cause, then run andante source edit --resume."
+
+  - name: crawl failures are per source
+    interval: 1m
+    input_series:
+      - series: 'andante_crawl_requests_total{source="bad", status="503"}'
+        values: "0+10x90"
+      - series: 'andante_crawl_requests_total{source="bad", status="200"}'
+        values: "0+1x90"
+      - series: 'andante_crawl_requests_total{source="good", status="200"}'
+        values: "0+10x90"
+      - series: 'andante_crawl_requests_total{source="good", status="304"}'
+        values: "0+10x90"
+    alert_rule_test:
+      - eval_time: 80m
+        alertname: AndanteCrawlFailures
+        exp_alerts:
+          - exp_labels: { severity: warning, source: bad }
+            exp_annotations:
+              summary: "Most requests for bad are failing"
+              description: "More than half of this source's requests have failed for 30 minutes."
+
+  - name: feed errors
+    interval: 1m
+    input_series:
+      - series: 'andante_feed_requests_total{format="rss", role="viewer", status="500"}'
+        values: "0+1x30"
+      - series: 'andante_feed_requests_total{format="rss", role="viewer", status="200"}'
+        values: "0+1x30"
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: AndanteFeedErrors
+        exp_alerts:
+          - exp_labels: { severity: critical }
+            exp_annotations:
+              summary: "andante is failing feed requests"
+              description: "More than 5% of feed requests have returned a 5xx for 10 minutes."
+
+  - name: healthy feeds do not alert
+    interval: 1m
+    input_series:
+      - series: 'andante_feed_requests_total{format="rss", role="viewer", status="200"}'
+        values: "0+1x30"
+      - series: 'andante_feed_requests_total{format="rss", role="viewer", status="304"}'
+        values: "0+1x30"
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: AndanteFeedErrors
+
+  - name: a crawl loop that stops succeeding
+    interval: 1h
+    input_series:
+      - series: 'andante_crawl_requests_total{source="comic", status="200"}'
+        values: "0+1x6 7x48"
+    alert_rule_test:
+      - eval_time: 12h
+        alertname: AndanteNoSuccessfulCrawl
+      - eval_time: 33h
+        alertname: AndanteNoSuccessfulCrawl
+        exp_alerts:
+          - exp_labels: { severity: warning }
+            exp_annotations:
+              summary: "andante has not crawled anything successfully in 24 hours"
+              description: "Tail checks should succeed every few hours. Check the crawl loop and the server's network."
+
+  - name: a server that has never crawled
+    interval: 1h
+    input_series:
+      - series: 'andante_build_info{version="v0.1.0"}'
+        values: "1x48"
+    alert_rule_test:
+      - eval_time: 26h
+        alertname: AndanteNoSuccessfulCrawl
+        exp_alerts:
+          - exp_labels: { severity: warning }
+            exp_annotations:
+              summary: "andante has not crawled anything successfully in 24 hours"
+              description: "Tail checks should succeed every few hours. Check the crawl loop and the server's network."

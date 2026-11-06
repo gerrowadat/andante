@@ -1,7 +1,8 @@
-# Proposal: Architecture
+# Design: Architecture
 
-Status: proposed. Covers phases 3–9 of the [build plan](../plan/README.md);
-phase 10 moves it to `docs/design/architecture.md`.
+How andante fits together: its components, data model, API and listeners. Built over
+phases 3 to 9 of the [build plan](../plan/README.md). Why each part is the way it is
+lives in the design record for that part.
 
 ## Components
 
@@ -36,44 +37,13 @@ phase 10 moves it to `docs/design/architecture.md`.
 
 ## Configuration
 
-Bootstrap only, via flags with env var counterparts (kong):
+Bootstrap only, through flags with environment variable counterparts (kong).
+[`configuration.md`](../configuration.md) lists them. Every timing parameter is a flag.
+On first start with no API tokens in the database and no `--admin-token`, the server
+generates one, stores its hash and logs it once.
 
-| Flag | Env | Default | Purpose |
-|---|---|---|---|
-| `--database-url` | `ANDANTE_DATABASE_URL` | — (required) | Postgres DSN |
-| `--listen` | `ANDANTE_LISTEN` | `:8080` | Public listener (feeds) |
-| `--admin-listen` | `ANDANTE_ADMIN_LISTEN` | `127.0.0.1:8081` | Admin listener |
-| `--base-url` | `ANDANTE_BASE_URL` | — (required) | Public URL used in feed links |
-| `--default-timezone` | `ANDANTE_DEFAULT_TIMEZONE` | `UTC` | Default for new reads |
-| `--user-agent` | `ANDANTE_USER_AGENT` | `andante/<version> (+<base-url>)` | Crawler identity |
-| `--crawl-interval` | `ANDANTE_CRAWL_INTERVAL` | `5s` | Minimum gap between requests to one host |
-| `--admin-token` | `ANDANTE_ADMIN_TOKEN` | generated on first run | Bootstrap API token |
-| `--log-format` | `ANDANTE_LOG_FORMAT` | `json` | `json` or `text` |
-| `--log-level` | `ANDANTE_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
-| `--read-header-timeout` | `ANDANTE_READ_HEADER_TIMEOUT` | `5s` | Time allowed to read request headers |
-| `--read-timeout` | `ANDANTE_READ_TIMEOUT` | `30s` | Time allowed to read a whole request |
-| `--write-timeout` | `ANDANTE_WRITE_TIMEOUT` | `30s` | Time allowed to write a response |
-| `--idle-timeout` | `ANDANTE_IDLE_TIMEOUT` | `2m` | How long an idle keep-alive connection stays open |
-| `--shutdown-timeout` | `ANDANTE_SHUTDOWN_TIMEOUT` | `15s` | Time allowed for in-flight requests on shutdown |
-| `--readiness-timeout` | `ANDANTE_READINESS_TIMEOUT` | `2s` | Time allowed for the `/readyz` check |
-| `--crawl-lookahead` | `ANDANTE_CRAWL_LOOKAHEAD` | `50` | How far ahead of the furthest read to keep a source indexed |
-| `--crawl-max-body` | `ANDANTE_CRAWL_MAX_BODY` | `5242880` | Largest response body to accept, in bytes |
-| `--crawl-allow-private` | `ANDANTE_CRAWL_ALLOW_PRIVATE` | off | Allow crawling private and loopback addresses |
-| `--tail-interval` | `ANDANTE_TAIL_INTERVAL` | `6h` | How often to check a source at its live end |
-| `--crawl-poll-interval` | `ANDANTE_CRAWL_POLL_INTERVAL` | `30s` | How often the crawl loop looks for work when idle |
-| `--crawl-request-timeout` | `ANDANTE_CRAWL_REQUEST_TIMEOUT` | `30s` | Time allowed for one request to a site |
-| `--crawl-backoff-cap` | `ANDANTE_CRAWL_BACKOFF_CAP` | `6h` | Longest wait after a host fails or asks for one |
-| `--robots-ttl` | `ANDANTE_ROBOTS_TTL` | `24h` | How long to cache a host's robots.txt |
-| `--probe-timeout` | `ANDANTE_PROBE_TIMEOUT` | `5m` | Time allowed for a probe |
-| `--replay-min-dated-share` | `ANDANTE_REPLAY_MIN_DATED_SHARE` | `0.9` | Share of a source's entries that need dates before replay works without a `default_gap` |
-| `--feed-rate-limit` | `ANDANTE_FEED_RATE_LIMIT` | `60` | Requests a feed token may make per hour |
-
-Every timing parameter is a flag. On first start with no API tokens in the
-database and no `--admin-token`, the server generates one, stores its hash and
-logs it once.
-
-Migrations are embedded (goose + `embed.FS`) and run on start under a Postgres
-advisory lock.
+Migrations are embedded (goose + `embed.FS`) and run on start under a Postgres advisory
+lock.
 
 ## Data model
 
@@ -191,7 +161,7 @@ generated with oapi-codegen (std-http server, strict mode). Errors are RFC 9457
 problem details. Lists use opaque cursors (`?cursor=…&limit=…`) with a `next`
 link in the body and a `Link` header. `PATCH` takes a JSON merge patch (RFC 7396).
 A source's strategy is the `strategy` property of its `config`. See
-[`design/api.md`](../design/api.md).
+[`api.md`](api.md).
 
 | Method & path | Purpose |
 |---|---|
@@ -240,3 +210,20 @@ from the next release time. Per-token rate limiting.
 
 Source slugs are bounded by what the user creates, so they are acceptable as a
 label. Tokens and read IDs are never labels.
+
+## Where this diverged from the proposal
+
+- **The flag table moved to `configuration.md`,** so that there is one list to keep
+  current.
+- **`reads.start_seq` came in a second migration.** The first segment's `from_seq` also
+  counts the entries released at the start, so it could not say where a read began.
+- **`sources.due_at` means "forced" when set,** and not simply the next crawl. See
+  [`discovery.md`](discovery.md).
+- **The admin listener defaults to loopback,** rather than assuming a tailnet. Where it
+  is reachable from is a deployment choice. See [`deploying.md`](../deploying.md).
+- **`GET /api/v1/version` and `andante_build_info` were added,** so that a client and an
+  operator can both tell what is running.
+- **`--test-clock-offset` was added** for the end-to-end suite, which runs the real
+  binary and cannot wait a week for a replay. It moves reads and feeds. The crawl loop
+  keeps the real clock, because the suite does not need it moved, and `discovered_at`
+  comes from the database. The server logs a warning when it is set.
