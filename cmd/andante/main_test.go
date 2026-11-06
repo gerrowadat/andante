@@ -6,7 +6,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"flag"
 	"io"
 	"log/slog"
@@ -47,7 +46,7 @@ func newHarness(t *testing.T) *harness {
 	t.Helper()
 	st := storetest.New(t)
 	reg := prometheus.NewRegistry()
-	registry := discovery.NewRegistry(strategies.Crawl{})
+	registry := discovery.NewRegistry(strategies.All()...)
 	fetcher := discovery.NewFetcher(sitetest.FetcherOptions(sitetest.NewClock()))
 	handler, err := api.New(api.Options{
 		Store:        st,
@@ -283,6 +282,40 @@ func TestProbe(t *testing.T) {
 	}
 }
 
+func TestStrategiesFromTheCommandLine(t *testing.T) {
+	h := newHarness(t)
+	podcast := sitetest.Serve(t, "podcast")
+	if got := h.ok(t, "source", "probe", podcast.URL+"/feed.xml", "--strategy", "feed", "--kind", "article", "--limit", "2"); !strings.Contains(got, "Episode 1") {
+		t.Errorf("feed probe: %s", got)
+	}
+	numeric := sitetest.Serve(t, "numeric-json")
+	got := h.ok(t, "source", "probe", numeric.URL+"/{n}/info.0.json", "--strategy", "numeric", "--start-id", "1", "--format", "json",
+		"--field", "title=safe_title", "--field", "image=img", "--field", "year=year", "--field", "month=month", "--field", "day=day", "--limit", "2")
+	if !strings.Contains(got, "Barrel") {
+		t.Errorf("numeric probe: %s", got)
+	}
+
+	h.ok(t, "source", "add", podcast.URL+"/feed.xml", "--slug", "pod", "--strategy", "feed", "--kind", "episode", "--fill-gaps")
+	h.ok(t, "source", "add", podcast.URL+"/feed.xml", "--slug", "paged", "--strategy", "feed-paged", "--max-pages", "3", "--page-param", "p", "--full-text", "--fill-gaps")
+	h.ok(t, "source", "add", numeric.URL+"/{n}/info.0.json", "--slug", "num", "--strategy", "numeric", "--max-misses", "2", "--format", "json", "--field", "title=title", "--field", "date=d", "--field", "alt_text=alt")
+	h.ok(t, "source", "add", podcast.URL+"/feed.xml", "--slug", "text", "--kind", "article", "--full-text")
+	for _, slug := range []string{"pod", "paged", "num"} {
+		h.ok(t, "source", "edit", slug, "--start-url", "https://new.example/{n}")
+	}
+	if r := h.run("source", "edit", "pod", "--selector", "next=a"); r.err == nil {
+		t.Error("accepted --selector on a feed")
+	}
+	if r := h.run("source", "probe", "https://a.example/", "--strategy", "guess"); r.err == nil {
+		t.Error("accepted a bad strategy")
+	}
+	if r := h.run("source", "probe", "https://a.example/{n}", "--strategy", "numeric", "--field", "colour=red"); r.err == nil {
+		t.Error("accepted a bad field")
+	}
+	if r := h.run("source", "probe", "https://a.example/{n}", "--strategy", "numeric", "--field", "nonsense"); r.err == nil {
+		t.Error("accepted a malformed field")
+	}
+}
+
 func TestReadCommands(t *testing.T) {
 	h := newHarness(t)
 	h.comic(t)
@@ -443,10 +476,12 @@ func TestOPML(t *testing.T) {
 	if err := os.WriteFile(file, []byte(got), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	r := h.run("import", "opml", file)
-	var problem *problemError
-	if !errors.As(r.err, &problem) || problem.problem.Status != http.StatusNotImplemented {
-		t.Errorf("import: %v", r.err)
+	imported := h.ok(t, "import", "opml", file)
+	if !strings.Contains(imported, "created") || !strings.Contains(imported, "https://andante.example/f/") {
+		t.Errorf("import: %s", imported)
+	}
+	if added := h.ok(t, "source", "list"); !strings.Contains(added, "paused") {
+		t.Errorf("imported sources: %s", added)
 	}
 	if r := h.run("import", "opml", filepath.Join(t.TempDir(), "missing")); r.err == nil {
 		t.Error("imported a missing file")

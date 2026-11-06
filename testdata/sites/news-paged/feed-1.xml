@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>The News</title>
+    <link>https://news.example/</link>
+    <description>News</description>
+    <item>
+      <title>Story 5</title>
+      <link>https://news.example/5</link>
+      <guid>https://news.example/5</guid>
+      <pubDate>Sat, 05 Mar 2014 09:00:00 +0000</pubDate>
+      <description>Story 5 summary</description>
+    </item>
+    <item>
+      <title>Story 4</title>
+      <link>https://news.example/4</link>
+      <guid>https://news.example/4</guid>
+      <pubDate>Sat, 04 Mar 2014 09:00:00 +0000</pubDate>
+      <description>Story 4 summary</description>
+    </item>
+  </channel>
+</rss>

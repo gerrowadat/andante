@@ -69,6 +69,9 @@ type Response struct {
 	ETag         string
 	LastModified string
 	NotModified  bool
+	// From the response headers, for Head.
+	ContentType   string
+	ContentLength int64
 }
 
 // FetcherOptions configure a Fetcher.
@@ -174,9 +177,19 @@ var nonPublic = []netip.Prefix{
 
 // Fetch requests a page, following redirects. Validators apply to the first hop.
 func (f *Fetcher) Fetch(ctx context.Context, rawURL string, validators Validators) (*Response, error) {
+	return f.follow(ctx, http.MethodGet, rawURL, validators)
+}
+
+// Head asks about a file without downloading it, with the same politeness as a
+// page, because andante never downloads enclosures.
+func (f *Fetcher) Head(ctx context.Context, rawURL string) (*Response, error) {
+	return f.follow(ctx, http.MethodHead, rawURL, Validators{})
+}
+
+func (f *Fetcher) follow(ctx context.Context, method, rawURL string, validators Validators) (*Response, error) {
 	current := rawURL
 	for range maxRedirects + 1 {
-		resp, redirect, err := f.hop(ctx, current, validators)
+		resp, redirect, err := f.hop(ctx, method, current, validators)
 		if err != nil {
 			return nil, err
 		}
@@ -201,7 +214,7 @@ func (f *Fetcher) host(key string) *hostState {
 
 // hop makes one request, holding the host's slot, and returns the page or where
 // it redirects to.
-func (f *Fetcher) hop(ctx context.Context, rawURL string, validators Validators) (*Response, string, error) {
+func (f *Fetcher) hop(ctx context.Context, method, rawURL string, validators Validators) (*Response, string, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return nil, "", fmt.Errorf("parse %q: %w", rawURL, err)
@@ -228,7 +241,7 @@ func (f *Fetcher) hop(ctx context.Context, rawURL string, validators Validators)
 		return nil, "", err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	req, err := http.NewRequestWithContext(ctx, method, rawURL, nil)
 	if err != nil {
 		return nil, "", fmt.Errorf("build request: %w", err)
 	}
@@ -304,6 +317,9 @@ func (f *Fetcher) handle(h *hostState, u *url.URL, resp *http.Response) (*Respon
 		Body:         body,
 		ETag:         resp.Header.Get("ETag"),
 		LastModified: resp.Header.Get("Last-Modified"),
+
+		ContentType:   resp.Header.Get("Content-Type"),
+		ContentLength: resp.ContentLength,
 	}, "", nil
 }
 

@@ -4,6 +4,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -19,6 +20,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gerrowadat/andante/internal/discovery"
+	"github.com/gerrowadat/andante/internal/discovery/sitetest"
+	"github.com/gerrowadat/andante/internal/discovery/strategies"
 	"github.com/gerrowadat/andante/internal/feed"
 	"github.com/gerrowadat/andante/internal/reads"
 	"github.com/gerrowadat/andante/internal/schedule"
@@ -686,5 +690,78 @@ func TestMatches(t *testing.T) {
 		if got := matches(header, etag); got != want {
 			t.Errorf("matches(%q) = %v", header, got)
 		}
+	}
+}
+
+// A podcast from feed to feed: the crawl keeps its metadata, the read's own guids
+// replace the publisher's, and replay at 7x turns a weekly show into a daily one.
+func TestPodcastFromFeedToFeed(t *testing.T) {
+	f := newFeedFixture(t, 1000)
+	site := sitetest.Serve(t, "podcast")
+	source, err := f.store.CreateSource(t.Context(), db.InsertSourceParams{
+		Slug: "podcast", Title: "A Podcast", HomeUrl: "https://podcast.example/", DefaultKind: "episode", Strategy: "feed",
+		Config: []byte(`{"strategy":"feed","feed_url":"` + site.URL + `/feed.xml"}`), State: "indexing",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock := sitetest.NewClock()
+	loop := discovery.NewLoop(discovery.LoopOptions{
+		Store: f.store, Registry: discovery.NewRegistry(strategies.All()...), Fetcher: discovery.NewFetcher(sitetest.FetcherOptions(clock)),
+		Metrics: discovery.NewMetrics(prometheus.NewRegistry()), Logger: slog.New(slog.DiscardHandler), Clock: clock,
+		Lookahead: 50, TailInterval: time.Hour, PollInterval: time.Minute,
+		Furthest: func(context.Context, int64) (int32, bool, error) { return 0, true, nil },
+	})
+	for {
+		worked, err := loop.Tick(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !worked {
+			break
+		}
+	}
+
+	f.advance(time.Minute) // Nothing releases before it was discovered.
+	view, err := f.reads.Create(t.Context(), reads.CreateParams{
+		SourceID: source.ID, Name: "Quick", Initial: 1,
+		Pacing: schedule.ReplayPacing{Speed: 7, MinGap: time.Hour, MaxGap: 48 * time.Hour, DefaultGap: 24 * time.Hour},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := f.token(t, view.Read.ID, feed.RoleViewer)
+	count := func() *gofeed.Feed {
+		_, body := f.get(t, "/f/"+token+".rss")
+		return parse(t, body)
+	}
+
+	if got := count().Items; len(got) != 1 {
+		t.Fatalf("items at the start = %d, want 1", len(got))
+	}
+	f.advance(23 * time.Hour)
+	if got := count().Items; len(got) != 1 {
+		t.Errorf("items before a day has passed = %d, want 1", len(got))
+	}
+	for day := 2; day <= 5; day++ {
+		f.advance(24 * time.Hour)
+		if got := count().Items; len(got) != day {
+			t.Errorf("items near day %d = %d", day, len(got))
+		}
+	}
+
+	items := count().Items
+	item := items[0]
+	if item.Title != "Episode 5" {
+		t.Fatalf("newest item = %q", item.Title)
+	}
+	if strings.Contains(item.GUID, "episode-5-guid") {
+		t.Errorf("guid = %q: the publisher's guid leaked", item.GUID)
+	}
+	if len(item.Enclosures) != 1 || item.Enclosures[0].URL != "https://cdn.podcast.example/5.mp3" || item.Enclosures[0].Type != "audio/mpeg" {
+		t.Errorf("enclosures = %+v", item.Enclosures)
+	}
+	if item.ITunesExt == nil || item.ITunesExt.Duration != "3000" || item.ITunesExt.Image != "https://cdn.podcast.example/5.jpg" {
+		t.Errorf("itunes = %+v", item.ITunesExt)
 	}
 }

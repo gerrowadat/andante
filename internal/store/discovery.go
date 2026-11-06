@@ -11,6 +11,7 @@ import (
 
 	"github.com/gerrowadat/andante/internal/store/db"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -24,11 +25,16 @@ var ErrDuplicateEntry = errors.New("entry is already indexed")
 // NewEntry is an entry to index. Its seq comes from its position in the batch.
 type NewEntry struct {
 	Kind        string
-	URL         string
+	URL         *string
+	GUID        *string
 	Title       *string
 	Summary     *string
+	ContentHTML *string
 	Images      []string
 	AltText     *string
+	Enclosures  []byte
+	Duration    time.Duration
+	Extra       []byte
 	Date        *time.Time
 	ContentHash []byte
 }
@@ -49,6 +55,10 @@ type Outcome struct {
 	DueAt     *time.Time
 	CrawledAt *time.Time
 	Error     *string
+
+	// Show or site metadata. With no Extra, the source's stay as they are.
+	ImageURL *string
+	Extra    []byte
 }
 
 // CrawlLock is held for as long as this replica does the crawling.
@@ -121,22 +131,27 @@ func (s *Store) SaveBatch(ctx context.Context, entries []NewEntry, updates []Ent
 			return err
 		}
 		for i, e := range entries {
-			known, err := q.EntryKnown(ctx, db.EntryKnownParams{SourceID: outcome.SourceID, Url: &e.URL, ContentHash: e.ContentHash})
+			known, err := q.EntryKnown(ctx, db.EntryKnownParams{SourceID: outcome.SourceID, Url: e.URL, Guid: e.GUID, ContentHash: e.ContentHash})
 			if err != nil {
 				return err
 			}
 			if known {
-				return fmt.Errorf("%w: %s", ErrDuplicateEntry, e.URL)
+				return fmt.Errorf("%w: entry %d of the batch", ErrDuplicateEntry, i)
 			}
 			err = q.InsertEntry(ctx, db.InsertEntryParams{
 				SourceID:     outcome.SourceID,
 				Seq:          stats.MaxSeq + 1 + int32(i), //nolint:gosec // A batch is a handful of entries.
 				Kind:         e.Kind,
-				Url:          &e.URL,
+				Url:          e.URL,
+				Guid:         e.GUID,
 				Title:        e.Title,
 				Summary:      e.Summary,
+				ContentHtml:  e.ContentHTML,
 				Images:       e.Images,
 				AltText:      e.AltText,
+				Enclosures:   e.Enclosures,
+				Duration:     interval(e.Duration),
+				Extra:        e.Extra,
 				OriginalDate: e.Date,
 				ContentHash:  e.ContentHash,
 			})
@@ -152,12 +167,36 @@ func (s *Store) SaveBatch(ctx context.Context, entries []NewEntry, updates []Ent
 				return err
 			}
 		}
+		if outcome.Extra != nil {
+			err := q.UpdateSourceMetadata(ctx, db.UpdateSourceMetadataParams{
+				ID: outcome.SourceID, ImageUrl: outcome.ImageURL, Extra: outcome.Extra,
+			})
+			if err != nil {
+				return err
+			}
+		}
 		return q.RecordSourceOutcome(ctx, outcomeParams(outcome))
 	})
 	if err != nil {
 		return fmt.Errorf("save batch for source %d: %w", outcome.SourceID, err)
 	}
 	return nil
+}
+
+func interval(d time.Duration) pgtype.Interval {
+	if d == 0 {
+		return pgtype.Interval{}
+	}
+	return pgtype.Interval{Microseconds: d.Microseconds(), Valid: true}
+}
+
+// FindSourceByFeedURL returns the source reading a feed, or ErrNotFound.
+func (s *Store) FindSourceByFeedURL(ctx context.Context, feedURL string) (db.Source, error) {
+	source, err := s.queries.FindSourceByFeedURL(ctx, []byte(feedURL))
+	if err != nil {
+		return db.Source{}, fmt.Errorf("find source by feed: %w", translate(err))
+	}
+	return source, nil
 }
 
 // RecordOutcome records a crawl pass that indexed nothing.

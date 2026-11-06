@@ -176,7 +176,90 @@ func TestKindDispatch(t *testing.T) {
 	if _, err := For("page"); err != nil {
 		t.Errorf("For(page) = %v", err)
 	}
-	if _, err := For("article"); err == nil {
-		t.Error("For(article) succeeded before an article extractor exists")
+	for _, kind := range []string{"article", "episode"} {
+		if _, err := For(kind); err != nil {
+			t.Errorf("For(%s) = %v", kind, err)
+		}
 	}
+	if _, err := For("song"); err == nil {
+		t.Error("For(song) found an extractor")
+	}
+}
+
+func TestArticle(t *testing.T) {
+	long := strings.Repeat("Enough text to count as the main part of an article. ", 20)
+	page := Page{URL: "https://blog.example/2/", Body: []byte(`<!doctype html><html><head><title>A Post | Blog</title>
+<meta property="og:title" content="A Post"><meta property="og:description" content="About it">
+</head><body><nav>Menu</nav><article><h1>A Post</h1><p onclick="x()">` + long + `</p><script>x()</script></article>
+<nav><div class="nav-next"><a href="/3/">Next</a></div></nav></body></html>`)}
+	extractor, err := For("article")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	off, err := extractor.Extract(page, Overrides{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if off.Fields.Title != "A Post" || off.Fields.Next != "https://blog.example/3/" || off.Fields.ContentHTML != "" {
+		t.Errorf("fields = %+v", off.Fields)
+	}
+
+	on, err := extractor.Extract(page, Overrides{FullText: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(on.Fields.ContentHTML, "main part of an article") {
+		t.Errorf("content = %q", on.Fields.ContentHTML)
+	}
+	if strings.Contains(on.Fields.ContentHTML, "<script") || strings.Contains(on.Fields.ContentHTML, "onclick") {
+		t.Errorf("content was not sanitised: %q", on.Fields.ContentHTML)
+	}
+}
+
+func TestSanitise(t *testing.T) {
+	got := Sanitise(`<p onclick="x()">ok</p><script>x()</script><iframe src="https://e.example/"></iframe><a href="javascript:x()">l</a>`)
+	for _, bad := range []string{"onclick", "<script", "<iframe", "javascript:"} {
+		if strings.Contains(got, bad) {
+			t.Errorf("kept %s: %q", bad, got)
+		}
+	}
+	if !strings.Contains(got, "ok") {
+		t.Errorf("lost the text: %q", got)
+	}
+}
+
+func TestEpisode(t *testing.T) {
+	extractor, err := For("episode")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name, body, want, wantType string
+	}{
+		{"audio tag", `<title>t</title><audio src="/a.mp3"></audio>`, "https://pod.example/a.mp3", ""},
+		{"source tag", `<title>t</title><audio><source src="/b.ogg" type="audio/ogg"></audio>`, "https://pod.example/b.ogg", "audio/ogg"},
+		{"video tag", `<title>t</title><video src="/c.mp4"></video>`, "https://pod.example/c.mp4", ""},
+		{"JSON-LD", `<title>t</title><script type="application/ld+json">{"@context":"https://schema.org","@type":"PodcastEpisode","name":"t","associatedMedia":{"@type":"MediaObject","contentUrl":"https://cdn.example/d.mp3"}}</script>`, "https://cdn.example/d.mp3", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := extractor.Extract(Page{URL: "https://pod.example/1", Body: []byte(tt.body)}, Overrides{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(result.Fields.Enclosures) != 1 || result.Fields.Enclosures[0].URL != tt.want || result.Fields.Enclosures[0].Type != tt.wantType {
+				t.Errorf("enclosures = %+v", result.Fields.Enclosures)
+			}
+		})
+	}
+	t.Run("nothing to play", func(t *testing.T) {
+		result, err := extractor.Extract(Page{URL: "https://pod.example/1", Body: []byte(`<title>t</title><p>words</p>`)}, Overrides{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(result.Warnings) == 0 {
+			t.Error("no warning for a page with no media")
+		}
+	})
 }

@@ -31,6 +31,7 @@ type crawlConfig struct {
 		Date    string `json:"date"`
 		Next    string `json:"next"`
 	} `json:"selectors"`
+	FullText bool `json:"full_text"`
 }
 
 // crawlCursor is where a crawl has got to. Next is the page to fetch. With no
@@ -80,6 +81,13 @@ func (Crawl) Validate(raw json.RawMessage) error {
 	return nil
 }
 
+func overridesOf(c crawlConfig) extract.Overrides {
+	s := c.Selectors
+	return extract.Overrides{
+		Title: s.Title, Image: s.Image, AltText: s.AltText, Date: s.Date, Next: s.Next, FullText: c.FullText,
+	}
+}
+
 // crawl is one call to Next.
 type crawl struct {
 	fetcher   discovery.PageFetcher
@@ -114,7 +122,7 @@ func (Crawl) Next(ctx context.Context, fetcher discovery.PageFetcher, src discov
 	c := &crawl{
 		fetcher:   fetcher,
 		extractor: extractor,
-		overrides: extract.Overrides(config.Selectors),
+		overrides: overridesOf(config),
 		kind:      src.DefaultKind,
 		urls:      map[string]bool{},
 		hashes:    map[string]bool{},
@@ -147,7 +155,7 @@ func (Crawl) Next(ctx context.Context, fetcher discovery.PageFetcher, src discov
 // recheck re-fetches the last page, to see whether a next link has appeared and
 // to pick up any change to the page itself.
 func (c *crawl) recheck(ctx context.Context, cursor *crawlCursor) error {
-	resp, err := c.fetcher.Fetch(ctx, cursor.Last)
+	resp, err := c.fetcher.Revalidate(ctx, cursor.Last)
 	if err != nil {
 		return err
 	}
@@ -158,7 +166,7 @@ func (c *crawl) recheck(ctx context.Context, cursor *crawlCursor) error {
 	if err != nil {
 		return err
 	}
-	c.batch.Updates = append(c.batch.Updates, c.entry(cursor.Last, result))
+	c.batch.Updates = append(c.batch.Updates, c.entry(ctx, cursor.Last, result))
 	if next := result.Fields.Next; next != "" && !same(next, cursor.Last) {
 		cursor.Next = next
 	}
@@ -179,7 +187,7 @@ func (c *crawl) step(ctx context.Context, cursor *crawlCursor) error {
 	if err != nil {
 		return err
 	}
-	entry := c.entry(resp.URL, result)
+	entry := c.entry(ctx, resp.URL, result)
 	if entry.ContentHash != nil {
 		key := string(entry.ContentHash)
 		if c.hashes[key] {
@@ -210,18 +218,42 @@ func (c *crawl) extract(resp *discovery.Response) (extract.Result, error) {
 	return result, nil
 }
 
-func (c *crawl) entry(pageURL string, result extract.Result) discovery.Entry {
+func (c *crawl) entry(ctx context.Context, pageURL string, result extract.Result) discovery.Entry {
 	f := result.Fields
 	return discovery.Entry{
 		Kind:        c.kind,
 		URL:         pageURL,
 		Title:       f.Title,
 		Summary:     f.Summary,
+		ContentHTML: f.ContentHTML,
 		Images:      f.Images,
 		AltText:     f.AltText,
+		Enclosures:  enclosuresOf(ctx, c.fetcher, f.Enclosures),
 		Date:        f.Date,
 		ContentHash: contentHash(f),
 	}
+}
+
+// enclosuresOf fills in a media file's type and length with a HEAD request, only
+// where the page did not give them. andante never downloads a file. A failed HEAD
+// loses only those two fields, so it is not worth stopping for.
+func enclosuresOf(ctx context.Context, fetcher discovery.PageFetcher, found []extract.Enclosure) []discovery.Enclosure {
+	out := make([]discovery.Enclosure, 0, len(found))
+	for _, e := range found {
+		enclosure := discovery.Enclosure{URL: e.URL, Type: e.Type, Length: e.Length}
+		if e.Type == "" || e.Length == 0 {
+			if resp, err := fetcher.Head(ctx, e.URL); err == nil {
+				if enclosure.Type == "" {
+					enclosure.Type = resp.ContentType
+				}
+				if enclosure.Length == 0 {
+					enclosure.Length = max(resp.ContentLength, 0)
+				}
+			}
+		}
+		out = append(out, enclosure)
+	}
+	return out
 }
 
 // contentHash identifies a page by what it shows, not its URL, so that a chain

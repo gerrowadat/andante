@@ -33,6 +33,35 @@ Strategies are a compiled-in registry. `crawl` walks pages by their "next" link.
 Its config is `start_url`, plus optional selector overrides that are compiled when
 the config is written, so a bad selector fails then and not at crawl time.
 
+`numeric` fetches a URL template by number. A 404 is a gap, and a run of them is the
+live end. The cursor keeps the next number after the last hit, so a tail check tries
+the same IDs again.
+
+`feed` reads a feed and follows `rel="prev-archive"` (RFC 5005), and `feed-paged`
+walks `?paged=N` until a 404, an empty page, a repeat of the first page or
+`max_pages`. Both must see the whole archive before they can order it, so a first
+walk returns everything at once, oldest first, and only `fill_gaps` keeps to the
+batch limit. Their cursor holds an 8-byte hash of each item handed over. A tail check
+is a single conditional request.
+
+### Entries from feeds
+
+The feed item is the primary record. An entry's identity is its guid, because podcast
+items often share a link or have none, and its `url` is the link, falling back to the
+enclosure URL. An item with none of these is skipped with a warning. Namespaced fields
+(`itunes:duration`, `itunes:episode`, `itunes:season`, `itunes:image`,
+`podcast:transcript`, `podcast:chapters`) go to `extra`. Show metadata goes to
+`sources.extra`, and artwork to `sources.image_url`. The kind is `default_kind`,
+overridden to `episode` by an audio or video enclosure. Feed content goes through the
+same sanitiser as page content, because a feed is no more trusted than a page.
+
+### What came from FeedRewind
+
+FeedRewind solves the same problem for blogs, so phase 9 studied it. andante took its
+feed-first order and its warning for a feed cut off at a round number. It did not
+take the heuristics that find archive pages with generated XPaths: `crawl` with
+selectors covers those sites, with rules that a person can read.
+
 ## Extraction
 
 An `Extractor` pulls fields out of a fetched page. It is chosen by the entry's
@@ -104,10 +133,22 @@ return 429 with `Retry-After`. Tests serve them with `httptest` and use a fake c
 for politeness timing. Their fetcher can only dial loopback, so a test that strays
 onto the real network fails.
 
+## Conditional requests
+
+`PageFetcher` has `Fetch`, which is never conditional, and `Revalidate`, which is.
+Phase 5 had one method that was always conditional in the crawl loop. A save that
+failed left validators in `crawl_log` and no cursor, so the retry got a 304 with no
+body for its first page and stopped there as if it had reached the live end. Only a
+tail check can use a 304, because only it already holds the page's content.
+
 ## Where this diverged from the proposal
 
 - **`Next` takes a `PageFetcher`.** The crawl loop's adds conditional requests and
   `crawl_log` rows, which a probe does not want.
+- **`fill_gaps` is the switch for page extraction on feeds,** and `full_text` on a
+  feed source works only with it, because each costs a request per entry.
+- **An item's kind is decided per item,** so one podcast's bonus text posts stay
+  `article` under `default_kind: article`.
 - **Redirects are followed by hand, one hop at a time,** so each hop goes through
   robots.txt and the host's politeness. The SSRF guard runs in the dialler, after DNS.
 - **JSON-LD uses `json-gold` with an offline loader.** It serves schema.org's context

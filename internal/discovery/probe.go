@@ -48,7 +48,19 @@ func NewProber(registry *Registry, fetcher *Fetcher, metrics *Metrics) *Prober {
 type probeFetcher struct{ p *Prober }
 
 func (f probeFetcher) Fetch(ctx context.Context, url string) (*Response, error) {
-	resp, err := f.p.fetcher.Fetch(ctx, url, Validators{})
+	return f.count(f.p.fetcher.Fetch(ctx, url, Validators{}))
+}
+
+// Revalidate fetches. A probe has nothing earlier to compare with.
+func (f probeFetcher) Revalidate(ctx context.Context, url string) (*Response, error) {
+	return f.Fetch(ctx, url)
+}
+
+func (f probeFetcher) Head(ctx context.Context, url string) (*Response, error) {
+	return f.count(f.p.fetcher.Head(ctx, url))
+}
+
+func (f probeFetcher) count(resp *Response, err error) (*Response, error) {
 	label := errorLabel(err)
 	if resp != nil {
 		label = strconv.Itoa(resp.Status)
@@ -90,12 +102,21 @@ func (p *Prober) run(ctx context.Context, req ProbeRequest) (ProbeResult, error)
 			break
 		}
 		for _, e := range batch.Entries {
-			if seen[e.URL] {
-				return ProbeResult{}, fmt.Errorf("%w: back at %s", ErrCycle, e.URL)
+			// Feed items can share a link, such as a podcast's home page, and
+			// are told apart by their guid.
+			key := e.GUID
+			if key == "" {
+				key = e.URL
 			}
-			seen[e.URL] = true
+			if seen[key] {
+				return ProbeResult{}, fmt.Errorf("%w: back at %s", ErrCycle, key)
+			}
+			seen[key] = true
 		}
-		result.Entries = append(result.Entries, batch.Entries...)
+		// A feed's strategy returns the whole archive at once, because it has
+		// already had to fetch all of it.
+		room := min(req.Limit-len(result.Entries), len(batch.Entries))
+		result.Entries = append(result.Entries, batch.Entries[:room]...)
 		result.Warnings = append(result.Warnings, batch.Warnings...)
 		if batch.LiveEnd || len(batch.Entries) == 0 {
 			break

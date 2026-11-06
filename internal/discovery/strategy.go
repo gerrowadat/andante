@@ -28,31 +28,56 @@ type Source struct {
 // Cursor is a strategy's own resume state, kept in sources.cursor.
 type Cursor = json.RawMessage
 
+// Enclosure is a media file attached to an entry. It is linked, never fetched.
+type Enclosure struct {
+	URL    string `json:"url"`
+	Type   string `json:"type,omitempty"`
+	Length int64  `json:"length,omitempty"`
+}
+
 // Entry is one discovered item of a serial.
 type Entry struct {
 	Kind        string
 	URL         string
+	GUID        string
 	Title       string
 	Summary     string
+	ContentHTML string
 	Images      []string
 	AltText     string
+	Enclosures  []Enclosure
+	Duration    time.Duration
+	Extra       map[string]any
 	Date        *time.Time
 	ContentHash []byte
+}
+
+// SourceUpdate is show or site metadata a strategy found.
+type SourceUpdate struct {
+	ImageURL string
+	Extra    map[string]any
 }
 
 // Batch is the result of one call to Next.
 type Batch struct {
 	Entries  []Entry
 	Updates  []Entry // Known pages whose metadata changed.
+	Source   *SourceUpdate
 	Cursor   Cursor
 	LiveEnd  bool // The strategy reached the end of the serial as it stands.
 	Warnings []string
 }
 
-// PageFetcher is how a strategy requests pages. The crawl loop's adds conditional
-// requests and logging, which a probe does not want.
+// PageFetcher is how a strategy requests pages.
 type PageFetcher interface {
+	// Fetch gets a page. It is never conditional: a strategy retrying after a
+	// failed save needs the body, even if the page has not changed.
 	Fetch(ctx context.Context, url string) (*Response, error)
+	// Revalidate gets a page if it has changed since it was last fetched. An
+	// unchanged page comes back with NotModified set and no body.
+	Revalidate(ctx context.Context, url string) (*Response, error)
+	// Head asks about a file without downloading it.
+	Head(ctx context.Context, url string) (*Response, error)
 }
 
 // Strategy is one way of discovering a source's archive.

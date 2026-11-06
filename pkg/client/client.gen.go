@@ -442,6 +442,9 @@ type CatchUp string
 
 // CrawlConfig Walk pages by their next link.
 type CrawlConfig struct {
+	// FullText Store a page's main text. Off by default, and for articles only.
+	FullText *bool `json:"full_text,omitempty"`
+
 	// Selectors CSS selectors that override extraction, field by field.
 	Selectors *Selectors          `json:"selectors,omitempty"`
 	StartURL  string              `json:"start_url"`
@@ -489,7 +492,13 @@ type EntryList struct {
 
 // FeedConfig Read a feed that holds the whole archive, or RFC 5005 archived feeds.
 type FeedConfig struct {
-	FeedURL  string             `json:"feed_url"`
+	FeedURL string `json:"feed_url"`
+
+	// FillGaps Fetch each item's page to fill in what the feed lacks, such as an image.
+	FillGaps *bool `json:"fill_gaps,omitempty"`
+
+	// FullText With fill_gaps, also store each article's main text. Off by default.
+	FullText *bool              `json:"full_text,omitempty"`
 	Strategy FeedConfigStrategy `json:"strategy"`
 }
 
@@ -498,7 +507,13 @@ type FeedConfigStrategy string
 
 // FeedPagedConfig Walk a WordPress-style paged feed.
 type FeedPagedConfig struct {
-	FeedURL   string                  `json:"feed_url"`
+	FeedURL string `json:"feed_url"`
+
+	// FillGaps Fetch each item's page to fill in what the feed lacks, such as an image.
+	FillGaps *bool `json:"fill_gaps,omitempty"`
+
+	// FullText With fill_gaps, also store each article's main text. Off by default.
+	FullText  *bool                   `json:"full_text,omitempty"`
 	MaxPages  *int32                  `json:"max_pages,omitempty"`
 	PageParam *string                 `json:"page_param,omitempty"`
 	Strategy  FeedPagedConfigStrategy `json:"strategy"`
@@ -571,6 +586,17 @@ type IssuedFeedToken struct {
 // IssuedFeedTokenSuggested defines model for IssuedFeedToken.Suggested.
 type IssuedFeedTokenSuggested string
 
+// JSONFields Where to find each field in a JSON page, as a key, or a dotted path. A date can be one field or three.
+type JSONFields struct {
+	AltText *string `json:"alt_text,omitempty"`
+	Date    *string `json:"date,omitempty"`
+	Day     *string `json:"day,omitempty"`
+	Image   *string `json:"image,omitempty"`
+	Month   *string `json:"month,omitempty"`
+	Title   *string `json:"title,omitempty"`
+	Year    *string `json:"year,omitempty"`
+}
+
 // JumpAdjustment defines model for JumpAdjustment.
 type JumpAdjustment struct {
 	Seq  int32              `json:"seq"`
@@ -588,6 +614,8 @@ type NextLink = string
 
 // NumericConfig Walk URLs that carry an incrementing ID.
 type NumericConfig struct {
+	// Fields Where to find each field in a JSON page, as a key, or a dotted path. A date can be one field or three.
+	Fields               *JSONFields           `json:"fields,omitempty"`
 	Format               *NumericConfigFormat  `json:"format,omitempty"`
 	MaxConsecutiveMisses *int32                `json:"max_consecutive_misses,omitempty"`
 	Start                int64                 `json:"start"`
