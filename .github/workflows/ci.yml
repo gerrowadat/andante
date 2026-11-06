@@ -72,6 +72,11 @@ jobs:
           ANDANTE_REQUIRE_DB: "1"
         run: go test -race -count=1 ./...
 
+      # The step above uses a random seed, which rapid prints on failure. This one
+      # is the same every time, so a failure here can be reproduced by anyone.
+      - name: Property tests with a fixed seed
+        run: go test -count=1 ./internal/schedule/ -rapid.seed=1
+
   lint:
     runs-on: ubuntu-latest
     steps:

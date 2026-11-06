@@ -1,3 +1,6 @@
+# rapid keeps the failing cases it finds here
+testdata/rapid/
+
 # Build output
 /out/
 /dist/

@@ -18,6 +18,7 @@ const (
 	problemNotImplemented = problemBase + "not-implemented"
 	problemInvalidRequest = problemBase + "invalid-request"
 	problemInvalidConfig  = problemBase + "invalid-config"
+	problemInvalidRead    = problemBase + "invalid-read"
 	problemConflict       = problemBase + "conflict"
 	problemProbeFailed    = problemBase + "probe-failed"
 	problemUnauthorized   = problemBase + "unauthorized"

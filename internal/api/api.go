@@ -13,6 +13,7 @@ import (
 	"github.com/gerrowadat/andante/api"
 	"github.com/gerrowadat/andante/internal/api/gen"
 	"github.com/gerrowadat/andante/internal/discovery"
+	"github.com/gerrowadat/andante/internal/reads"
 	"github.com/gerrowadat/andante/internal/store"
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/openapi3filter"
@@ -36,6 +37,7 @@ type Options struct {
 	Store      *store.Store
 	Strategies *discovery.Registry
 	Prober     *discovery.Prober
+	Reads      *reads.Service
 	Registry   prometheus.Registerer
 	Logger     *slog.Logger
 	// ProbeTimeout bounds POST /probes. It outlasts --write-timeout on purpose.
@@ -46,6 +48,7 @@ type handler struct {
 	store      *store.Store
 	strategies *discovery.Registry
 	prober     *discovery.Prober
+	reads      *reads.Service
 	logger     *slog.Logger
 	specJSON   []byte
 	router     routers.Router
@@ -74,7 +77,7 @@ func New(opts Options) (http.Handler, error) {
 	}
 
 	h := &handler{
-		store: opts.Store, strategies: opts.Strategies, prober: opts.Prober, logger: opts.Logger,
+		store: opts.Store, strategies: opts.Strategies, prober: opts.Prober, reads: opts.Reads, logger: opts.Logger,
 		specJSON: specJSON, router: router, probeTimeout: opts.ProbeTimeout,
 	}
 

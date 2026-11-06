@@ -20,6 +20,8 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   sources work; other endpoints return 501 until they are built.
 - Discovery: the `crawl` strategy, page extraction, a polite fetcher, probes, and
   a crawl loop that indexes lazily and watches the live end.
+- Reads: RRULE and replay pacing, computed from an append-only history, with skip,
+  pause, resume, jump and re-pacing.
 
 ### Security
 

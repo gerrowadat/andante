@@ -21,6 +21,7 @@ import (
 	"github.com/gerrowadat/andante/internal/discovery"
 	"github.com/gerrowadat/andante/internal/discovery/sitetest"
 	"github.com/gerrowadat/andante/internal/discovery/strategies"
+	"github.com/gerrowadat/andante/internal/reads"
 	"github.com/gerrowadat/andante/internal/store"
 	"github.com/gerrowadat/andante/internal/store/storetest"
 	"github.com/gerrowadat/andante/pkg/client"
@@ -51,6 +52,7 @@ func newFixture(t *testing.T) *fixture {
 		Store:        st,
 		Strategies:   registry,
 		Prober:       discovery.NewProber(registry, fetcher, discovery.NewMetrics(reg)),
+		Reads:        reads.New(reads.Options{Store: st, DefaultTimezone: "UTC", MinDatedShare: 0.9}),
 		Registry:     reg,
 		Logger:       slog.New(slog.DiscardHandler),
 		ProbeTimeout: time.Minute,
@@ -451,6 +453,291 @@ func TestRequestCrawl(t *testing.T) {
 	}
 }
 
+func (f *fixture) addEntries(t *testing.T, sourceID int64, n int, dated bool) {
+	t.Helper()
+	for i := range n {
+		var date any
+		if dated {
+			date = time.Date(2010, 1, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, 7*i)
+		}
+		_, err := f.store.Pool().Exec(t.Context(),
+			"INSERT INTO entries (source_id, seq, kind, url, original_date, discovered_at) VALUES ($1, $2, 'page', $3, $4, now() - interval '1 hour')",
+			sourceID, i, "https://comic.example/"+strconv.Itoa(i), date)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func rrulePacing(t *testing.T) client.Pacing {
+	t.Helper()
+	var p client.Pacing
+	per := int32(1)
+	if err := p.FromRRulePacing(client.RRulePacing{
+		Mode: client.Rrule, Rrule: "FREQ=DAILY;BYHOUR=7;BYMINUTE=0;BYSECOND=0", Timezone: "Europe/Dublin", PerRelease: &per,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func replayPacing(t *testing.T, speed float64) client.Pacing {
+	t.Helper()
+	var p client.Pacing
+	if err := p.FromReplayPacing(client.ReplayPacing{Mode: client.Replay, Speed: speed}); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func (f *fixture) createRead(t *testing.T, sourceID int64, p client.Pacing) client.Read {
+	t.Helper()
+	resp, err := f.client.CreateReadWithResponse(t.Context(), client.ReadCreate{SourceID: sourceID, Name: "Mornings", Pacing: p})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.JSON201 == nil {
+		t.Fatalf("create read: %d %s", resp.StatusCode(), resp.Body)
+	}
+	return *resp.JSON201
+}
+
+func (f *fixture) adjust(t *testing.T, id int64, a client.Adjustment) *client.CreateAdjustmentResponse {
+	t.Helper()
+	resp, err := f.client.CreateAdjustmentWithResponse(t.Context(), id, a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp
+}
+
+func skip(t *testing.T, count int32) client.Adjustment {
+	t.Helper()
+	var a client.Adjustment
+	if err := a.FromSkipAdjustment(client.SkipAdjustment{Type: client.SkipAdjustmentTypeSkip, Count: &count}); err != nil {
+		t.Fatal(err)
+	}
+	return a
+}
+
+func jump(t *testing.T, seq int32) client.Adjustment {
+	t.Helper()
+	var a client.Adjustment
+	if err := a.FromJumpAdjustment(client.JumpAdjustment{Type: client.JumpAdjustmentTypeJump, Seq: seq}); err != nil {
+		t.Fatal(err)
+	}
+	return a
+}
+
+func TestReadLifecycle(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	s := f.createSource(t, "comic")
+	f.addEntries(t, s.ID, 20, true)
+
+	read := f.createRead(t, s.ID, rrulePacing(t))
+	if read.Position != 0 || read.State != client.ReadStateActive || read.IndexEnd.MustGet() != 19 || read.NextReleaseAt.IsNull() {
+		t.Errorf("new read = %+v", read)
+	}
+
+	got, err := f.client.GetReadWithResponse(ctx, read.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.JSON200 == nil || got.JSON200.Name != "Mornings" {
+		t.Fatalf("get: %d %s", got.StatusCode(), got.Body)
+	}
+
+	skipped := f.adjust(t, read.ID, skip(t, 3))
+	if skipped.JSON200 == nil || skipped.JSON200.Position != 3 {
+		t.Fatalf("skip: %d %s", skipped.StatusCode(), skipped.Body)
+	}
+
+	var pause, resume client.Adjustment
+	if err := pause.FromPauseAdjustment(client.PauseAdjustment{Type: client.PauseAdjustmentTypePause}); err != nil {
+		t.Fatal(err)
+	}
+	if err := resume.FromResumeAdjustment(client.ResumeAdjustment{Type: client.ResumeAdjustmentTypeResume}); err != nil {
+		t.Fatal(err)
+	}
+	paused := f.adjust(t, read.ID, pause)
+	if paused.JSON200 == nil || paused.JSON200.State != client.ReadStatePaused || !paused.JSON200.NextReleaseAt.IsNull() {
+		t.Fatalf("pause: %d %s", paused.StatusCode(), paused.Body)
+	}
+	if again := f.adjust(t, read.ID, pause); again.StatusCode() != http.StatusConflict {
+		t.Errorf("pausing twice: %d %s", again.StatusCode(), again.Body)
+	}
+	if resumed := f.adjust(t, read.ID, resume); resumed.JSON200 == nil || resumed.JSON200.State != client.ReadStateActive {
+		t.Fatalf("resume: %d %s", resumed.StatusCode(), resumed.Body)
+	}
+
+	jumped := f.adjust(t, read.ID, jump(t, 10))
+	if jumped.JSON200 == nil || jumped.JSON200.Position != 10 {
+		t.Fatalf("jump: %d %s", jumped.StatusCode(), jumped.Body)
+	}
+	backward := f.adjust(t, read.ID, jump(t, 5))
+	if backward.StatusCode() != http.StatusConflict || backward.ApplicationProblemJSONDefault == nil {
+		t.Errorf("jump backward: %d %s", backward.StatusCode(), backward.Body)
+	}
+	if same := f.adjust(t, read.ID, jump(t, 10)); same.StatusCode() != http.StatusConflict {
+		t.Errorf("jump to the position: %d %s", same.StatusCode(), same.Body)
+	}
+	if past := f.adjust(t, read.ID, jump(t, 500)); past.StatusCode() != http.StatusConflict {
+		t.Errorf("jump past the index: %d %s", past.StatusCode(), past.Body)
+	}
+
+	var repace client.Adjustment
+	if err := repace.FromPacingAdjustment(client.PacingAdjustment{Type: client.PacingAdjustmentTypePacing, Pacing: replayPacing(t, 7)}); err != nil {
+		t.Fatal(err)
+	}
+	if switched := f.adjust(t, read.ID, repace); switched.JSON200 == nil {
+		t.Fatalf("change pacing: %d %s", switched.StatusCode(), switched.Body)
+	}
+
+	limit := int32(100)
+	segments, err := f.client.ListSegmentsWithResponse(ctx, read.ID, &client.ListSegmentsParams{Limit: &limit})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if segments.JSON200 == nil {
+		t.Fatalf("segments: %d %s", segments.StatusCode(), segments.Body)
+	}
+	var history []string
+	for _, s := range segments.JSON200.Items {
+		history = append(history, string(s.Reason))
+	}
+	if got, want := strings.Join(history, ","), "created,skip,pause,resume,jump,pacing"; got != want {
+		t.Errorf("history = %s, want %s", got, want)
+	}
+	last := segments.JSON200.Items[len(segments.JSON200.Items)-1]
+	if mode, err := last.Pacing.Discriminator(); err != nil || mode != "replay" {
+		t.Errorf("last pacing = %q, %v", mode, err)
+	}
+
+	name := "Evenings"
+	patched, err := f.client.UpdateReadWithApplicationMergePatchPlusJSONBodyWithResponse(ctx, read.ID, client.ReadPatch{Name: &name})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if patched.JSON200 == nil || patched.JSON200.Name != name {
+		t.Fatalf("patch: %d %s", patched.StatusCode(), patched.Body)
+	}
+	buffer := int32(3)
+	fixed, err := f.client.UpdateReadWithApplicationMergePatchPlusJSONBodyWithResponse(ctx, read.ID, client.ReadPatch{Buffer: &buffer})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fixed.StatusCode() != http.StatusConflict {
+		t.Errorf("patching buffer: %d %s", fixed.StatusCode(), fixed.Body)
+	}
+
+	list, err := f.client.ListReadsWithResponse(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list.JSON200 == nil || len(list.JSON200.Items) != 1 {
+		t.Fatalf("list: %d %s", list.StatusCode(), list.Body)
+	}
+
+	inUse, err := f.client.DeleteSourceWithResponse(ctx, s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inUse.StatusCode() != http.StatusConflict {
+		t.Errorf("deleting a source with a read: %d", inUse.StatusCode())
+	}
+	deleted, err := f.client.DeleteReadWithResponse(ctx, read.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted.StatusCode() != http.StatusNoContent {
+		t.Fatalf("delete: %d %s", deleted.StatusCode(), deleted.Body)
+	}
+	gone, err := f.client.GetReadWithResponse(ctx, read.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gone.StatusCode() != http.StatusNotFound {
+		t.Errorf("get after delete: %d", gone.StatusCode())
+	}
+}
+
+func TestReadRefusals(t *testing.T) {
+	f := newFixture(t)
+	s := f.createSource(t, "comic")
+	f.addEntries(t, s.ID, 5, false)
+	const js = "application/json"
+	body := func(pacing string) string {
+		return `{"source_id":` + itoa(s.ID) + `,"name":"r","pacing":` + pacing + `}`
+	}
+	tests := []struct {
+		name, path, body string
+		status           int
+		suffix           string
+	}{
+		{"replay with too few dates", "/api/v1/reads", body(`{"mode":"replay","speed":7}`), 422, "#invalid-read"},
+		{"unknown source", "/api/v1/reads", `{"source_id":9999,"name":"r","pacing":{"mode":"rrule","rrule":"FREQ=DAILY","timezone":"UTC"}}`, 422, "#invalid-read"},
+		{"bad rule", "/api/v1/reads", body(`{"mode":"rrule","rrule":"nope","timezone":"UTC"}`), 422, "#invalid-read"},
+		{"bad time zone", "/api/v1/reads", body(`{"mode":"rrule","rrule":"FREQ=DAILY","timezone":"Mars/Olympus"}`), 422, "#invalid-read"},
+		{"too frequent", "/api/v1/reads", body(`{"mode":"rrule","rrule":"FREQ=MINUTELY","timezone":"UTC"}`), 422, "#invalid-read"},
+		{"paused from the start", "/api/v1/reads", body(`{"mode":"paused"}`), 422, "#invalid-read"},
+		{"a gap in months", "/api/v1/reads", body(`{"mode":"replay","speed":1,"default_gap":"P1M"}`), 422, "#invalid-read"},
+		{"zero speed", "/api/v1/reads", body(`{"mode":"replay","speed":0,"default_gap":"P1D"}`), 400, "#invalid-request"},
+		{"unknown read", "/api/v1/reads/9999/adjustments", `{"type":"pause"}`, 404, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp, data := f.do(t, "POST", tt.path, js, tt.body, f.token)
+			if resp.StatusCode != tt.status {
+				t.Fatalf("status = %d, want %d: %s", resp.StatusCode, tt.status, data)
+			}
+			if resp.Header.Get("Content-Type") != problemJSON {
+				t.Errorf("Content-Type = %q", resp.Header.Get("Content-Type"))
+			}
+			if tt.suffix != "" && !strings.Contains(data, tt.suffix) {
+				t.Errorf("type is not %s: %s", tt.suffix, data)
+			}
+		})
+	}
+
+	missing, err := f.client.ListSegmentsWithResponse(t.Context(), 9999, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if missing.StatusCode() != http.StatusNotFound {
+		t.Errorf("segments of a missing read: %d", missing.StatusCode())
+	}
+}
+
+func TestReplayWithGapsThroughTheAPI(t *testing.T) {
+	f := newFixture(t)
+	s := f.createSource(t, "podcast")
+	f.addEntries(t, s.ID, 5, true)
+	resp, data := f.do(t, "POST", "/api/v1/reads", "application/json",
+		`{"source_id":`+itoa(s.ID)+`,"name":"r","pacing":{"mode":"replay","speed":7,"min_gap":"PT12H","max_gap":"P3D"}}`, f.token)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d: %s", resp.StatusCode, data)
+	}
+	var read client.Read
+	if err := json.Unmarshal([]byte(data), &read); err != nil {
+		t.Fatal(err)
+	}
+	segments, err := f.client.ListSegmentsWithResponse(t.Context(), read.ID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if segments.JSON200 == nil {
+		t.Fatalf("segments: %d %s", segments.StatusCode(), segments.Body)
+	}
+	replay, err := segments.JSON200.Items[0].Pacing.AsReplayPacing()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replay.MinGap == nil || replay.MaxGap == nil || replay.DefaultGap != nil {
+		t.Errorf("gaps = %+v", replay)
+	}
+}
+
 func TestAPITokens(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -618,7 +905,7 @@ func TestEveryErrorIsAProblem(t *testing.T) {
 			body: `{"slug":"s","title":"t","home_url":"https://e.example/","default_kind":"page","config":{"strategy":"nope"}}`},
 		{name: "slug in a patch", method: "PATCH", path: "/api/v1/sources/" + itoa(s.ID), contentType: "application/merge-patch+json", body: `{"slug":"new"}`, token: f.token, wantStatus: 400, wantType: "invalid-request"},
 		{name: "state the crawler owns", method: "PATCH", path: "/api/v1/sources/" + itoa(s.ID), contentType: "application/merge-patch+json", body: `{"state":"tail"}`, token: f.token, wantStatus: 400, wantType: "invalid-request"},
-		{name: "not built yet", method: "GET", path: "/api/v1/reads", token: f.token, wantStatus: 501, wantType: "not-implemented"},
+		{name: "not built yet", method: "POST", path: "/api/v1/imports/opml", contentType: "text/x-opml", body: "<opml/>", token: f.token, wantStatus: 501, wantType: "not-implemented"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -709,18 +996,25 @@ func loadSpec(t *testing.T) *openapi3.T {
 // implemented lists the operations that do real work. Everything else in the
 // spec must answer 501, and a phase that builds one moves it here.
 var implemented = map[string]bool{
-	"getSpec":        true,
-	"createProbe":    true,
-	"requestCrawl":   true,
-	"listSources":    true,
-	"createSource":   true,
-	"getSource":      true,
-	"updateSource":   true,
-	"deleteSource":   true,
-	"listEntries":    true,
-	"listAPITokens":  true,
-	"createAPIToken": true,
-	"revokeAPIToken": true,
+	"getSpec":          true,
+	"listReads":        true,
+	"createRead":       true,
+	"getRead":          true,
+	"updateRead":       true,
+	"deleteRead":       true,
+	"createAdjustment": true,
+	"listSegments":     true,
+	"createProbe":      true,
+	"requestCrawl":     true,
+	"listSources":      true,
+	"createSource":     true,
+	"getSource":        true,
+	"updateSource":     true,
+	"deleteSource":     true,
+	"listEntries":      true,
+	"listAPITokens":    true,
+	"createAPIToken":   true,
+	"revokeAPIToken":   true,
 }
 
 func TestUnimplementedOperationsAre501(t *testing.T) {

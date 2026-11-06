@@ -16,7 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-const wantMigrations = 1
+const wantMigrations = 2
 
 func appliedMigrations(t *testing.T, s *store.Store) int {
 	t.Helper()

@@ -1,6 +1,7 @@
-# Proposal: Scheduling
+# Design: Scheduling
 
-Status: proposed. Covers phase 6 of the [build plan](../plan/README.md).
+Status: shipped in phase 6 of the [build plan](../plan/README.md). How to use it is
+in [`reads.md`](../reads.md).
 
 A read releases entries according to its **pacing**. There are two modes, and
 a read can switch between them at any time.
@@ -62,11 +63,16 @@ from.
 | Action | New segment |
 |---|---|
 | Create read | `from_seq = start_seq - 1 + initial` (default: the first entry is there immediately), `starts_at = now` |
-| Change pacing | `from_seq = released(now)`, new pacing; `starts_at = now` for `rrule`, `max(release_time(from_seq), now − next_gap)` for `replay` |
+| Change pacing | `from_seq = released(now)`, new pacing; `starts_at = now` for a new `rrule`, `max(release_time(from_seq), now − next_gap)` for `replay` |
 | Pause | `from_seq = released(now)`, `pacing = paused`, `starts_at = now` |
-| Resume | `from_seq = released(now)`, previous pacing; `starts_at = now` for `rrule`, `now − (pause_start − release_time(from_seq))` for `replay` |
+| Resume | `from_seq = released(now)`, previous pacing; `starts_at` as for a rule carrying on (below) for `rrule`, `now − (pause_start − release_time(from_seq))` for `replay` |
 | Skip N / "next one now" | `from_seq = released(now) + N`, same pacing, `starts_at = now` |
 | Jump to a position | `from_seq = chosen`, same pacing, `starts_at = now`. Refused with a 409 problem response if `chosen ≤ released(now)` |
+
+A rule the read is already on carries on from its last occurrence, not from `now`,
+whichever action appended the segment. "Every other day" is counted from a rule's
+start, so restarting it now could move every later occurrence by a day, and a skip
+has no business doing that. A jump and a skip are unchanged for `replay`.
 
 Under `replay` a gap counts from the entry it follows, so a new segment anchors
 at `release_time(from_seq)` rather than at `now`; if nothing has been released
@@ -87,7 +93,9 @@ read would repeat IDs it has already seen.
 ## The arithmetic
 
 For time `t`, let `s` be the last segment, in append order, with
-`created_at ≤ t`:
+`created_at ≤ t`, and let `end_of_index` count only what had been discovered by `t`.
+Without that, an entry found later would count as released before andante knew of
+it:
 
 ```
 rrule:   due(t) = s.from_seq + s.per_release × occurrences(s.rrule, s.timezone, (s.starts_at, t])
@@ -154,6 +162,7 @@ type Segment struct {
 }
 
 type Index interface {
+    Start() int                        // lowest seq indexed
     End() int                          // highest seq indexed
     OriginalDate(seq int) (time.Time, bool)
     DiscoveredAt(seq int) time.Time
@@ -185,3 +194,29 @@ func NextRelease(segs []Segment, t time.Time, idx Index) (time.Time, bool, error
 - Long horizons: a read created 10 years ago at 3/day computes quickly
   (occurrence counting must not iterate every occurrence when a closed form
   exists, and must be bounded when it does not).
+
+## Where this diverged from the proposal
+
+- **A rule keeps its rhythm across segments.** The property tests found this: with
+  `INTERVAL=2`, a segment starting `now` on an odd day moved every later occurrence.
+- **`reads.start_seq` is new.** Nothing else recorded the first seq a read covers,
+  because the first segment's `from_seq` also counts the `initial` entries. Feeds
+  need it.
+- **Occurrences are counted in whole periods of 7 × INTERVAL days, anchored at local
+  noon.** Anchoring at the segment's own time of day fails on a day when that time
+  does not exist. The package doc has the reasoning.
+- **`catch_up = buffer` is an `Index` wrapper,** `schedule.Buffered`. It shifts `End`
+  and `DiscoveredAt`, so the arithmetic has no special case for it.
+- **`Apply` is in the package,** so that every action is pure and table-tested, and
+  the anchor rules live beside the arithmetic they feed.
+- **`catch_up` and `buffer` cannot change after a read is created.** Release times
+  depend on them, so a change would rewrite the past. `PATCH` refuses with a 409. The
+  contract has both fields, and changing that would be a breaking change.
+- **A skip stops at the end of the index, and a jump past it is refused,** so
+  `from_seq` never passes what is indexed.
+- **Rules more frequent than hourly are refused.** They are not a human pace, and
+  they cannot be counted cheaply.
+- **A repeated local time takes Go's choice, the second one.** Dublin's 01:30 on the
+  day the clocks go back occurs once, an hour later than the first would be. Tests
+  pin this down.
+- **A rule's `COUNT` restarts with each segment,** and includes its start.
