@@ -1,12 +1,12 @@
 # Sources
 
-A source is a serial, plus how to discover its archive.
+A source is a serial, plus how to find its archive.
 
-## Choosing a strategy
+## Choosing a Strategy
 
-Start from what the serial's feed holds, because a feed costs one request and a crawl
-costs one per page. Most podcasts and many blogs keep their whole archive in their
-feed. Most webcomics do not.
+Start with what the serial's feed holds, because a feed costs one request and a crawl costs
+one per page. Most podcasts and many blogs keep their whole archive in their feed. Most
+webcomics don't.
 
 | The serial has | Use | Config |
 |---|---|---|
@@ -15,38 +15,37 @@ feed. Most webcomics do not.
 | URLs with an incrementing number | `numeric` | `url_template` with `{n}`, `start`, optional `max_consecutive_misses`, `format`, `fields` |
 | Pages with a "next" link | `crawl` | `start_url`, optional `selectors`, `full_text` |
 
-A probe of a `feed` warns when the feed looks cut off at a round number of items. The
-rest of the archive is then not in the feed, so use `feed-paged` or `crawl`.
+A probe of a `feed` warns when the feed looks cut off at a round number of items. If it is,
+the rest of the archive isn't in the feed, so use `feed-paged` or `crawl`.
 
-In a `numeric` source a 404 is a gap, and `max_consecutive_misses` of them in a row
-(5 by default) are the live end. With `format: json`, `fields` says where each value
-is, with dots for nested keys:
+In a `numeric` source a 404 is a gap, and `max_consecutive_misses` of them in a row (5 by
+default) are taken as the live end. With `format: json`, `fields` says where each value is,
+with dots for nested keys:
 
 ```sh
 andante source probe 'https://xkcd.example/{n}/info.0.json' --strategy numeric --start-id 1 --format json \
   --field title=safe_title --field image=img --field alt_text=alt --field year=year --field month=month --field day=day
 ```
 
-`default_kind` sets the entries' kind, and an item with an audio or video enclosure is
-always an `episode`. An entry from a feed is identified by its guid, because podcast
-items often share a link. Enclosures are passed through and never rehosted. Their type
-and length come from the feed or the page, with a `HEAD` request only when these are
-missing.
+`default_kind` sets the entries' kind, but an item with an audio or video enclosure is always
+an `episode`. An entry from a feed is identified by its guid, because podcast items often
+share a link. Enclosures are passed through and never rehosted. Their type and length come
+from the feed or the page, with a `HEAD` request only when those are missing.
 
-`fill_gaps` fetches each item's page for what the item lacks, such as a comic image.
-That is one more request per entry, so it is off by default.
+`fill_gaps` fetches each item's page for whatever the item lacks, such as a comic image.
+That's one more request per entry, so it's off by default.
 
-## Full text
+## Full Text
 
-Full-text extraction of articles is off by default, and `full_text` turns it on for
-one source. Where a publisher's feed gives only a summary, the publisher chose that,
-so andante shows the summary and links to the original. Comic images and podcast
-enclosures differ: they are what every visitor gets, and andante links to them rather
-than copying them.
+Full-text extraction of articles is off by default, and `full_text` turns it on for one
+source. If a publisher's feed only gives a summary, that was the publisher's choice, so
+andante shows the summary and links to the original. Comic images and podcast enclosures are
+different: they're what every visitor gets, and andante links to them rather than copying
+them.
 
-On a `feed` source, `full_text` needs `fill_gaps`, because the text comes from the
-linked page. Anything stored from a page or a feed passes through an HTML sanitiser,
-which removes scripts, event handlers and iframes.
+On a `feed` source, `full_text` needs `fill_gaps`, because the text comes from the linked
+page. Anything stored from a page or a feed goes through an HTML sanitiser first, which
+removes scripts, event handlers and iframes.
 
 ## Importing OPML
 
@@ -54,12 +53,12 @@ which removes scripts, event handlers and iframes.
 andante import opml feeds.opml
 ```
 
-This creates a paused `feed` source for each outline, including those in folders, so
-nothing crawls until you have probed one and enabled it. The result lists each
-outline as `created`, `duplicate` (the file or the database already has it) or
-`invalid`. One bad outline does not stop the rest.
+This creates a paused `feed` source for each outline, including those in folders, so nothing
+crawls until you've probed one and enabled it. The result lists each outline as `created`,
+`duplicate` (the file or the database already has it) or `invalid`. One bad outline doesn't
+stop the rest.
 
-## Adding a comic
+## Adding a Comic
 
 Probe first. A probe tries a config and saves nothing:
 
@@ -69,8 +68,8 @@ curl -X POST -H "Authorization: Bearer $ANDANTE_TOKEN" -H 'Content-Type: applica
   -d '{"config": {"strategy": "crawl", "start_url": "https://comic.example/1"}}'
 ```
 
-It returns the first pages, with `warnings` and `dated_share`, the share of pages with
-an original date, which replay pacing needs. Probes keep to the same limits as
+It returns the first pages, with `warnings` and `dated_share`, which is the share of pages
+with an original date (replay pacing needs those). Probes keep to the same limits as
 crawling, so 10 pages take about 45 seconds by default.
 
 When that looks right, create the source with the same config:
@@ -82,7 +81,7 @@ curl -X POST -H "Authorization: Bearer $ANDANTE_TOKEN" -H 'Content-Type: applica
        "default_kind": "page", "config": {"strategy": "crawl", "start_url": "https://comic.example/1"}}'
 ```
 
-## What the warnings mean
+## What the Warnings Mean
 
 | Warning | What it means |
 |---|---|
@@ -93,11 +92,11 @@ curl -X POST -H "Authorization: Bearer $ANDANTE_TOKEN" -H 'Content-Type: applica
 | `a JSON-LD block …` | The page's metadata could not be read. andante fell back to the page itself. Contexts other than schema.org are refused, so a page cannot make andante fetch a URL. |
 | `stopped early: …` | The probe got some pages and then the site stopped answering. |
 
-## Selector overrides
+## Selector Overrides
 
 andante looks for open metadata first: schema.org JSON-LD, then Open Graph, then link
-relations, then the markup of common comic platforms. When that picks the wrong thing,
-set CSS selectors in the source's config. When set, they win:
+relations, then the markup of common comic platforms. When that picks the wrong thing, set
+CSS selectors in the source's config. If they're set, they win:
 
 ```json
 {
@@ -113,15 +112,14 @@ set CSS selectors in the source's config. When set, they win:
 }
 ```
 
-`alt_text` reads the element's `title` attribute, or else its text. `date` reads a
-`datetime` attribute, or else its text. Selectors are checked when the config is
-written.
+`alt_text` reads the element's `title` attribute, or else its text. `date` reads a `datetime`
+attribute, or else its text. Selectors are checked when the config is written.
 
-## How indexing works
+## How Indexing Works
 
-andante indexes lazily. It keeps a source `--crawl-lookahead` entries ahead of the
-furthest read on it, and a source with no reads gets its first `--crawl-lookahead`
-entries. `POST /sources/{id}/crawls` asks for a pass now.
+andante indexes lazily. It keeps a source `--crawl-lookahead` entries ahead of the furthest
+read on it, and a source with no reads gets its first `--crawl-lookahead` entries.
+`POST /sources/{id}/crawls` asks for a pass now.
 
 | State | Meaning |
 |---|---|
@@ -130,12 +128,12 @@ entries. `POST /sources/{id}/crawls` asks for a pass now.
 | `paused` | Left alone. Set it with `PATCH`, and set `indexing` to resume. |
 | `error` | Stopped, with the reason in `last_error`. Fix the cause, then set `indexing` with `PATCH`. |
 
-A source goes to `error` when robots.txt disallows a page, when its links form a cycle,
-or when a page cannot be used. A site that is failing or rate limiting is not an error:
-the source waits, with the reason in `last_error`, and tries again when `due_at` comes.
+A source goes to `error` when robots.txt disallows a page, when its links form a cycle, or
+when a page can't be used. A site that's failing or rate limiting isn't an error: the source
+waits, with the reason in `last_error`, and tries again when `due_at` comes.
 
-If a known page's title or image changes when it is re-fetched, the entry is updated in
-place. Its `seq` never changes.
+If a known page's title or image changes when it's re-fetched, the entry is updated in place.
+Its `seq` never changes.
 
 ## Politeness
 

@@ -1,12 +1,12 @@
 # Design: Scheduling
 
-Status: shipped in phase 6 of the [build plan](../plan/README.md). How to use it is
-in [`reads.md`](../reads.md).
+Shipped in phase 6 of the [build plan](../plan/README.md). How to use it is in
+[`reads.md`](../reads.md).
 
 A read releases entries according to its **pacing**. There are two modes, and
 a read can switch between them at any time.
 
-## Pacing mode `rrule`: a fixed schedule
+## Pacing Mode `rrule`: a Fixed Schedule
 
 An iCalendar recurrence rule (RFC 5545), an IANA time zone and a count
 released per occurrence:
@@ -18,23 +18,22 @@ released per occurrence:
 | Mon/Wed/Fri | `FREQ=WEEKLY;BYDAY=MO,WE,FR;BYHOUR=8;BYMINUTE=0;BYSECOND=0` | 1 |
 | Two podcast episodes for the weekend | `FREQ=WEEKLY;BYDAY=FR;BYHOUR=17;BYMINUTE=0;BYSECOND=0` | 2 |
 
-Use an established RRULE library rather than parsing by hand. The CLI may offer
-shorthand (`--daily 07:00`, `--weekdays 07:00 --count 3`) that it turns into an
-RRULE before calling the API; the API itself only accepts RRULEs.
+It uses an established RRULE library rather than parsing by hand. The CLI has shorthand
+(`--daily 07:00`, `--weekdays 07:00 --count 3`) that it turns into an RRULE before calling the
+API, which only accepts RRULEs.
 
 Occurrences are evaluated in the schedule's time zone, so 07:00 stays 07:00
 across daylight saving changes. A local time that does not exist on a DST day
 (01:30 on the spring-forward day in Europe/Dublin) is handled as the RRULE
 library and RFC 5545 define it; tests pin that behaviour down.
 
-## Pacing mode `replay`: the original run
+## Pacing Mode `replay`: the Original Run
 
 Entries are released with the same gaps between them as when they were first
 published, divided by `speed`:
 
 - `speed = 1`: the original timing. A blog read with `speed = 1` from its first
-  post is that blog exactly as it ran, shifted to start now — "this site, N
-  years ago".
+  post is that blog exactly as it ran, shifted to start now ("this site, N years ago").
 - `speed = 7`: a weekly comic becomes a daily one, a fortnightly podcast
   arrives every two days, and the bursts and breaks of the original run (the
   hiatus, the week with three bonus episodes) are kept in proportion.
@@ -49,11 +48,11 @@ pages carry dates. A probe reports what share of entries have dates, and the
 API refuses `replay` on a source where too few do (threshold a flag) unless
 `default_gap` is set.
 
-## Segments: an append-only history
+## Segments: an Append-Only History
 
-A read's position is never stored as a mutable counter. Instead a read has an
+A read's position is never stored as a mutable counter. A read has an
 append-only list of **segments**. Each says: *starting at `starts_at`, with
-`from_seq` already released, release entries according to this pacing* — or,
+`from_seq` already released, release entries according to this pacing*, or,
 for `paused`, *release nothing*.
 
 Every change appends a segment and never edits an old one. A segment's
@@ -121,10 +120,9 @@ take the segment's `starts_at`. Because segments are never edited, an entry's
 release time is stable for ever: feed items keep their timestamps and readers
 never see them reorder or reappear.
 
-Replay is O(entries since the segment started) per computation. Archives are
-thousands of entries, not millions, so this is fine; if profiling says
-otherwise, memoise per (segment, index length), which is safe because both are
-immutable.
+Replay is O(entries since the segment started) per computation. Archives are thousands of
+entries, so this is fine. If profiling ever says otherwise, memoise per (segment, index length),
+which is safe because both are immutable.
 
 When `due(t)` runs past the end of the index:
 
@@ -135,16 +133,14 @@ When `due(t)` runs past the end of the index:
   An entry's release time is `max(scheduled time, discovered_at of entry
   seq + buffer)`.
 
-Downtime needs no special handling. If andante is off for a week, the next
-request computes the correct position; the reader sees a week's entries, each
-with its proper release time.
+Downtime needs no special handling. If andante is off for a week, the next request computes the
+right position, and the reader sees a week's entries, each with its proper release time.
 
-## Package shape
+## Package Shape
 
-`internal/schedule` is pure: no database, no clock, no I/O. It takes segments,
-an index view (length, and original dates for replay) and a time, and returns
-positions and release times. It is the most heavily tested package in the
-repository.
+`internal/schedule` is pure: no database, no clock and no I/O. It takes segments, an index view
+(length, and original dates for replay) and a time, and returns positions and release times.
+It's the most heavily tested package in the repository.
 
 ```go
 type Pacing interface{ isPacing() }
@@ -192,10 +188,10 @@ func NextRelease(segs []Segment, t time.Time, idx Index) (time.Time, bool, error
 - Changing to `replay` after the gap to the next entry has elapsed releases that
   entry at `now` and no others, where the following gaps are above zero.
 - Long horizons: a read created 10 years ago at 3/day computes quickly
-  (occurrence counting must not iterate every occurrence when a closed form
-  exists, and must be bounded when it does not).
+  (occurrence counting mustn't iterate every occurrence when a closed form exists, and must be
+  bounded when it doesn't).
 
-## Where this diverged from the proposal
+## Where This Diverged From the Proposal
 
 - **A rule keeps its rhythm across segments.** The property tests found this: with
   `INTERVAL=2`, a segment starting `now` on an odd day moved every later occurrence.

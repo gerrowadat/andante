@@ -1,10 +1,10 @@
 # Reads
 
-A read is a paced replay of a source: the thing a feed serves. A source can have any
-number of them. Where a read has got to is never stored. It is worked out from the
-read's history and the time, so nothing can be missed, run twice or need repair.
+A read is a paced replay of a source -- the thing a feed serves. A source can have any number
+of them. Where a read has got to is never stored. It's worked out from the read's history and
+the time, so there's nothing to miss, run twice or repair.
 
-## Creating a read
+## Creating a Read
 
 ```sh
 curl -X POST -H "Authorization: Bearer $ANDANTE_TOKEN" -H 'Content-Type: application/json' \
@@ -13,8 +13,8 @@ curl -X POST -H "Authorization: Bearer $ANDANTE_TOKEN" -H 'Content-Type: applica
        {"mode": "rrule", "rrule": "FREQ=DAILY;BYHOUR=7;BYMINUTE=0;BYSECOND=0", "timezone": "Europe/Dublin"}}'
 ```
 
-`start_seq` chooses where it starts, by default the source's first entry. `initial` is
-how many entries are there at once, by default one.
+`start_seq` chooses where it starts, by default the source's first entry. `initial` is how many
+entries are there straight away, by default one.
 
 `GET /reads/{id}` reports:
 
@@ -28,9 +28,9 @@ how many entries are there at once, by default one.
 
 ## Pacing
 
-### A fixed schedule
+### A Fixed Schedule
 
-An iCalendar recurrence rule (RFC 5545), an IANA time zone and how many entries each
+An iCalendar recurrence rule (RFC 5545), an IANA time zone, and how many entries each
 occurrence releases. 07:00 stays 07:00 across daylight saving changes.
 
 | Intent | `rrule` | `per_release` |
@@ -40,10 +40,10 @@ occurrence releases. 07:00 stays 07:00 across daylight saving changes.
 | Mon/Wed/Fri | `FREQ=WEEKLY;BYDAY=MO,WE,FR;BYHOUR=8;BYMINUTE=0;BYSECOND=0` | 1 |
 | Two episodes for the weekend | `FREQ=WEEKLY;BYDAY=FR;BYHOUR=17;BYMINUTE=0;BYSECOND=0` | 2 |
 
-A rule can be at most hourly. A time that does not exist on a clock-change day moves
-an hour later, and one that happens twice happens once, at the second.
+A rule can be at most hourly. A time that doesn't exist on a clock-change day moves an hour
+later, and one that happens twice happens once, at the second.
 
-### Replaying the original run
+### Replaying the Original Run
 
 Entries come out with the gaps they first had, divided by `speed`:
 
@@ -52,23 +52,23 @@ Entries come out with the gaps they first had, divided by `speed`:
 ```
 
 - **`speed: 1`** is the original timing: "this site, N years ago".
-- **`speed: 7`** turns a weekly comic into a daily one, and keeps the bursts and breaks
-  of the original run in proportion.
-- **`max_gap`** stops a hiatus stalling the read. With `P30D`, a two-year break takes a
+- **`speed: 7`** turns a weekly comic into a daily one, and keeps the bursts and breaks of the
+  original run in proportion.
+- **`max_gap`** stops a hiatus from stalling the read. With `P30D`, a two-year break takes a
   month.
-- **`min_gap`** stops a busy day arriving all at once.
+- **`min_gap`** stops a busy day from arriving all at once.
 - **`default_gap`** stands in for a gap with an undated entry. Without it, that is one
   day, or `min_gap` if longer.
 
-Gaps are ISO 8601 durations, in days or smaller. Replay needs dates, so it is refused on
-a source where under `--replay-min-dated-share` of the entries have them, unless
-`default_gap` is set. A probe's `dated_share` tells you beforehand.
+Gaps are ISO 8601 durations, in days or smaller. Replay needs dates, so it's refused on a
+source where under `--replay-min-dated-share` of the entries have them, unless `default_gap` is
+set. A probe's `dated_share` tells you beforehand.
 
 ## Adjustments
 
 `POST /reads/{id}/adjustments` changes a read. Each one appends to its history, which
-`GET /reads/{id}/segments` shows. Nothing is rewritten, so entries already out keep
-their timestamps.
+`GET /reads/{id}/segments` shows. Nothing gets rewritten, so entries already out keep their
+timestamps.
 
 | `type` | What it does |
 |---|---|
@@ -80,13 +80,13 @@ their timestamps.
 
 A skip or a pause keeps a rule's rhythm: "every other day" stays on the same days.
 
-### Reading again
+### Reading Again
 
-A read only moves forward. To read a serial again, create a new read. It has its own
-feed, so a reader shows the entries as new, where going back within a read would repeat
-items it has already seen.
+A read only moves forward. To read a serial again, create a new read. It has its own feed, so
+your reader shows the entries as new, where going back within a read would repeat items it's
+already seen.
 
-## At the end of the index
+## At the End of the Index
 
 When a read catches up with its source:
 
@@ -94,10 +94,10 @@ When a read catches up with its source:
 - **`catch_up: buffer`** holds back the last `buffer` entries, so there is always
   something in hand when the serial updates late.
 
-These are fixed when the read is created, because release times depend on them. Create
-a new read to change them.
+These are fixed when the read is created, because release times depend on them. Make a new
+read to change them.
 
 ## Downtime
 
-Nothing needs doing. If andante is off for a week, the next request works out the right
-position, and the week's entries appear with the times they were due.
+Nothing to do. If andante is off for a week, the next request works out the right position,
+and the week's entries appear with the times they were due.

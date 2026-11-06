@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 Dave O'Connor
+#
+# andante and a Postgres to keep it in. See docs/running.md.
+#
+# Needs a .env next to this file with POSTGRES_PASSWORD, ANDANTE_ADMIN_TOKEN and
+# ANDANTE_BASE_URL. The repository root's compose.yaml is different: that one is
+# only a database for development.
+services:
+  postgres:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: andante
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set it in .env}
+      POSTGRES_DB: andante
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U andante -d andante]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  andante:
+    image: ${ANDANTE_IMAGE:-ghcr.io/gerrowadat/andante:0.1.0}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ANDANTE_DATABASE_URL: postgres://andante:${POSTGRES_PASSWORD}@postgres:5432/andante?sslmode=disable
+      ANDANTE_BASE_URL: ${ANDANTE_BASE_URL:?set it in .env}
+      ANDANTE_ADMIN_LISTEN: :8081
+      ANDANTE_ADMIN_TOKEN: ${ANDANTE_ADMIN_TOKEN:?set it in .env}
+      # For the CLI inside the container, so that docker compose exec just works.
+      ANDANTE_TOKEN: ${ANDANTE_ADMIN_TOKEN}
+    ports:
+      - ${ANDANTE_PUBLIC_PORT:-8080}:8080
+      # Loopback only. This port is the API, and /metrics has no auth.
+      - 127.0.0.1:${ANDANTE_ADMIN_PORT:-8081}:8081
+
+volumes:
+  postgres-data:

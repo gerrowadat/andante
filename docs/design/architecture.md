@@ -1,8 +1,8 @@
 # Design: Architecture
 
-How andante fits together: its components, data model, API and listeners. Built over
-phases 3 to 9 of the [build plan](../plan/README.md). Why each part is the way it is
-lives in the design record for that part.
+How andante fits together: components, data model, API and listeners. Built over phases 3 to 9
+of the [build plan](../plan/README.md). Why each part is the way it is lives in that part's
+design record.
 
 ## Components
 
@@ -28,8 +28,7 @@ lives in the design record for that part.
               └───────────────────────────────────────────────────┘
 ```
 
-- **andante-server** is one process: both listeners, plus the discovery loop in a
-  background goroutine. One replica is the supported deployment; the crawl loop
+- **andante-server** is one process: both listeners, and the discovery loop in a goroutine. One replica is the supported deployment; the crawl loop
   takes a Postgres advisory lock, so a second replica serves feeds but does not
   crawl.
 - **andante** (CLI) is a separate binary that only talks HTTP to the admin API
@@ -45,7 +44,7 @@ generates one, stores its hash and logs it once.
 Migrations are embedded (goose + `embed.FS`) and run on start under a Postgres advisory
 lock.
 
-## Data model
+## Data Model
 
 ```sql
 sources (
@@ -182,7 +181,7 @@ A source's strategy is the `strategy` property of its `config`. See
 | `GET /api/v1/openapi.json` | This document (no auth) |
 | `GET /api/v1/version` | The server's version (no auth) |
 
-## Public routes
+## Public Routes
 
 | Route | Behaviour |
 |---|---|
@@ -196,11 +195,11 @@ ServeMux wildcards must be a whole path segment, so the three feed routes
 share one pattern, `GET /f/{file}`, and the handler splits `{file}` into token
 and format.
 
-Unknown or revoked tokens get 404 (not 401/403, to avoid confirming that a
+Unknown or revoked tokens get 404 (not 401 or 403, which would confirm that a
 token existed). Responses carry `ETag` and `Cache-Control: max-age=…` computed
 from the next release time. Per-token rate limiting.
 
-## Metrics (initial set)
+## Metrics
 
 `andante_crawl_requests_total{source,status}`, `andante_crawl_duration_seconds`,
 `andante_entries_discovered_total{source}`, `andante_source_state{source,state}`,
@@ -211,7 +210,7 @@ from the next release time. Per-token rate limiting.
 Source slugs are bounded by what the user creates, so they are acceptable as a
 label. Tokens and read IDs are never labels.
 
-## Where this diverged from the proposal
+## Where This Diverged From the Proposal
 
 - **The flag table moved to `configuration.md`,** so that there is one list to keep
   current.

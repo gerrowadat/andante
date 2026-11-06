@@ -1,4 +1,4 @@
-# Proposal: Discovery beyond crawling
+# Proposal: Discovery Beyond Crawling
 
 Status: proposed, not scheduled. What has shipped is in
 [`design/discovery.md`](../design/discovery.md).
@@ -10,13 +10,13 @@ from Wayback Machine snapshots; see `../prior-art.md`), and a backward crawl via
 `rel="prev"` to extend an archive earlier than a nominated start page (negative
 `seq`).
 
-## Tail mode
+## Tail Mode
 
-A `crawl` source with a feed could be checked through its feed in tail mode. Today it
+A `crawl` source with a feed could be checked through its feed in tail mode. Today it just
 checks its last page.
 
-## Mid-archive insertions
+## Mid-Archive Insertions
 
-Insertions into the middle of an archive are out of scope for v1. Detect them where
-cheap (a known page's next link now points to an unknown URL that is not at the end)
-and log a warning.
+Insertions into the middle of an archive are out of scope for v1. We could detect them where
+it's cheap (a known page's next link now points to an unknown URL that isn't at the end) and log
+a warning.

@@ -1,4 +1,4 @@
-# Design: API contract
+# Design: API Contract
 
 Why the admin API's contract is the way it is. How to use it is in
 [`api.md`](../api.md). The rest of the API's design is in
@@ -6,14 +6,13 @@ Why the admin API's contract is the way it is. How to use it is in
 
 ## OpenAPI 3.1
 
-The spec is OpenAPI 3.1.0, not the 3.0.3 fallback. Before writing it, a small spec
-using `type: [string, "null"]`, discriminated `oneOf` and merge patch was run
-through everything that has to read it: oapi-codegen v2.8.2, kin-openapi's request
-validator, Spectral and oasdiff. All of them handled it.
+The spec is OpenAPI 3.1.0. Before writing it, a small spec using `type: [string, "null"]`,
+discriminated `oneOf` and merge patch went through everything that has to read it: oapi-codegen
+v2.8.2, kin-openapi's request validator, Spectral and oasdiff. All of them handled it.
 
-One difference remains: on 3.1 kin-openapi validates with a JSON Schema 2020-12
-library, whose error text names its internal schema URL. So field errors are built
-from that library's structured error tree, not from the message.
+On 3.1 kin-openapi validates with a JSON Schema 2020-12 library, whose error text names its
+internal schema URL. So field errors are built from that library's structured error tree and
+not from the message.
 
 ## Decisions
 
@@ -24,9 +23,7 @@ from that library's structured error tree, not from the message.
   authenticator for any operation with a `security` requirement, and the document
   sets one globally. A new operation is therefore authenticated unless it says
   `security: []`, so forgetting fails closed.
-- **The validator runs before routing.** It knows the whole contract, including
-  operations that are not built, so it answers 404 and 405 itself and the mux
-  never has to.
+- **The validator runs before routing.** It knows the whole contract, so it answers 404 and 405 itself and the mux never has to.
 - **`PATCH` is RFC 7396 merge patch.** It is the open standard, and it can tell a
   field left out from a field set to `null`.
 - **The last active API token cannot be revoked.** Bootstrap only runs on an empty
@@ -40,7 +37,7 @@ from that library's structured error tree, not from the message.
 - **`GET /api/v1/openapi.json` is in the contract.** It is an operation like any
   other, so the CLI and its operationId check cover it.
 
-## Where this diverged from the architecture proposal
+## Where This Diverged From the Architecture Proposal
 
 - `POST /api/v1/exports/opml` and `POST /api/v1/imports/opml` are `text/x-opml`.
 - `last_used_at` is updated at most once a minute by a fixed interval in the query,

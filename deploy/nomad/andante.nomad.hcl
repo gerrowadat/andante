@@ -78,6 +78,7 @@ job "andante" {
           {{ with nomadVar "nomad/jobs/andante" -}}
           ANDANTE_DATABASE_URL={{ .database_url }}
           ANDANTE_ADMIN_TOKEN={{ .admin_token }}
+          ANDANTE_TOKEN={{ .admin_token }}
           {{- end }}
         EOT
       }

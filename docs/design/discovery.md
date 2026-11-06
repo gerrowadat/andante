@@ -1,12 +1,10 @@
 # Design: Discovery
 
-Status: shipped in phase 5 of the [build plan](../plan/README.md): the `crawl`
-strategy, the `page` extractor, the fetcher, probes and the crawl loop. The other
-strategies and extractors are in the [proposal](../proposals/discovery.md). How to
-add a serial is in [`sources.md`](../sources.md).
+Shipped in phases 5 and 9 of the [build plan](../plan/README.md). What's still unbuilt is in the
+[proposal](../proposals/discovery.md). How to add a serial is in [`sources.md`](../sources.md).
 
-Discovery builds and maintains the ordered index of a source's entries. It is
-the only part of andante that talks to other people's websites.
+Discovery builds and maintains the ordered index of a source's entries. It's the only part of
+andante that talks to other people's websites.
 
 ## Strategies
 
@@ -23,11 +21,8 @@ type Strategy interface {
 }
 ```
 
-A cursor is strategy-owned JSON, persisted in `sources.cursor` so a crawl
-resumes after a restart.
-
-A cursor is strategy-owned JSON, persisted in `sources.cursor` so a crawl resumes
-after a restart.
+A cursor is strategy-owned JSON, kept in `sources.cursor` so that a crawl resumes after a
+restart.
 
 Strategies are a compiled-in registry. `crawl` walks pages by their "next" link.
 Its config is `start_url`, plus optional selector overrides that are compiled when
@@ -44,7 +39,7 @@ walk returns everything at once, oldest first, and only `fill_gaps` keeps to the
 batch limit. Their cursor holds an 8-byte hash of each item handed over. A tail check
 is a single conditional request.
 
-### Entries from feeds
+### Entries From Feeds
 
 The feed item is the primary record. An entry's identity is its guid, because podcast
 items often share a link or have none, and its `url` is the link, falling back to the
@@ -55,7 +50,7 @@ enclosure URL. An item with none of these is skipped with a warning. Namespaced 
 overridden to `episode` by an audio or video enclosure. Feed content goes through the
 same sanitiser as page content, because a feed is no more trusted than a page.
 
-### What came from FeedRewind
+### What Came From FeedRewind
 
 FeedRewind solves the same problem for blogs, so phase 9 studied it. andante took its
 feed-first order and its warning for a feed cut off at a round number. It did not
@@ -64,26 +59,29 @@ selectors covers those sites, with rules that a person can read.
 
 ## Extraction
 
-An `Extractor` pulls fields out of a fetched page. It is chosen by the entry's
-kind, and only `page` (images first) exists so far. It prefers open metadata and
-falls back to heuristics, in this order:
+An `Extractor` pulls fields out of a fetched page. It's chosen by the entry's kind: `page` puts
+images first, `article` main text, and `episode` media. It prefers open metadata and falls back
+to heuristics, in this order:
 
-1. **schema.org JSON-LD** — `ComicStory`, `ComicIssue`, `Article`, `BlogPosting`,
+1. **schema.org JSON-LD**: `ComicStory`, `ComicIssue`, `Article`, `BlogPosting`,
    `NewsArticle`, `PodcastEpisode`, `CreativeWork`: `name`, `image`,
    `datePublished`, `associatedMedia`.
-2. **Open Graph** — `og:title`, `og:image`, `article:published_time`.
-3. **HTML link relations** — `<link rel="next">`, `<a rel="next">`, and their `prev`
+2. **Open Graph**: `og:title`, `og:image`, `article:published_time`.
+3. **HTML link relations**: `<link rel="next">`, `<a rel="next">`, and their `prev`
    counterparts.
-4. **Known platform patterns** — ComicControl (Hiveworks), the WordPress comic
+4. **Known platform patterns**: ComicControl (Hiveworks), the WordPress comic
    plugins (Webcomic, Toocheke, ComicPress/ComicEasel), common class names.
-5. **User overrides** — CSS selectors in the source config. When set, these win.
+5. **User overrides**: CSS selectors in the source config. If set, these win.
 
 The extractor returns warnings along with fields ("no image found", "next link
 points to the current page", "image is a site logo shared by 90% of pages").
-Probes surface these warnings so a bad config is caught before saving.
+Probes show these warnings, so a bad config gets caught before saving.
 
-Alt/title text matters for some comics (xkcd), so `alt_text` is a first-class
-field: the `title` attribute of the comic image, or the JSON field in
+`article` also knows WordPress and Ghost post navigation, and `episode` looks at `<audio>` and
+`<video>` sources. With `full_text` on, `article` runs an established Go port of Mozilla
+Readability and sanitises the result before storing it.
+
+Alt text matters for some comics (xkcd), so `alt_text` is a first-class field: the `title` attribute of the comic image, or the JSON field in
 `numeric` JSON mode.
 
 ## Politeness
@@ -93,14 +91,14 @@ field: the `title` attribute of the comic image, or the JSON field in
   clear message rather than being fetched.
 - At most one request in flight per host, with at least `--crawl-interval`
   (default 5 s) between requests to the same host.
-- Conditional requests: `If-None-Match` / `If-Modified-Since` from `crawl_log`.
+- Conditional requests use `If-None-Match` and `If-Modified-Since` from `crawl_log`.
 - 429/503 honour `Retry-After`; other 5xx back off exponentially, capped at 6 h.
 - `User-Agent` names andante, its version and the instance's base URL.
 - Redirects are followed up to 5 hops and only over http(s). Response bodies
   are size-limited (default 5 MiB). Private and loopback addresses are refused
   unless explicitly allowed (SSRF guard: a source URL is user input).
 
-## Lazy indexing
+## Lazy Indexing
 
 The crawl loop picks the source most in need of work:
 
@@ -117,7 +115,7 @@ A source enters tail mode when the strategy reports the live end: no next link,
 a next link pointing back to the same page, or N consecutive misses
 (`numeric`). It leaves tail mode when new entries appear.
 
-## Loop and content-change protection
+## Loop and Content-Change Protection
 
 - A content hash per entry detects a "next" chain that cycles back to a page
   already indexed; the crawl stops and the source goes to `error`.
@@ -133,7 +131,7 @@ return 429 with `Retry-After`. Tests serve them with `httptest` and use a fake c
 for politeness timing. Their fetcher can only dial loopback, so a test that strays
 onto the real network fails.
 
-## Conditional requests
+## Conditional Requests
 
 `PageFetcher` has `Fetch`, which is never conditional, and `Revalidate`, which is.
 Phase 5 had one method that was always conditional in the crawl loop. A save that
@@ -141,7 +139,7 @@ failed left validators in `crawl_log` and no cursor, so the retry got a 304 with
 body for its first page and stopped there as if it had reached the live end. Only a
 tail check can use a 304, because only it already holds the page's content.
 
-## Where this diverged from the proposal
+## Where This Diverged From the Proposal
 
 - **`Next` takes a `PageFetcher`.** The crawl loop's adds conditional requests and
   `crawl_log` rows, which a probe does not want.

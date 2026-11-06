@@ -94,6 +94,7 @@ internal/feed/            Atom, RSS 2.0 and JSON Feed rendering, decorators
 internal/api/             admin API handlers; gen/ is oapi-codegen output
 internal/server/          listeners, middleware, wiring, public feed routes
 pkg/client/               generated API client (public: the CLI and other tools import it)
+deploy/compose/           Docker Compose stack: andante and Postgres
 deploy/nomad/             example Nomad job
 deploy/prometheus/        example alert rules and their tests
 test/e2e/                 end-to-end suite (build tag e2e)

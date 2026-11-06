@@ -1,43 +1,43 @@
 # FAQ
 
-## Why does my reader show today's date on a page from 2009?
+## Why Does My Reader Show Today's Date on a Page From 2009?
 
-Because that is when it was released to you. Items carry their release time and not the
-original date, so a reader files them as new. If they carried 2009, most readers would
-sort them to the bottom or drop them. The original date is in the item's text, with a
-link to the original page.
+Because today is when it was released to you. Items carry their release time and not the
+original date, so that your reader files them as new. If they said 2009, most readers would
+sort them to the bottom or quietly drop them. The original date is in the item's text, with
+a link to the original page.
 
-## Why did nothing crawl when I fetched my feed?
+## Why Did Nothing Crawl When I Fetched My Feed?
 
-Feed requests only read the index. They never trigger a crawl, so a popular feed cannot
-hammer a publisher's site. The crawl loop works on its own: it indexes a source as far
-as your reads need plus `--crawl-lookahead`, then checks for new entries every
-`--tail-interval`. To check now, run `andante source crawl <slug>`. A new source with no
-reads indexes only the lookahead.
+Feed requests only read the index. They never trigger a crawl, so a popular feed can't end
+up hammering some poor publisher's site. The crawl loop gets on with things by itself: it
+indexes a source as far as your reads need plus `--crawl-lookahead`, then checks for new
+entries every `--tail-interval`. If you can't wait, run `andante source crawl <slug>`. A new
+source with no reads only indexes the lookahead.
 
-## Why isn't my new source crawling?
+## Why Isn't My New Source Crawling?
 
-It may be paused: an OPML import creates paused sources, so that you can probe each one
-first. Enable one with `andante source edit <slug> --resume`. It may also be in `error`,
-with the reason in `last_error`, or be waiting for a host to allow requests again, in which case
+It might be paused. An OPML import creates paused sources, so that you can probe each one
+first. `andante source edit <slug> --resume` turns one on. It might also be in `error`, with
+the reason in `last_error`, or waiting for a host to allow requests again, in which case
 `due_at` says when.
 
-## Why was a page skipped?
+## Why Was a Page Skipped?
 
-andante does not skip a page by choice, so it depends on the strategy.
+andante doesn't skip pages by choice, so this depends on the strategy.
 
-- **`crawl`** follows "next" links, so a page that nothing links to is never seen. A
-  wrong next link can also jump over pages. Check with a probe and a `next` selector.
-- **`numeric`** treats a 404 as a gap. `max_consecutive_misses` of them in a row are read
-  as the live end, so raise it if the archive has a long hole.
-- **`feed` and `feed-paged`** see only what the feed holds, and skip an item with no guid,
-  link or enclosure, with a warning. A probe warns when a feed looks cut off.
+- **`crawl`** follows "next" links, so a page that nothing links to is never seen. A wrong
+  next link can also jump over pages. Check with a probe and a `next` selector.
+- **`numeric`** treats a 404 as a gap. `max_consecutive_misses` of them in a row are taken
+  as the live end, so raise it if the archive has a long hole in it.
+- **`feed` and `feed-paged`** only see what the feed holds. They skip an item with no guid,
+  link or enclosure, with a warning, and a probe warns when a feed looks cut off.
 
-If a site changes its archive later, insertions in the middle are not picked up.
+If a site changes its archive later, insertions in the middle aren't picked up.
 
-andante also stops at pages that robots.txt disallows and does not route around them.
+andante also stops at pages that robots.txt disallows. It doesn't try to route around them.
 
-## Why does an entry not appear even though its time has passed?
+## Why Hasn't an Entry Appeared When Its Time Has Passed?
 
-An entry is released only after it has been indexed. If a read catches up with the index,
-it waits. A read's `due` and `index_end` show this. See [reads](reads.md).
+An entry is only released after it's been indexed. If a read catches up with the index, it
+waits. A read's `due` and `index_end` will show you this. See [reads](reads.md).

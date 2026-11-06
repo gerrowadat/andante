@@ -121,7 +121,8 @@ docker-scan: docker ## Scan andante:dev as CI does (needs Trivy)
 # NOMAD_ADDR points nowhere on purpose. Nomad then validates the job locally, and
 # this never reaches whichever cluster the shell is set up for.
 .PHONY: deploy-check
-deploy-check: ## Check the Nomad job and the Prometheus alerts (needs nomad and Docker)
+deploy-check: ## Check the Nomad job, the Compose stack and the alerts (needs nomad and Docker)
+	docker compose --env-file deploy/compose/env.example -f deploy/compose/compose.yaml config --quiet
 	NOMAD_ADDR=http://127.0.0.1:1 NOMAD_TOKEN= nomad job validate deploy/nomad/andante.nomad.hcl
 	docker run --rm -v "$(CURDIR)/deploy/prometheus:/work:ro" -w /work --entrypoint promtool $(PROMETHEUS_IMAGE) check rules alerts.yml
 	docker run --rm -v "$(CURDIR)/deploy/prometheus:/work:ro" -w /work --entrypoint promtool $(PROMETHEUS_IMAGE) test rules alerts_test.yml
