@@ -24,3 +24,25 @@ sql:
             go_type:
               type: float64
               pointer: true
+  - engine: postgresql
+    schema: internal/catalogue/store/migrations
+    queries: internal/catalogue/store/queries
+    gen:
+      go:
+        package: db
+        out: internal/catalogue/store/db
+        sql_package: pgx/v5
+        emit_pointers_for_null_types: true
+        overrides:
+          - db_type: timestamptz
+            go_type: time.Time
+          - db_type: timestamptz
+            nullable: true
+            go_type:
+              type: time.Time
+              pointer: true
+          - db_type: pg_catalog.numeric
+            nullable: true
+            go_type:
+              type: float64
+              pointer: true

@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gerrowadat/andante/internal/catalogue/store"
+	"github.com/gerrowadat/andante/internal/catalogue/store/db"
 	"github.com/gerrowadat/andante/internal/discovery"
 	"github.com/gerrowadat/andante/internal/discovery/sitetest"
 	"github.com/gerrowadat/andante/internal/discovery/strategies"
-	"github.com/gerrowadat/andante/internal/store"
-	"github.com/gerrowadat/andante/internal/store/db"
 	"github.com/gerrowadat/andante/internal/store/storetest"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -33,7 +33,7 @@ type harness struct {
 
 func newHarness(t *testing.T, lookahead int) *harness {
 	t.Helper()
-	h := &harness{store: storetest.New(t), clock: sitetest.NewClock(), metrics: prometheus.NewRegistry()}
+	h := &harness{store: storetest.Catalogue(t), clock: sitetest.NewClock(), metrics: prometheus.NewRegistry()}
 	h.loop = discovery.NewLoop(discovery.LoopOptions{
 		Store:        h.store,
 		Registry:     discovery.NewRegistry(strategies.All()...),
@@ -447,7 +447,7 @@ func TestMetrics(t *testing.T) {
 }
 
 func TestOnlyOneReplicaCrawls(t *testing.T) {
-	st := storetest.New(t)
+	st := storetest.Catalogue(t)
 	first, err := st.TryCrawlLock(t.Context())
 	if err != nil || first == nil {
 		t.Fatalf("first lock: %v, %v", first, err)
@@ -471,7 +471,7 @@ func TestOnlyOneReplicaCrawls(t *testing.T) {
 }
 
 func TestReleasingALockFreesItAtOnce(t *testing.T) {
-	st := storetest.New(t)
+	st := storetest.Catalogue(t)
 	for i := range 50 {
 		lock, err := st.TryCrawlLock(t.Context())
 		if err != nil {
@@ -485,7 +485,7 @@ func TestReleasingALockFreesItAtOnce(t *testing.T) {
 }
 
 func TestReleaseWorksAfterTheContextEnds(t *testing.T) {
-	st := storetest.New(t)
+	st := storetest.Catalogue(t)
 	lock, err := st.TryCrawlLock(t.Context())
 	if err != nil || lock == nil {
 		t.Fatalf("lock: %v, %v", lock, err)

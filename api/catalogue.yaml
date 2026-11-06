@@ -1,0 +1,602 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 Dave O'Connor
+openapi: 3.1.0
+info:
+  title: andante catalogue API
+  version: 1.0.0
+  summary: Sources, entries and crawling, for andante-server.
+  description: >-
+    The private API of andante-catalogue. It knows about serials and nothing
+    about users or reads. Only andante-server calls it. See
+    docs/design/architecture.md.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+  contact:
+    name: andante
+    url: https://github.com/gerrowadat/andante
+servers:
+  - url: /v1
+    description: The catalogue's listener.
+security:
+  - bearerAuth: []
+tags:
+  - name: sources
+    description: Serials and how their archives are discovered.
+  - name: changes
+    description: What has changed, for keeping a copy.
+paths:
+  /changes:
+    get:
+      operationId: listChanges
+      tags: [changes]
+      summary: Changes after a revision
+      description: >-
+        Returns changes in revision order. A source appears once, at its latest
+        revision, so an entry can arrive before its source. With wait, an empty
+        answer is held back until something changes or the wait is up.
+      parameters:
+        - name: after
+          in: query
+          description: The last revision the caller has applied.
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+            default: 0
+        - name: limit
+          in: query
+          description: The most changes to return.
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 1000
+            default: 500
+        - name: wait
+          in: query
+          description: How long to wait for a change, in seconds.
+          schema:
+            type: integer
+            format: int32
+            minimum: 0
+            maximum: 30
+            default: 0
+      responses:
+        "200":
+          description: The changes, oldest first.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChangeList"
+        default:
+          $ref: "#/components/responses/Problem"
+  /sources:
+    post:
+      operationId: createSource
+      tags: [sources]
+      summary: Create a source
+      description: Validates the config through its strategy, and starts indexing unless state says paused.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SourceCreate"
+      responses:
+        "201":
+          description: The new source.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Source"
+        default:
+          $ref: "#/components/responses/Problem"
+  /sources/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    patch:
+      operationId: updateSource
+      tags: [sources]
+      summary: Update a source
+      description: Takes a JSON merge patch. Fields left out stay as they are.
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: "#/components/schemas/SourcePatch"
+      responses:
+        "200":
+          description: The updated source.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Source"
+        default:
+          $ref: "#/components/responses/Problem"
+    delete:
+      operationId: deleteSource
+      tags: [sources]
+      summary: Delete a source and its entries
+      description: Refused with a 409 while the source has demand.
+      responses:
+        "204":
+          description: Deleted.
+        default:
+          $ref: "#/components/responses/Problem"
+  /sources/{id}/crawls:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      operationId: requestCrawl
+      tags: [sources]
+      summary: Ask for a crawl
+      description: Marks the source due, and the crawl happens in the background.
+      responses:
+        "202":
+          description: The source is due now.
+        default:
+          $ref: "#/components/responses/Problem"
+  /sources/{id}/demand:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    put:
+      operationId: setDemand
+      tags: [sources]
+      summary: Say how far readers have got
+      description: The crawl keeps the index --crawl-lookahead entries ahead of this.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Demand"
+      responses:
+        "204":
+          description: Recorded.
+        default:
+          $ref: "#/components/responses/Problem"
+    delete:
+      operationId: clearDemand
+      tags: [sources]
+      summary: Say that nobody is reading a source
+      description: The crawl goes back to indexing only the first --crawl-lookahead entries.
+      responses:
+        "204":
+          description: Cleared.
+        default:
+          $ref: "#/components/responses/Problem"
+  /probes:
+    post:
+      operationId: createProbe
+      tags: [sources]
+      summary: Dry-run discovery
+      description: >-
+        Runs discovery for a proposed source config and returns the first
+        entries with any extraction warnings. Saves nothing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProbeRequest"
+      responses:
+        "200":
+          description: What discovery found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProbeResult"
+        default:
+          $ref: "#/components/responses/Problem"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: The token in --api-token.
+  parameters:
+    ID:
+      name: id
+      in: path
+      required: true
+      description: The source's ID.
+      schema:
+        type: integer
+        format: int64
+  responses:
+    Problem:
+      description: An error, as RFC 9457 problem details.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+  schemas:
+    Change:
+      type: object
+      description: Exactly one of source, entry and deleted_source_id is set.
+      required: [revision]
+      properties:
+        revision:
+          type: integer
+          format: int64
+        source:
+          $ref: "#/components/schemas/Source"
+        entry:
+          $ref: "#/components/schemas/Entry"
+        deleted_source_id:
+          type: integer
+          format: int64
+    ChangeList:
+      type: object
+      required: [changes]
+      properties:
+        changes:
+          type: array
+          items:
+            $ref: "#/components/schemas/Change"
+    Demand:
+      type: object
+      required: [seq]
+      properties:
+        seq:
+          type: integer
+          format: int32
+          description: The furthest position of any read on the source.
+    Problem:
+      type: object
+      description: RFC 9457 problem details.
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri-reference
+          description: Identifies the problem. about:blank means the status says it all.
+        title:
+          type: string
+        status:
+          type: integer
+          format: int32
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri-reference
+        errors:
+          type: array
+          description: What was wrong with the request, field by field.
+          items:
+            $ref: "#/components/schemas/FieldError"
+    FieldError:
+      type: object
+      required: [detail]
+      properties:
+        pointer:
+          type: string
+          description: A JSON pointer to the field in the request body.
+        detail:
+          type: string
+    Kind:
+      type: string
+      enum: [page, episode, article]
+    Source:
+      type: object
+      required: [id, slug, title, home_url, default_kind, extra, config, state, created_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        slug:
+          type: string
+        title:
+          type: string
+        home_url:
+          type: string
+          format: uri
+        default_kind:
+          $ref: "#/components/schemas/Kind"
+        image_url:
+          type: [string, "null"]
+          format: uri
+        extra:
+          type: object
+          description: Show or site metadata copied from the source.
+        config:
+          $ref: "#/components/schemas/SourceConfig"
+        state:
+          type: string
+          enum: [indexing, tail, paused, error]
+        due_at:
+          type: [string, "null"]
+          format: date-time
+        last_crawled_at:
+          type: [string, "null"]
+          format: date-time
+        last_error:
+          type: [string, "null"]
+        created_at:
+          type: string
+          format: date-time
+    SourceCreate:
+      type: object
+      additionalProperties: false
+      required: [slug, title, home_url, default_kind, config]
+      properties:
+        slug:
+          type: string
+          pattern: ^[a-z0-9]+(-[a-z0-9]+)*$
+          maxLength: 64
+        title:
+          type: string
+          minLength: 1
+        home_url:
+          type: string
+          format: uri
+        default_kind:
+          $ref: "#/components/schemas/Kind"
+        image_url:
+          type: string
+          format: uri
+        config:
+          $ref: "#/components/schemas/SourceConfig"
+        state:
+          type: string
+          enum: [indexing, paused]
+          default: indexing
+    SourcePatch:
+      type: object
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          minLength: 1
+        home_url:
+          type: string
+          format: uri
+        default_kind:
+          $ref: "#/components/schemas/Kind"
+        image_url:
+          type: [string, "null"]
+          format: uri
+        config:
+          $ref: "#/components/schemas/SourceConfig"
+        state:
+          type: string
+          enum: [indexing, paused]
+    SourceConfig:
+      description: How the source's archive is discovered.
+      oneOf:
+        - $ref: "#/components/schemas/CrawlConfig"
+        - $ref: "#/components/schemas/NumericConfig"
+        - $ref: "#/components/schemas/FeedConfig"
+        - $ref: "#/components/schemas/FeedPagedConfig"
+      discriminator:
+        propertyName: strategy
+        mapping:
+          crawl: "#/components/schemas/CrawlConfig"
+          numeric: "#/components/schemas/NumericConfig"
+          feed: "#/components/schemas/FeedConfig"
+          feed-paged: "#/components/schemas/FeedPagedConfig"
+    CrawlConfig:
+      type: object
+      description: Walk pages by their next link.
+      additionalProperties: false
+      required: [strategy, start_url]
+      properties:
+        strategy:
+          type: string
+          enum: [crawl]
+        start_url:
+          type: string
+          format: uri
+        selectors:
+          $ref: "#/components/schemas/Selectors"
+        full_text:
+          type: boolean
+          description: Store a page's main text. Off by default, and for articles only.
+    Selectors:
+      type: object
+      description: CSS selectors that override extraction, field by field.
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          minLength: 1
+        image:
+          type: string
+          minLength: 1
+        alt_text:
+          type: string
+          minLength: 1
+        date:
+          type: string
+          minLength: 1
+        next:
+          type: string
+          minLength: 1
+    NumericConfig:
+      type: object
+      description: Walk URLs that carry an incrementing ID.
+      additionalProperties: false
+      required: [strategy, url_template, start]
+      properties:
+        strategy:
+          type: string
+          enum: [numeric]
+        url_template:
+          type: string
+          description: The URL, with {n} where the ID goes.
+        start:
+          type: integer
+          format: int64
+        max_consecutive_misses:
+          type: integer
+          format: int32
+          minimum: 1
+        format:
+          type: string
+          enum: [html, json]
+        fields:
+          $ref: "#/components/schemas/JSONFields"
+    JSONFields:
+      type: object
+      description: >-
+        Where to find each field in a JSON page, as a key, or a dotted path. A date
+        can be one field or three.
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          minLength: 1
+        image:
+          type: string
+          minLength: 1
+        alt_text:
+          type: string
+          minLength: 1
+        date:
+          type: string
+          minLength: 1
+        year:
+          type: string
+          minLength: 1
+        month:
+          type: string
+          minLength: 1
+        day:
+          type: string
+          minLength: 1
+    FeedConfig:
+      type: object
+      description: Read a feed that holds the whole archive, or RFC 5005 archived feeds.
+      additionalProperties: false
+      required: [strategy, feed_url]
+      properties:
+        strategy:
+          type: string
+          enum: [feed]
+        feed_url:
+          type: string
+          format: uri
+        fill_gaps:
+          type: boolean
+          description: Fetch each item's page to fill in what the feed lacks, such as an image.
+        full_text:
+          type: boolean
+          description: With fill_gaps, also store each article's main text. Off by default.
+    FeedPagedConfig:
+      type: object
+      description: Walk a WordPress-style paged feed.
+      additionalProperties: false
+      required: [strategy, feed_url]
+      properties:
+        strategy:
+          type: string
+          enum: [feed-paged]
+        feed_url:
+          type: string
+          format: uri
+        max_pages:
+          type: integer
+          format: int32
+          minimum: 1
+        page_param:
+          type: string
+          minLength: 1
+        fill_gaps:
+          type: boolean
+          description: Fetch each item's page to fill in what the feed lacks, such as an image.
+        full_text:
+          type: boolean
+          description: With fill_gaps, also store each article's main text. Off by default.
+    Entry:
+      type: object
+      required: [id, seq, kind, images, enclosures, extra, discovered_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        source_id:
+          type: integer
+          format: int64
+        seq:
+          type: integer
+          format: int32
+        kind:
+          $ref: "#/components/schemas/Kind"
+        url:
+          type: [string, "null"]
+        guid:
+          type: [string, "null"]
+        title:
+          type: [string, "null"]
+        summary:
+          type: [string, "null"]
+        content_html:
+          type: [string, "null"]
+        images:
+          type: array
+          items:
+            type: string
+        alt_text:
+          type: [string, "null"]
+        enclosures:
+          type: array
+          items:
+            $ref: "#/components/schemas/Enclosure"
+        duration:
+          type: [string, "null"]
+          format: duration
+        extra:
+          type: object
+          description: Namespaced fields passed through from the source.
+        original_date:
+          type: [string, "null"]
+          format: date-time
+        discovered_at:
+          type: string
+          format: date-time
+    Enclosure:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+        type:
+          type: string
+        length:
+          type: integer
+          format: int64
+    ProbeRequest:
+      type: object
+      additionalProperties: false
+      required: [config]
+      properties:
+        default_kind:
+          $ref: "#/components/schemas/Kind"
+        limit:
+          type: integer
+          format: int32
+          description: The most entries to return.
+          minimum: 1
+          maximum: 25
+          default: 10
+        config:
+          $ref: "#/components/schemas/SourceConfig"
+    ProbeResult:
+      type: object
+      required: [entries, warnings, dated_share]
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/Entry"
+        warnings:
+          type: array
+          items:
+            type: string
+        dated_share:
+          type: number
+          format: double
+          description: The share of entries with an original date, from 0 to 1.

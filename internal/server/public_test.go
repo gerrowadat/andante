@@ -4,7 +4,6 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,15 +19,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gerrowadat/andante/internal/discovery"
 	"github.com/gerrowadat/andante/internal/discovery/sitetest"
-	"github.com/gerrowadat/andante/internal/discovery/strategies"
 	"github.com/gerrowadat/andante/internal/feed"
 	"github.com/gerrowadat/andante/internal/reads"
+	"github.com/gerrowadat/andante/internal/replica"
 	"github.com/gerrowadat/andante/internal/schedule"
+	"github.com/gerrowadat/andante/internal/stacktest"
 	"github.com/gerrowadat/andante/internal/store"
 	"github.com/gerrowadat/andante/internal/store/db"
 	"github.com/gerrowadat/andante/internal/store/storetest"
+	"github.com/gerrowadat/andante/pkg/client"
 	"github.com/mmcdole/gofeed"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -74,7 +74,7 @@ func newFeedFixture(t *testing.T, ratePerHour int) *feedFixture {
 
 func (f *feedFixture) source(t *testing.T, kind string) db.Source {
 	t.Helper()
-	s, err := f.store.CreateSource(t.Context(), db.InsertSourceParams{
+	s, err := storetest.AddSource(t, f.store, db.UpsertSourceParams{
 		Slug: "s-" + strconv.FormatInt(time.Now().UnixNano(), 36), Title: "Comic", HomeUrl: "https://publisher.example/", DefaultKind: kind,
 		Strategy: "crawl", Config: []byte(`{"strategy":"crawl","start_url":"https://publisher.example/1"}`), State: "tail",
 	})
@@ -87,8 +87,8 @@ func (f *feedFixture) source(t *testing.T, kind string) db.Source {
 func (f *feedFixture) entries(t *testing.T, source db.Source, n int, extra string) {
 	t.Helper()
 	for i := range n {
-		_, err := f.store.Pool().Exec(t.Context(), `INSERT INTO entries (source_id, seq, kind, url, title, images, discovered_at)
-			VALUES ($1, $2, $3, $4, $5, '{}', $6)`+extra,
+		_, err := f.store.Pool().Exec(t.Context(), `INSERT INTO entries (id, source_id, seq, kind, url, title, images, discovered_at, available_at)
+			VALUES ((SELECT coalesce(max(id), 0) + 1 FROM entries), $1, $2, $3, $4, $5, '{}', $6, $6)`+extra,
 			source.ID, i, source.DefaultKind, fmt.Sprintf("https://publisher.example/%d", i), fmt.Sprintf("Entry %d", i), f.clock().Add(-time.Hour))
 		if err != nil {
 			t.Fatal(err)
@@ -698,29 +698,21 @@ func TestMatches(t *testing.T) {
 func TestPodcastFromFeedToFeed(t *testing.T) {
 	f := newFeedFixture(t, 1000)
 	site := sitetest.Serve(t, "podcast")
-	source, err := f.store.CreateSource(t.Context(), db.InsertSourceParams{
-		Slug: "podcast", Title: "A Podcast", HomeUrl: "https://podcast.example/", DefaultKind: "episode", Strategy: "feed",
-		Config: []byte(`{"strategy":"feed","feed_url":"` + site.URL + `/feed.xml"}`), State: "indexing",
-	})
+	stack := stacktest.NewWith(t, stacktest.Options{Store: f.store})
+	var config client.SourceConfig
+	if err := config.FromFeedConfig(client.FeedConfig{Strategy: client.Feed, FeedURL: site.URL + "/feed.xml"}); err != nil {
+		t.Fatal(err)
+	}
+	source, err := stack.Client.CreateSource(t.Context(), replica.SourceCreate{SourceCreate: client.SourceCreate{
+		Slug: "podcast", Title: "A Podcast", HomeURL: "https://podcast.example/", DefaultKind: client.Episode, Config: config,
+	}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	clock := sitetest.NewClock()
-	loop := discovery.NewLoop(discovery.LoopOptions{
-		Store: f.store, Registry: discovery.NewRegistry(strategies.All()...), Fetcher: discovery.NewFetcher(sitetest.FetcherOptions(clock)),
-		Metrics: discovery.NewMetrics(prometheus.NewRegistry()), Logger: slog.New(slog.DiscardHandler), Clock: clock,
-		Lookahead: 50, TailInterval: time.Hour, PollInterval: time.Minute,
-		Furthest: func(context.Context, int64) (int32, bool, error) { return 0, true, nil },
-	})
-	for {
-		worked, err := loop.Tick(t.Context())
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !worked {
-			break
-		}
+	if err := stack.Sync.CatchUp(t.Context()); err != nil {
+		t.Fatal(err)
 	}
+	stack.Settle(t)
 
 	f.advance(time.Minute) // Nothing releases before it was discovered.
 	view, err := f.reads.Create(t.Context(), reads.CreateParams{

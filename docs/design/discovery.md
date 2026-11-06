@@ -102,9 +102,9 @@ Alt text matters for some comics (xkcd), so `alt_text` is a first-class field: t
 
 The crawl loop picks the source most in need of work:
 
-- A source is **due** when the furthest read position on it is within
-  `lookahead` (default 50) entries of the end of its index, or when it is not
-  paused and has no reads yet (index the first `lookahead`).
+- A source is **due** when its demand, the furthest read position the server has reported, is
+  within `lookahead` (default 50) entries of the end of its index, or when it isn't paused and has
+  no demand yet (index the first `lookahead`).
 - A source in **tail mode** is due every `tail_interval` (default 6 h, a flag).
   It re-fetches the last known page to look for a new next link.
 
@@ -169,5 +169,5 @@ tail check can use a 304, because only it already holds the page's content.
 - **A probe's entries have an `id` of 0,** because they are not saved.
 - **`crawl_log` has no pruning yet.** It grows by one row per request.
 
-Read positions reach the loop through `LoopOptions.Furthest`, which `internal/reads`
-supplies.
+Read positions reach the loop through `LoopOptions.Furthest`, which reads the demand the server
+reported. See [architecture](architecture.md#demand-flows-up).

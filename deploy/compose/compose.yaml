@@ -1,11 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (C) 2026 Dave O'Connor
 #
-# andante and a Postgres to keep it in. See docs/running.md.
+# andante's two services and a Postgres to keep them in. See docs/running.md.
 #
-# Needs a .env next to this file with POSTGRES_PASSWORD, ANDANTE_ADMIN_TOKEN and
-# ANDANTE_BASE_URL. The repository root's compose.yaml is different: that one is
-# only a database for development.
+# Needs a .env next to this file, from env.example. The repository root's
+# compose.yaml is different: that one is only a database for development.
 services:
   postgres:
     image: postgres:18
@@ -14,13 +13,31 @@ services:
       POSTGRES_USER: andante
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set it in .env}
       POSTGRES_DB: andante
+      CATALOGUE_DB_PASSWORD: ${CATALOGUE_DB_PASSWORD:?set it in .env}
     volumes:
       - postgres-data:/var/lib/postgresql
+      - ./init-catalogue.sh:/docker-entrypoint-initdb.d/catalogue.sh:ro
     healthcheck:
-      test: [CMD-SHELL, pg_isready -U andante -d andante]
+      test: [CMD-SHELL, pg_isready -U andante -d catalogue]
       interval: 5s
       timeout: 5s
       retries: 10
+
+  catalogue:
+    image: ${ANDANTE_IMAGE:-ghcr.io/gerrowadat/andante:0.0.1}
+    entrypoint: [/usr/local/bin/andante-catalogue]
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ANDANTE_CATALOGUE_DATABASE_URL: postgres://catalogue:${CATALOGUE_DB_PASSWORD}@postgres:5432/catalogue?sslmode=disable
+      ANDANTE_CATALOGUE_LISTEN: :8082
+      ANDANTE_CATALOGUE_TOKEN: ${ANDANTE_CATALOGUE_TOKEN:?set it in .env}
+      ANDANTE_BASE_URL: ${ANDANTE_BASE_URL:?set it in .env}
+    ports:
+      # Loopback only, for /metrics. Nothing else outside this stack needs it.
+      - 127.0.0.1:${ANDANTE_CATALOGUE_PORT:-8082}:8082
 
   andante:
     image: ${ANDANTE_IMAGE:-ghcr.io/gerrowadat/andante:0.0.1}
@@ -33,6 +50,8 @@ services:
       ANDANTE_BASE_URL: ${ANDANTE_BASE_URL:?set it in .env}
       ANDANTE_ADMIN_LISTEN: :8081
       ANDANTE_ADMIN_TOKEN: ${ANDANTE_ADMIN_TOKEN:?set it in .env}
+      ANDANTE_CATALOGUE_URL: http://catalogue:8082/v1
+      ANDANTE_CATALOGUE_TOKEN: ${ANDANTE_CATALOGUE_TOKEN:?set it in .env}
       # For the CLI inside the container, so that docker compose exec just works.
       ANDANTE_TOKEN: ${ANDANTE_ADMIN_TOKEN}
     ports:

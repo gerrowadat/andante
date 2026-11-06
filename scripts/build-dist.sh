@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (C) 2026 Dave O'Connor
 #
-# Cross-compile andante-server and andante for every platform a release ships,
+# Cross-compile the binaries for every platform a release ships,
 # and package each pair with LICENSE, README.md and CHANGELOG.md.
 #
 # The archives are a function of the commit and VERSION: running this twice on
@@ -29,7 +29,7 @@ DATE=${DATE:-$(git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ)}
 
 BUILDINFO=github.com/gerrowadat/andante/internal/buildinfo
 PLATFORMS="linux/amd64 linux/arm64 darwin/arm64"
-BINARIES="andante-server andante"
+BINARIES="andante-server andante-catalogue andante"
 EXTRAS="LICENSE README.md CHANGELOG.md"
 
 rm -rf "$OUT"

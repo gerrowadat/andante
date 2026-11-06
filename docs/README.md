@@ -23,7 +23,7 @@ Start at the [project README](../README.md) if you don't know what andante is ye
 - [Design philosophy](philosophy.md): the principles, and the open standards andante uses.
 - [Prior art](prior-art.md): other archive-replay tools, and what andante does differently.
 - [`design/`](design/): records of what shipped and why:
-  - [Architecture](design/architecture.md): components, data model, API, listeners.
+  - [Architecture](design/architecture.md): the two services, how they talk, data model, API, listeners.
   - [Delivery](design/delivery.md): CI, security scanning, releases, supply chain.
   - [API](design/api.md): why the admin API's contract is the way it is.
   - [Discovery](design/discovery.md): strategies, extraction, politeness, tail mode.
@@ -32,7 +32,7 @@ Start at the [project README](../README.md) if you don't know what andante is ye
 - [`proposals/`](proposals/): ideas that aren't built:
   - [Discovery](proposals/discovery.md): later strategies, and mid-archive insertions.
   - [Feed links](proposals/feed-links.md): per-read link templates, such as for discussion.
-  - [Two services and a web UI](proposals/web-ui.md): a catalogue service, and a user-facing one with logins.
+  - [Users and a web UI](proposals/web-ui.md): logins, per-user reads, and adding a site by its address.
 
 ## Building It
 

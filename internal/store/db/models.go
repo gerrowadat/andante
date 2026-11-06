@@ -19,17 +19,6 @@ type ApiToken struct {
 	LastUsedAt *time.Time
 }
 
-type CrawlLog struct {
-	ID           int64
-	SourceID     int64
-	Url          string
-	Status       *int32
-	Etag         *string
-	LastModified *string
-	FetchedAt    time.Time
-	Error        *string
-}
-
 type Entry struct {
 	ID           int64
 	SourceID     int64
@@ -46,8 +35,8 @@ type Entry struct {
 	Duration     pgtype.Interval
 	Extra        []byte
 	OriginalDate *time.Time
-	ContentHash  []byte
 	DiscoveredAt time.Time
+	AvailableAt  time.Time
 }
 
 type FeedToken struct {
@@ -65,11 +54,11 @@ type Read struct {
 	ID        int64
 	SourceID  int64
 	Name      string
+	StartSeq  int32
 	CatchUp   string
 	Buffer    int32
 	Config    []byte
 	CreatedAt time.Time
-	StartSeq  int32
 }
 
 type ReadSegment struct {
@@ -99,10 +88,14 @@ type Source struct {
 	Extra         []byte
 	Strategy      string
 	Config        []byte
-	Cursor        []byte
 	State         string
 	DueAt         *time.Time
 	LastCrawledAt *time.Time
 	LastError     *string
 	CreatedAt     time.Time
+}
+
+type SyncState struct {
+	OnlyRow  bool
+	Revision int64
 }

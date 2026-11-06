@@ -14,18 +14,13 @@ import (
 	"time"
 
 	"github.com/gerrowadat/andante/internal/api/gen"
-	"github.com/gerrowadat/andante/internal/discovery"
+	"github.com/gerrowadat/andante/internal/replica"
 	"github.com/gerrowadat/andante/internal/store"
 	"github.com/gerrowadat/andante/internal/store/db"
 	"github.com/gerrowadat/andante/pkg/client"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/oapi-codegen/nullable"
 	"github.com/oapi-codegen/runtime/types"
-)
-
-const (
-	stateIndexing     = "indexing"
-	defaultProbeLimit = 10
 )
 
 func source(s db.Source) (client.Source, error) {
@@ -54,27 +49,6 @@ func source(s db.Source) (client.Source, error) {
 	}, nil
 }
 
-// checkConfig validates a config through its strategy, and returns the strategy's
-// name and the config to store.
-func (h *handler) checkConfig(config client.SourceConfig) (string, []byte, error) {
-	strategy, err := config.Discriminator()
-	if err != nil {
-		return "", nil, fmt.Errorf("read strategy: %w", err)
-	}
-	raw, err := config.MarshalJSON()
-	if err != nil {
-		return "", nil, fmt.Errorf("encode config: %w", err)
-	}
-	err = h.strategies.Validate(strategy, raw)
-	switch {
-	case errors.Is(err, discovery.ErrUnknownStrategy):
-		return "", nil, newProblem(http.StatusUnprocessableEntity, problemInvalidConfig, "strategy "+strategy+" is not supported yet")
-	case err != nil:
-		return "", nil, newProblem(http.StatusUnprocessableEntity, problemInvalidConfig, err.Error())
-	}
-	return strategy, raw, nil
-}
-
 func (h *handler) ListSources(ctx context.Context, r gen.ListSourcesRequestObject) (gen.ListSourcesResponseObject, error) {
 	p, err := parsePage(r.Params.Cursor, r.Params.Limit, 0)
 	if err != nil {
@@ -95,32 +69,22 @@ func (h *handler) ListSources(ctx context.Context, r gen.ListSourcesRequestObjec
 	}, nil
 }
 
+// caughtUp brings the copy up to date after a change to the catalogue, so that the
+// caller can read its own write. The change has already happened, so a failure here
+// only means it shows up a little later.
+func (h *handler) caughtUp(ctx context.Context) {
+	if err := h.sync.CatchUp(ctx); err != nil {
+		h.logger.Warn("could not catch up with the catalogue", "error", err)
+	}
+}
+
 func (h *handler) CreateSource(ctx context.Context, r gen.CreateSourceRequestObject) (gen.CreateSourceResponseObject, error) {
-	strategy, config, err := h.checkConfig(r.Body.Config)
+	created, err := h.catalogue.CreateSource(ctx, replica.SourceCreate{SourceCreate: *r.Body})
 	if err != nil {
 		return nil, err
 	}
-	created, err := h.store.CreateSource(ctx, db.InsertSourceParams{
-		Slug:        r.Body.Slug,
-		Title:       r.Body.Title,
-		HomeUrl:     r.Body.HomeURL,
-		DefaultKind: string(r.Body.DefaultKind),
-		ImageUrl:    r.Body.ImageURL,
-		Strategy:    strategy,
-		Config:      config,
-		State:       stateIndexing,
-	})
-	if errors.Is(err, store.ErrConflict) {
-		return nil, newProblem(http.StatusConflict, problemConflict, "slug "+r.Body.Slug+" is already in use")
-	}
-	if err != nil {
-		return nil, err
-	}
-	body, err := source(created)
-	if err != nil {
-		return nil, err
-	}
-	return gen.CreateSource201JSONResponse(body), nil
+	h.caughtUp(ctx)
+	return gen.CreateSource201JSONResponse(created), nil
 }
 
 func (h *handler) GetSource(ctx context.Context, r gen.GetSourceRequestObject) (gen.GetSourceResponseObject, error) {
@@ -139,131 +103,48 @@ func (h *handler) GetSource(ctx context.Context, r gen.GetSourceRequestObject) (
 }
 
 func (h *handler) UpdateSource(ctx context.Context, r gen.UpdateSourceRequestObject) (gen.UpdateSourceResponseObject, error) {
-	patch := r.Body
-	updated, err := h.store.UpdateSource(ctx, r.ID, func(params *db.UpdateSourceParams) error {
-		if patch.Title != nil {
-			params.Title = *patch.Title
-		}
-		if patch.HomeURL != nil {
-			params.HomeUrl = *patch.HomeURL
-		}
-		if patch.DefaultKind != nil {
-			params.DefaultKind = string(*patch.DefaultKind)
-		}
-		if patch.ImageURL.IsNull() {
-			params.ImageUrl = nil
-		} else if patch.ImageURL.IsSpecified() {
-			url := patch.ImageURL.MustGet()
-			params.ImageUrl = &url
-		}
-		if patch.State != nil {
-			params.State = string(*patch.State)
-		}
-		if patch.Config != nil {
-			strategy, config, err := h.checkConfig(*patch.Config)
-			if err != nil {
-				return err
-			}
-			params.Strategy, params.Config = strategy, config
-		}
-		return nil
-	})
-	if errors.Is(err, store.ErrNotFound) {
-		return nil, notFound("source", r.ID)
-	}
+	updated, err := h.catalogue.UpdateSource(ctx, r.ID, *r.Body)
 	if err != nil {
 		return nil, err
 	}
-	body, err := source(updated)
-	if err != nil {
-		return nil, err
-	}
-	return gen.UpdateSource200JSONResponse(body), nil
+	h.caughtUp(ctx)
+	return gen.UpdateSource200JSONResponse(updated), nil
 }
 
 func (h *handler) DeleteSource(ctx context.Context, r gen.DeleteSourceRequestObject) (gen.DeleteSourceResponseObject, error) {
-	err := h.store.DeleteSource(ctx, r.ID)
-	switch {
-	case errors.Is(err, store.ErrNotFound):
-		return nil, notFound("source", r.ID)
-	case errors.Is(err, store.ErrConflict):
-		return nil, newProblem(http.StatusConflict, problemConflict, "a read still uses this source")
-	case err != nil:
+	reads, err := h.store.CountReads(ctx, r.ID)
+	if err != nil {
 		return nil, err
 	}
+	if reads > 0 {
+		return nil, newProblem(http.StatusConflict, problemConflict, "a read still uses this source")
+	}
+	// The catalogue refuses while it thinks there's demand, which could be left over
+	// from a read that's gone.
+	if err := h.catalogue.SetDemand(ctx, r.ID, nil); err != nil {
+		return nil, err
+	}
+	if err := h.catalogue.DeleteSource(ctx, r.ID); err != nil {
+		return nil, err
+	}
+	h.caughtUp(ctx)
 	return gen.DeleteSource204Response{}, nil
 }
 
 func (h *handler) RequestCrawl(ctx context.Context, r gen.RequestCrawlRequestObject) (gen.RequestCrawlResponseObject, error) {
-	err := h.store.RequestCrawl(ctx, r.ID)
-	if errors.Is(err, store.ErrNotFound) {
-		return nil, notFound("source", r.ID)
-	}
-	if err != nil {
+	if err := h.catalogue.RequestCrawl(ctx, r.ID); err != nil {
 		return nil, err
 	}
+	h.caughtUp(ctx)
 	return gen.RequestCrawl202Response{}, nil
 }
 
 func (h *handler) CreateProbe(ctx context.Context, r gen.CreateProbeRequestObject) (gen.CreateProbeResponseObject, error) {
-	strategy, config, err := h.checkConfig(r.Body.Config)
+	result, err := h.catalogue.Probe(ctx, *r.Body)
 	if err != nil {
 		return nil, err
 	}
-	req := discovery.ProbeRequest{Strategy: strategy, Config: config, Kind: string(client.Page), Limit: defaultProbeLimit}
-	if r.Body.DefaultKind != nil {
-		req.Kind = string(*r.Body.DefaultKind)
-	}
-	if r.Body.Limit != nil {
-		req.Limit = int(*r.Body.Limit)
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, h.probeTimeout)
-	defer cancel()
-	found, err := h.prober.Probe(ctx, req)
-	if err != nil {
-		return nil, newProblem(http.StatusUnprocessableEntity, problemProbeFailed, err.Error())
-	}
-
-	now := time.Now().UTC()
-	entries := make([]client.Entry, 0, len(found.Entries))
-	for i, e := range found.Entries {
-		entries = append(entries, client.Entry{
-			Seq:          int32(i), //nolint:gosec // A probe is 25 entries at most.
-			Kind:         client.Kind(e.Kind),
-			URL:          optionalValue(e.URL),
-			GUID:         nullable.NewNullNullable[string](),
-			Title:        optionalValue(e.Title),
-			Summary:      optionalValue(e.Summary),
-			ContentHTML:  nullable.NewNullNullable[string](),
-			Images:       nonNil(e.Images),
-			AltText:      optionalValue(e.AltText),
-			Enclosures:   []client.Enclosure{},
-			Duration:     nullable.NewNullNullable[types.Duration](),
-			Extra:        map[string]any{},
-			OriginalDate: nullableValue(e.Date),
-			DiscoveredAt: now,
-		})
-	}
-	return gen.CreateProbe200JSONResponse{
-		Entries:    entries,
-		Warnings:   nonNil(found.Warnings),
-		DatedShare: found.DatedShare,
-	}, nil
-}
-
-func optionalValue(s string) nullable.Nullable[string] {
-	if s == "" {
-		return nullable.NewNullNullable[string]()
-	}
-	return nullable.NewNullableWithValue(s)
-}
-
-func nonNil[T any](items []T) []T {
-	if items == nil {
-		return []T{}
-	}
-	return items
+	return gen.CreateProbe200JSONResponse(result), nil
 }
 
 func entry(e db.Entry) (client.Entry, error) {

@@ -46,6 +46,13 @@ phases are on `main`.
 | 8 | [08-cli.md](08-cli.md) | The `andante` CLI over `pkg/client` |
 | 9 | [09-feeds-as-sources.md](09-feeds-as-sources.md) | Podcasts, blogs and news from feeds: `feed` (with RFC 5005), `feed-paged`, `numeric`, article and episode extractors, OPML import |
 | 10 | [10-e2e-and-deploy.md](10-e2e-and-deploy.md) | End-to-end suite, Nomad job, operating docs, v0.1.0 |
+| 11 | [11-catalogue.md](11-catalogue.md) | Split into `andante-catalogue` and `andante-server`, with a synced copy and demand |
+| 12 | [12-users.md](12-users.md) | Users, personal API tokens, `user_id` on reads, a rewritten `/api/v1`, encrypted feed tokens |
+| 13 | [13-login.md](13-login.md) | Password login, sessions, invites, CSRF, headers, rate limits, audit log |
+| 14 | [14-pages.md](14-pages.md) | The web UI's pages, with per-user tests on every route |
+| 15 | [15-add-a-site.md](15-add-a-site.md) | Discovery from a site's address, canonical keys, the add flow |
+| 16 | [16-oidc-and-totp.md](16-oidc-and-totp.md) | TOTP and OIDC |
+| 17 | [17-public-release.md](17-public-release.md) | Packaging, docs, end-to-end scenario, security review |
 
 Phases 0–2 are plumbing only, so that every feature after them lands into a
 repository that already tests, scans and releases itself.

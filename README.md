@@ -59,7 +59,7 @@ URL, so a reader on another machine needs a real address. See
 
 ## How It Works
 
-1. **Discovery** builds an ordered index of the serial's entries and stores it in
+1. **Discovery**, in its own service, builds an ordered index of the serial's entries and stores it in
    Postgres. Where the source's feed holds the whole archive (most podcasts, some blogs)
    that's enough. Otherwise andante crawls the site page by page (most webcomics). It keeps
    to robots.txt, rate limits and conditional requests, and it

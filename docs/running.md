@@ -1,6 +1,7 @@
 # Running It
 
-This gets andante running from the container image, points it at a serial, and gets a paced
+andante is two services: `andante-catalogue` fetches and stores serials, and `andante-server` does
+everything else. Both are in one image. This gets andante running from that image, points it at a serial, and gets a paced
 feed out the other end. Use Docker Compose if you just want it working, or Nomad if you already
 have a cluster.
 
@@ -14,7 +15,7 @@ the job's `image` at your own registry (Nomad).
 
 ## With Docker Compose
 
-[`deploy/compose/`](../deploy/compose/) runs andante and a Postgres to keep it in.
+[`deploy/compose/`](../deploy/compose/) runs both services and a Postgres to keep them in.
 
 ```sh
 cd deploy/compose
@@ -23,17 +24,22 @@ $EDITOR .env
 docker compose up -d --wait
 ```
 
-The `.env` needs three things:
+The `.env` needs five things:
 
 | Variable | What it is |
 |---|---|
 | `POSTGRES_PASSWORD` | Anything long. `openssl rand -hex 32` will do |
-| `ANDANTE_ADMIN_TOKEN` | The API token. Same again |
+| `CATALOGUE_DB_PASSWORD` | Same again, for the catalogue's database |
+| `ANDANTE_ADMIN_TOKEN` | The API token |
+| `ANDANTE_CATALOGUE_TOKEN` | What the server uses to talk to the catalogue |
 | `ANDANTE_BASE_URL` | Where feed readers will reach this, because feed links are built from it |
 
-If `:8080` or `:8081` is already taken, set `ANDANTE_PUBLIC_PORT` or `ANDANTE_ADMIN_PORT`
-too. The public port is open on all your interfaces. The admin port is only on loopback,
-and it should stay that way.
+If `:8080`, `:8081` or `:8082` is already taken, set `ANDANTE_PUBLIC_PORT`, `ANDANTE_ADMIN_PORT` or
+`ANDANTE_CATALOGUE_PORT` too. The public port is open on all your interfaces. The other two are only
+on loopback, and they should stay that way.
+
+Postgres only creates the catalogue's database on an empty volume. If you ran an older version of
+this stack, start again with `docker compose down -v`.
 
 The image has the CLI in it, and the stack hands it the token, so an alias gets you going:
 
@@ -47,18 +53,20 @@ Run that from `deploy/compose/`. To upgrade, change the tag in `compose.yaml` an
 
 ## With Nomad
 
-You need a cluster and a Postgres, because the job doesn't bring its own.
-[`deploy/nomad/andante.nomad.hcl`](../deploy/nomad/andante.nomad.hcl) runs one task with
-the public and admin ports and a `/readyz` check. It takes its secrets from a Nomad
-Variable, so make that first:
+You need a cluster and a Postgres with a database for each service, because the job doesn't bring
+its own. [`deploy/nomad/andante.nomad.hcl`](../deploy/nomad/andante.nomad.hcl) runs a task for each
+service in one group, with `/readyz` checks. It takes its secrets from a Nomad Variable, so make
+that first:
 
 ```sh
 nomad var put nomad/jobs/andante \
   database_url='postgres://andante:...@db.example:5432/andante' \
-  admin_token="$(openssl rand -hex 32)"
+  catalogue_database_url='postgres://catalogue:...@db.example:5432/catalogue' \
+  admin_token="$(openssl rand -hex 32)" \
+  catalogue_token="$(openssl rand -hex 32)"
 ```
 
-Edit `datacenters`, `ANDANTE_BASE_URL` and the image tag in the job, then:
+Edit `datacenters`, both `ANDANTE_BASE_URL`s and the image tags in the job, then:
 
 ```sh
 nomad job run deploy/nomad/andante.nomad.hcl
@@ -72,8 +80,8 @@ andante version
 ```
 
 The job sets `gitops_managed = "true"`, so [nomad-gitops](https://github.com/gerrowadat/nomad-gitops)
-will watch it for drift if you run that. Run one replica. A second one would serve feeds
-but wouldn't crawl, since the crawl loop takes a Postgres advisory lock.
+will watch it for drift if you run that. Run one replica. A second one wouldn't crawl, since the
+crawl loop takes a Postgres advisory lock.
 
 ## Using It
 
@@ -182,7 +190,7 @@ doesn't behave, run the CLI from a machine that can reach the admin port instead
 ## If Something's Wrong
 
 ```sh
-docker compose logs andante                  # or: nomad alloc logs -job andante -task server -stderr
+docker compose logs andante catalogue        # or: nomad alloc logs -job andante -task server -stderr
 curl -s http://127.0.0.1:8081/readyz         # 200 means it can reach its database
 ```
 

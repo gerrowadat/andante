@@ -81,12 +81,17 @@ CI checks this.
 ## Project layout
 
 ```
-api/openapi.yaml          the admin API contract (source of truth), and the oapi-codegen configs
-cmd/andante-server/       server binary
+api/                      openapi.yaml (the admin API), catalogue.yaml (private), oapi-codegen configs
+cmd/andante-server/       the user-facing service: reads, tokens, feeds, the API
+cmd/andante-catalogue/    the infrastructure service: sources, entries, crawling
 cmd/andante/              CLI binary (talks to the API only, via pkg/client)
 internal/buildinfo/       version/commit/date via ldflags
 internal/config/          server flags + env (kong)
-internal/store/           Postgres: migrations/, queries/, db/ (sqlc output)
+internal/store/           the server's Postgres: migrations/, queries/, db/ (sqlc output)
+internal/catalogue/       the catalogue's store/, api/ and generated client/
+internal/replica/         the server's catalogue client, the sync and demand
+internal/httpapi/         what both APIs share: problems, validation, auth, metrics
+internal/stacktest/       both services together, for tests
 internal/discovery/       Strategy interface, crawler, politeness, strategies/
 internal/extract/         page metadata extraction (JSON-LD, Open Graph, rel=next, selectors)
 internal/schedule/        pacing (RRULE, replay) + segment math — pure, no I/O
@@ -107,9 +112,15 @@ scripts/                  release.sh, build-dist.sh, license-check.sh, spec-diff
 - The server is configured by flags with env var counterparts (`ANDANTE_*`),
   for bootstrap only. Everything the user configures lives in the database and
   is changed through the API. There are no config files.
-- Two listeners: public (feeds only) and admin (API, `/healthz`, `/readyz`,
-  `/metrics`). Admin routes are never mounted on the public listener.
-- Public feed requests read the index and never trigger a crawl.
+- Two services, each with its own database. `andante-catalogue` knows about
+  serials and has never heard of a user or a read. `andante-server` keeps a copy of
+  sources and entries, and never reads the catalogue's tables. See
+  `docs/design/architecture.md`.
+- `andante-server` has two listeners: public (feeds only) and admin (API,
+  `/healthz`, `/readyz`, `/metrics`). Admin routes are never mounted on the public
+  listener.
+- Public feed requests read the server's copy, and never call the catalogue or
+  trigger a crawl.
 - Strategy config is `jsonb`, decoded into a typed struct per strategy and
   validated on write, not at crawl time.
 - Timestamps are RFC 3339 in UTC in storage and APIs; schedules carry an IANA
@@ -121,6 +132,7 @@ scripts/                  release.sh, build-dist.sh, license-check.sh, spec-diff
 
 | Term | Meaning |
 |---|---|
+| Catalogue | The service that holds sources and entries and does the crawling. |
 | Source | A serial (comic, podcast, blog, news site), plus the strategy used to discover its archive. |
 | Strategy | How a source's archive is discovered: `crawl`, `numeric`, `feed`, `feed-paged`. |
 | Entry | One item of a serial — a comic page, an episode, a post — with a sequence number (`seq`) in reading order. |
@@ -129,6 +141,7 @@ scripts/                  release.sh, build-dist.sh, license-check.sh, spec-diff
 | Extractor | Pulls title, images, text, enclosures, date and next link out of a page or feed item. |
 | Pacing | How a segment releases entries: `rrule` (fixed schedule) or `replay` (the original run's gaps, optionally sped up). |
 | Probe | A dry-run discovery that returns the first N entries without saving anything. |
+| Demand | How far readers have got through a source, as reported to the catalogue. It's what lazy indexing follows. |
 | Tail mode | A source whose crawl has reached the live end and now only checks for new pages. |
 | Read | A paced replay of a source: a schedule plus a position. The thing a feed serves. |
 | Segment | One append-only row of a read's history: from this `seq`, at this time, under this pacing (or paused). |

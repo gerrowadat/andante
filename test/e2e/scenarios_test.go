@@ -31,23 +31,56 @@ var csrfField = regexp.MustCompile(`name="csrf" value="([0-9a-f]+)"`)
 // rig is one real server and the database that outlives its restarts. Time moves
 // by restarting it further ahead, so nothing sleeps.
 type rig struct {
-	bin, dsn string
-	process  *process
-	api      *client.ClientWithResponses
+	bin, dsn         string
+	catalogueBin     string
+	catalogueDSN     string
+	catalogueProcess *process
+	process          *process
+	api              *client.ClientWithResponses
 }
 
 func newRig(t *testing.T) *rig {
 	t.Helper()
-	r := &rig{bin: buildServer(t), dsn: storetest.DSN(t)}
+	r := &rig{
+		bin: buildServer(t), dsn: storetest.DSN(t),
+		catalogueBin: build(t, "andante-catalogue"), catalogueDSN: storetest.DSN(t),
+	}
+	r.startCatalogue(t, "")
 	r.start(t, 0)
 	return r
 }
 
+// startCatalogue starts the catalogue, on the same address as last time if addr
+// says so, because the server has it in its flags.
+func (r *rig) startCatalogue(t *testing.T, addr string) {
+	t.Helper()
+	flags := crawlFlags
+	if addr != "" {
+		flags = append([]string{"--listen=" + addr}, crawlFlags...)
+	}
+	r.catalogueProcess = startCatalogue(t, r.catalogueBin, r.catalogueDSN, flags...)
+	if addr != "" {
+		r.catalogueProcess.admin = addr
+	}
+	r.catalogueProcess.waitReady(t)
+}
+
+func stop(t *testing.T, p *process) {
+	t.Helper()
+	if err := p.cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-p.waited; err != nil {
+		t.Fatalf("shutdown: %v\n%s", err, p.output())
+	}
+}
+
 func (r *rig) start(t *testing.T, ahead time.Duration) {
 	t.Helper()
-	flags := append([]string{
+	flags := []string{
 		"--admin-token=" + adminToken, "--feed-rate-limit=100000", "--test-clock-offset=" + ahead.String(),
-	}, crawlFlags...)
+		r.catalogueProcess.flag(), "--demand-interval=50ms",
+	}
 	r.process = startServer(t, r.bin, r.dsn, flags...)
 	r.process.waitReady(t)
 	api, err := client.NewClientWithResponses("http://"+r.process.admin+"/api/v1",
@@ -63,12 +96,7 @@ func (r *rig) start(t *testing.T, ahead time.Duration) {
 
 func (r *rig) restart(t *testing.T, ahead time.Duration) {
 	t.Helper()
-	if err := r.process.cmd.Process.Signal(syscall.SIGTERM); err != nil {
-		t.Fatal(err)
-	}
-	if err := <-r.process.waited; err != nil {
-		t.Fatalf("shutdown: %v\n%s", err, r.process.output())
-	}
+	stop(t, r.process)
 	r.start(t, ahead)
 }
 
@@ -382,5 +410,79 @@ func TestOPMLImportThenProbeThenEnable(t *testing.T) {
 	}
 	if got := again.JSON200.Results[0].Status; got != client.OPMLOutlineResultStatusDuplicate {
 		t.Errorf("second import = %q, want duplicate", got)
+	}
+}
+
+// The point of the copy: with the catalogue gone, feeds carry on, and when it comes
+// back what it found reaches them.
+func TestFeedsOutliveTheCatalogue(t *testing.T) {
+	r := newRig(t)
+	ctx := t.Context()
+	site := sitetest.Serve(t, "podcast")
+
+	var config client.SourceConfig
+	if err := config.FromFeedConfig(client.FeedConfig{Strategy: client.Feed, FeedURL: site.URL + "/feed.xml"}); err != nil {
+		t.Fatal(err)
+	}
+	source, err := r.api.CreateSourceWithResponse(ctx, client.SourceCreate{
+		Slug: "podcast", Title: "A Podcast", HomeURL: site.URL, DefaultKind: client.Episode, Config: config,
+	})
+	if err != nil || source.JSON201 == nil {
+		t.Fatalf("create source: %v %s", err, source.Body)
+	}
+	id := source.JSON201.ID
+	r.waitForTail(t, id)
+
+	var pacing client.Pacing
+	if err := pacing.FromRRulePacing(client.RRulePacing{Mode: client.Rrule, Rrule: "FREQ=DAILY", Timezone: "UTC"}); err != nil {
+		t.Fatal(err)
+	}
+	created, err := r.api.CreateReadWithResponse(ctx, client.ReadCreate{SourceID: id, Name: "Daily", Pacing: pacing})
+	if err != nil || created.JSON201 == nil {
+		t.Fatalf("create read: %v %s", err, created.Body)
+	}
+	token := r.token(t, created.JSON201.ID, client.Viewer).Token
+
+	// The server has it in its flags, so the catalogue comes back on the same address.
+	addr := r.catalogueProcess.admin
+	stop(t, r.catalogueProcess)
+
+	if got := len(r.feed(t, token).Items); got != 1 {
+		t.Fatalf("items with the catalogue down = %d, want 1", got)
+	}
+	got, err := r.api.GetSourceWithResponse(ctx, id)
+	if err != nil || got.JSON200 == nil {
+		t.Errorf("get source with the catalogue down: %v", err)
+	}
+	refused, err := r.api.RequestCrawlWithResponse(ctx, id)
+	if err != nil || refused.StatusCode() != http.StatusServiceUnavailable {
+		t.Errorf("crawl with the catalogue down: %v %d", err, refused.StatusCode())
+	}
+
+	// A release still happens with the catalogue gone, and through a restart.
+	r.restart(t, 25*time.Hour)
+	if got := len(r.feed(t, token).Items); got != 2 {
+		t.Fatalf("items a day on with the catalogue down = %d, want 2", got)
+	}
+
+	feed := `<rss version="2.0"><channel><title>A Podcast</title><item><title>Episode 6</title><guid>six</guid>
+<enclosure url="https://cdn.podcast.example/6.mp3" length="1" type="audio/mpeg"/>
+<pubDate>Mon, 10 Feb 2020 08:00:00 +0000</pubDate></item></channel></rss>`
+	site.SetPage("/feed.xml", feed)
+	r.startCatalogue(t, addr)
+	accepted, err := r.api.RequestCrawlWithResponse(ctx, id)
+	if err != nil || accepted.StatusCode() != http.StatusAccepted {
+		t.Fatalf("crawl: %v %d", err, accepted.StatusCode())
+	}
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		entries, err := r.api.ListEntriesWithResponse(ctx, id, nil)
+		if err == nil && entries.JSON200 != nil && len(entries.JSON200.Items) == 6 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the new episode never arrived. Logs:\n%s\n%s", r.process.output(), r.catalogueProcess.output())
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }

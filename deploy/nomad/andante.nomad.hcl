@@ -3,12 +3,14 @@
 #
 # andante on Nomad. See docs/deploying.md.
 #
-# Postgres must already exist. The DSN and bootstrap token come from a Nomad
-# Variable, created once:
+# Postgres must already exist, with a database for each service. The DSNs and
+# tokens come from a Nomad Variable, created once:
 #
 #   nomad var put nomad/jobs/andante \
 #     database_url='postgres://andante:...@db.example:5432/andante' \
-#     admin_token='...'
+#     catalogue_database_url='postgres://catalogue:...@db.example:5432/catalogue' \
+#     admin_token='...' \
+#     catalogue_token='...'
 #
 # Change datacenters and ANDANTE_BASE_URL, and pin the image to a release.
 
@@ -35,6 +37,9 @@ job "andante" {
       port "admin" {
         to = 8081
       }
+      port "catalogue" {
+        to = 8082
+      }
     }
 
     service {
@@ -57,6 +62,53 @@ job "andante" {
       }
     }
 
+    service {
+      name     = "andante-catalogue"
+      provider = "nomad"
+      port     = "catalogue"
+
+      check {
+        name     = "ready"
+        type     = "http"
+        path     = "/readyz"
+        interval = "15s"
+        timeout  = "5s"
+      }
+    }
+
+    # Both tasks are in one network, so the server reaches this on loopback. The port
+    # is there for Prometheus.
+    task "catalogue" {
+      driver = "docker"
+
+      config {
+        image      = "ghcr.io/gerrowadat/andante:0.0.1"
+        entrypoint = ["/usr/local/bin/andante-catalogue"]
+        ports      = ["catalogue"]
+      }
+
+      env {
+        ANDANTE_BASE_URL         = "https://feeds.example.com"
+        ANDANTE_CATALOGUE_LISTEN = ":8082"
+      }
+
+      template {
+        destination = "secrets/catalogue.env"
+        env         = true
+        data        = <<-EOT
+          {{ with nomadVar "nomad/jobs/andante" -}}
+          ANDANTE_CATALOGUE_DATABASE_URL={{ .catalogue_database_url }}
+          ANDANTE_CATALOGUE_TOKEN={{ .catalogue_token }}
+          {{- end }}
+        EOT
+      }
+
+      resources {
+        cpu    = 200
+        memory = 128
+      }
+    }
+
     task "server" {
       driver = "docker"
 
@@ -66,9 +118,10 @@ job "andante" {
       }
 
       env {
-        ANDANTE_BASE_URL     = "https://feeds.example.com"
-        ANDANTE_LISTEN       = ":8080"
-        ANDANTE_ADMIN_LISTEN = ":8081"
+        ANDANTE_BASE_URL      = "https://feeds.example.com"
+        ANDANTE_LISTEN        = ":8080"
+        ANDANTE_ADMIN_LISTEN  = ":8081"
+        ANDANTE_CATALOGUE_URL = "http://127.0.0.1:8082/v1"
       }
 
       template {
@@ -79,6 +132,7 @@ job "andante" {
           ANDANTE_DATABASE_URL={{ .database_url }}
           ANDANTE_ADMIN_TOKEN={{ .admin_token }}
           ANDANTE_TOKEN={{ .admin_token }}
+          ANDANTE_CATALOGUE_TOKEN={{ .catalogue_token }}
           {{- end }}
         EOT
       }
