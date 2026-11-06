@@ -74,10 +74,11 @@ skip with nothing to skip to, pausing a paused read, or resuming one that is not
 Status 401, with a `WWW-Authenticate` header. The bearer token is missing, unknown
 or revoked.
 
-### Not implemented
+## Importing OPML
 
-Status 501. The endpoint is in the contract but not built yet. The contract covers
-all of v1 ahead of the code, so clients can be generated from it now.
+`POST /imports/opml` takes an OPML file of at most 5 MiB and creates a paused `feed`
+source for each outline. It answers 200 with a result per outline: `created`,
+`duplicate` or `invalid`. A body that is not OPML gets a 400.
 
 ## Probes and crawls
 

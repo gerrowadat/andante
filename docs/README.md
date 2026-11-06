@@ -28,7 +28,7 @@ Start at the [project README](../README.md) for what andante is.
 
 - [Configuration](configuration.md) — flags, environment variables, and what is not configured here.
 - [API](api.md) — authentication, errors, pagination, versioning, generating a client.
-- [Sources](sources.md) — adding a serial, what warnings mean, selectors, politeness.
+- [Sources](sources.md) — choosing a strategy, adding a serial, what warnings mean, selectors, politeness.
 - [Reads](reads.md) — the two pacing modes, adjustments, catch-up, downtime.
 - [Feeds](feeds.md) — subscribing, sharing, revoking, the "next one now" link.
 - [CLI](cli.md) — every `andante` command, with examples.

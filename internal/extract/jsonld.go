@@ -107,6 +107,7 @@ func fieldsOf(node map[string]any) Fields {
 			break
 		}
 	}
+	f.media = reference(node, "associatedMedia")
 	f.Summary = first(node, "description")
 	if value := first(node, "datePublished"); value != "" {
 		f.Date = parseDate(value)
@@ -169,6 +170,10 @@ func id(node map[string]any, key string) string {
 }
 
 var dateLayouts = []string{time.RFC3339, "2006-01-02T15:04:05", "2006-01-02"}
+
+// ParseDate reads a date in the forms pages and feeds use. It returns nil for
+// anything else.
+func ParseDate(value string) *time.Time { return parseDate(value) }
 
 func parseDate(value string) *time.Time {
 	value = strings.TrimSpace(value)

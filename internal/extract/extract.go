@@ -16,13 +16,24 @@ type Page struct {
 
 // Fields is what an extractor found. Kinds fill in what applies to them.
 type Fields struct {
-	Title   string
-	Summary string
-	Images  []string
-	AltText string
-	Date    *time.Time
-	Next    string
-	Prev    string
+	Title       string
+	Summary     string
+	ContentHTML string
+	Images      []string
+	AltText     string
+	Enclosures  []Enclosure
+	Date        *time.Time
+	Next        string
+	Prev        string
+	media       string // What JSON-LD's associatedMedia points at.
+}
+
+// Enclosure is a media file on a page. A zero Type or Length means the page did
+// not say.
+type Enclosure struct {
+	URL    string
+	Type   string
+	Length int64
 }
 
 // Result is a page's fields, and anything a person should check about them.
@@ -38,6 +49,9 @@ type Overrides struct {
 	AltText string
 	Date    string
 	Next    string
+	// FullText stores an article's main text, which is opt-in per source. Where a
+	// publisher's feed gives only a summary, the publisher chose that.
+	FullText bool
 }
 
 // Extractor pulls fields out of a page. Each entry kind has its own.
@@ -46,7 +60,9 @@ type Extractor interface {
 }
 
 var extractors = map[string]Extractor{
-	"page": pageExtractor{},
+	"page":    pageExtractor{},
+	"article": articleExtractor{},
+	"episode": episodeExtractor{},
 }
 
 // For returns the extractor for an entry kind.

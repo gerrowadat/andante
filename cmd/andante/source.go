@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -70,14 +71,116 @@ func selectors(flags []string) (*client.Selectors, error) {
 	return &s, nil
 }
 
-func crawlConfig(startURL string, flags []string) (client.SourceConfig, error) {
-	var config client.SourceConfig
-	parsed, err := selectors(flags)
-	if err != nil {
-		return config, err
+// configFlags choose a strategy and set it up. The URL argument means the strategy's
+// own URL: a start page, a feed, or a template with {n}.
+type configFlags struct {
+	strategy, format, pageParam string
+	start                       int64
+	misses, maxPages            int32
+	selectors, fields           []string
+	fullText, fillGaps          bool
+}
+
+func (c *configFlags) add(cmd *cobra.Command) {
+	f := cmd.Flags()
+	f.StringVar(&c.strategy, "strategy", string(client.Crawl), "crawl, feed, feed-paged or numeric")
+	f.StringArrayVar(&c.selectors, "selector", nil, "crawl: override extraction, as field=css")
+	f.BoolVar(&c.fullText, "full-text", false, "store articles' main text (off by default; see docs/sources.md)")
+	f.BoolVar(&c.fillGaps, "fill-gaps", false, "feed: fetch each item's page for what the feed lacks")
+	f.Int32Var(&c.maxPages, "max-pages", 0, "feed-paged: most pages to walk")
+	f.StringVar(&c.pageParam, "page-param", "", "feed-paged: the page parameter (default paged)")
+	f.Int64Var(&c.start, "start-id", 0, "numeric: the first ID")
+	f.Int32Var(&c.misses, "max-misses", 0, "numeric: misses in a row that mean the live end")
+	f.StringVar(&c.format, "format", "", "numeric: html or json")
+	f.StringArrayVar(&c.fields, "field", nil, "numeric, json: where a field is, as field=key, such as title=safe_title")
+}
+
+func jsonFieldsOf(flags []string) (*client.JSONFields, error) {
+	if len(flags) == 0 {
+		return nil, nil //nolint:nilnil // None is a normal answer.
 	}
-	err = config.FromCrawlConfig(client.CrawlConfig{Strategy: client.Crawl, StartURL: startURL, Selectors: parsed})
-	return config, err
+	var f client.JSONFields
+	for _, flag := range flags {
+		field, key, ok := strings.Cut(flag, "=")
+		if !ok || key == "" {
+			return nil, fmt.Errorf("--field %q: want field=key", flag)
+		}
+		switch field {
+		case "title":
+			f.Title = &key
+		case "image":
+			f.Image = &key
+		case "alt_text":
+			f.AltText = &key
+		case "date":
+			f.Date = &key
+		case "year":
+			f.Year = &key
+		case "month":
+			f.Month = &key
+		case "day":
+			f.Day = &key
+		default:
+			return nil, fmt.Errorf("--field %q: the fields are title, image, alt_text, date, year, month and day", flag)
+		}
+	}
+	return &f, nil
+}
+
+func (c *configFlags) build(target string) (client.SourceConfig, error) {
+	var config client.SourceConfig
+	switch c.strategy {
+	case string(client.Crawl):
+		parsed, err := selectors(c.selectors)
+		if err != nil {
+			return config, err
+		}
+		crawl := client.CrawlConfig{Strategy: client.Crawl, StartURL: target, Selectors: parsed}
+		if c.fullText {
+			crawl.FullText = &c.fullText
+		}
+		return config, config.FromCrawlConfig(crawl)
+	case string(client.Feed):
+		feed := client.FeedConfig{Strategy: client.Feed, FeedURL: target}
+		if c.fillGaps {
+			feed.FillGaps = &c.fillGaps
+		}
+		if c.fullText {
+			feed.FullText = &c.fullText
+		}
+		return config, config.FromFeedConfig(feed)
+	case string(client.FeedPaged):
+		feed := client.FeedPagedConfig{Strategy: client.FeedPaged, FeedURL: target}
+		if c.fillGaps {
+			feed.FillGaps = &c.fillGaps
+		}
+		if c.fullText {
+			feed.FullText = &c.fullText
+		}
+		if c.maxPages != 0 {
+			feed.MaxPages = &c.maxPages
+		}
+		if c.pageParam != "" {
+			feed.PageParam = &c.pageParam
+		}
+		return config, config.FromFeedPagedConfig(feed)
+	case string(client.Numeric):
+		numeric := client.NumericConfig{Strategy: client.Numeric, URLTemplate: target, Start: c.start}
+		if c.misses != 0 {
+			numeric.MaxConsecutiveMisses = &c.misses
+		}
+		if c.format != "" {
+			format := client.NumericConfigFormat(c.format)
+			numeric.Format = &format
+		}
+		fields, err := jsonFieldsOf(c.fields)
+		if err != nil {
+			return config, err
+		}
+		numeric.Fields = fields
+		return config, config.FromNumericConfig(numeric)
+	}
+	return config, fmt.Errorf("--strategy must be crawl, feed, feed-paged or numeric, got %q", c.strategy)
 }
 
 func kindOf(raw string) (client.Kind, error) {
@@ -97,16 +200,16 @@ func (a *app) sourceCmd() *cobra.Command {
 
 func (a *app) sourceProbe() *cobra.Command {
 	var (
-		flags []string
+		flags configFlags
 		kind  string
 		limit int32
 	)
 	cmd := operation(&cobra.Command{
 		Use:   "probe <url>",
-		Short: "Try a start URL and show what would be indexed. Saves nothing.",
+		Short: "Try a source and show what would be indexed. Saves nothing.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			config, err := crawlConfig(args[0], flags)
+			config, err := flags.build(args[0])
 			if err != nil {
 				return err
 			}
@@ -137,7 +240,7 @@ func (a *app) sourceProbe() *cobra.Command {
 			})
 		},
 	}, "createProbe")
-	cmd.Flags().StringArrayVar(&flags, "selector", nil, "override extraction, as field=css")
+	flags.add(cmd)
 	cmd.Flags().StringVar(&kind, "kind", "", "entry kind: page, episode or article")
 	cmd.Flags().Int32Var(&limit, "limit", 0, "most entries to try (at most 25)")
 	return cmd
@@ -146,14 +249,14 @@ func (a *app) sourceProbe() *cobra.Command {
 func (a *app) sourceAdd() *cobra.Command {
 	var (
 		slug, title, homeURL, kind, imageURL string
-		flags                                []string
+		flags                                configFlags
 	)
 	cmd := operation(&cobra.Command{
-		Use:   "add <start-url>",
+		Use:   "add <url>",
 		Short: "Add a source. Probe it first.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			config, err := crawlConfig(args[0], flags)
+			config, err := flags.build(args[0])
 			if err != nil {
 				return err
 			}
@@ -183,7 +286,7 @@ func (a *app) sourceAdd() *cobra.Command {
 	cmd.Flags().StringVar(&homeURL, "home-url", "", "home page, by default the start URL")
 	cmd.Flags().StringVar(&kind, "kind", string(client.Page), "entry kind: page, episode or article")
 	cmd.Flags().StringVar(&imageURL, "image-url", "", "artwork")
-	cmd.Flags().StringArrayVar(&flags, "selector", nil, "override extraction, as field=css")
+	flags.add(cmd)
 	_ = cmd.MarkFlagRequired("slug")
 	return cmd
 }
@@ -302,8 +405,8 @@ func (a *app) sourceEdit() *cobra.Command {
 	f.BoolVar(&clearImage, "clear-image", false, "remove the artwork")
 	f.BoolVar(&pause, "pause", false, "stop crawling")
 	f.BoolVar(&resume, "resume", false, "crawl again, which also restarts a source in error")
-	f.StringVar(&startURL, "start-url", "", "where the crawl starts")
-	f.StringArrayVar(&flags, "selector", nil, "replace the selectors, as field=css")
+	f.StringVar(&startURL, "start-url", "", "the strategy's URL: start page, feed or template")
+	f.StringArrayVar(&flags, "selector", nil, "crawl: replace the selectors, as field=css")
 	cmd.MarkFlagsMutuallyExclusive("pause", "resume")
 	cmd.MarkFlagsMutuallyExclusive("image-url", "clear-image")
 	return cmd
@@ -319,20 +422,50 @@ func (a *app) editedConfig(ctx context.Context, id int64, startURL string, flags
 	if err := check(resp.StatusCode(), resp.Body); err != nil {
 		return config, err
 	}
-	current, err := resp.JSON200.Config.AsCrawlConfig()
+	config = resp.JSON200.Config
+	strategy, err := config.Discriminator()
 	if err != nil {
 		return config, err
 	}
-	if startURL != "" {
-		current.StartURL = startURL
+	if len(flags) > 0 && strategy != string(client.Crawl) {
+		return config, errors.New("--selector is for the crawl strategy")
 	}
-	if len(flags) > 0 {
-		if current.Selectors, err = selectors(flags); err != nil {
+	switch strategy {
+	case string(client.Crawl):
+		current, err := config.AsCrawlConfig()
+		if err != nil {
 			return config, err
 		}
+		if startURL != "" {
+			current.StartURL = startURL
+		}
+		if len(flags) > 0 {
+			if current.Selectors, err = selectors(flags); err != nil {
+				return config, err
+			}
+		}
+		return config, config.FromCrawlConfig(current)
+	case string(client.Feed):
+		current, err := config.AsFeedConfig()
+		if err != nil {
+			return config, err
+		}
+		current.FeedURL = startURL
+		return config, config.FromFeedConfig(current)
+	case string(client.FeedPaged):
+		current, err := config.AsFeedPagedConfig()
+		if err != nil {
+			return config, err
+		}
+		current.FeedURL = startURL
+		return config, config.FromFeedPagedConfig(current)
 	}
-	err = config.FromCrawlConfig(current)
-	return config, err
+	current, err := config.AsNumericConfig()
+	if err != nil {
+		return config, err
+	}
+	current.URLTemplate = startURL
+	return config, config.FromNumericConfig(current)
 }
 
 func (a *app) sourceRemove() *cobra.Command {

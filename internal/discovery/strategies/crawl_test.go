@@ -234,7 +234,15 @@ type plainFetcher struct {
 }
 
 func (p plainFetcher) Fetch(ctx context.Context, url string) (*discovery.Response, error) {
+	return p.f.Fetch(ctx, url, discovery.Validators{})
+}
+
+func (p plainFetcher) Revalidate(ctx context.Context, url string) (*discovery.Response, error) {
 	return p.f.Fetch(ctx, url, p.v)
+}
+
+func (p plainFetcher) Head(ctx context.Context, url string) (*discovery.Response, error) {
+	return p.f.Head(ctx, url)
 }
 
 func TestNextResumesFromItsCursor(t *testing.T) {
@@ -357,7 +365,7 @@ func TestKeepsAPartialBatch(t *testing.T) {
 func TestKindWithNoExtractorFails(t *testing.T) {
 	site := sitetest.Serve(t, "comiccontrol")
 	fetcher := plainFetcher{f: discovery.NewFetcher(sitetest.FetcherOptions(sitetest.NewClock()))}
-	src := discovery.Source{DefaultKind: "article", Config: config(t, site.URL+"/1.html")}
+	src := discovery.Source{DefaultKind: "song", Config: config(t, site.URL+"/1.html")}
 	if _, err := (strategies.Crawl{}).Next(t.Context(), fetcher, src, nil, 1); err == nil {
 		t.Error("Next succeeded with no extractor for the kind")
 	}

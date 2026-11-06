@@ -919,6 +919,9 @@ components:
           format: uri
         selectors:
           $ref: "#/components/schemas/Selectors"
+        full_text:
+          type: boolean
+          description: Store a page's main text. Off by default, and for articles only.
     Selectors:
       type: object
       description: CSS selectors that override extraction, field by field.
@@ -961,6 +964,36 @@ components:
         format:
           type: string
           enum: [html, json]
+        fields:
+          $ref: "#/components/schemas/JSONFields"
+    JSONFields:
+      type: object
+      description: >-
+        Where to find each field in a JSON page, as a key, or a dotted path. A date
+        can be one field or three.
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          minLength: 1
+        image:
+          type: string
+          minLength: 1
+        alt_text:
+          type: string
+          minLength: 1
+        date:
+          type: string
+          minLength: 1
+        year:
+          type: string
+          minLength: 1
+        month:
+          type: string
+          minLength: 1
+        day:
+          type: string
+          minLength: 1
     FeedConfig:
       type: object
       description: Read a feed that holds the whole archive, or RFC 5005 archived feeds.
@@ -973,6 +1006,12 @@ components:
         feed_url:
           type: string
           format: uri
+        fill_gaps:
+          type: boolean
+          description: Fetch each item's page to fill in what the feed lacks, such as an image.
+        full_text:
+          type: boolean
+          description: With fill_gaps, also store each article's main text. Off by default.
     FeedPagedConfig:
       type: object
       description: Walk a WordPress-style paged feed.
@@ -992,6 +1031,12 @@ components:
         page_param:
           type: string
           minLength: 1
+        fill_gaps:
+          type: boolean
+          description: Fetch each item's page to fill in what the feed lacks, such as an image.
+        full_text:
+          type: boolean
+          description: With fill_gaps, also store each article's main text. Off by default.
     Entry:
       type: object
       required: [id, seq, kind, images, enclosures, extra, discovered_at]

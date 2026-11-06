@@ -30,22 +30,9 @@ func (pageExtractor) Extract(page Page, overrides Overrides) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("parse page: %w", err)
 	}
-
-	fields, warnings := jsonLD(doc)
-	merge(&fields, openGraph(doc))
-	merge(&fields, linkRelations(doc))
-	merge(&fields, platform(doc))
-	merge(&fields, Fields{Title: strings.TrimSpace(doc.Find("title").First().Text())})
-
-	overridden := selected(doc, overrides)
-	fields = overlay(fields, overridden)
-	warnings = append(warnings, resolve(&fields, page.URL)...)
-
+	fields, warnings := common(doc, page, overrides, platform(doc))
 	if len(fields.Images) == 0 {
 		warnings = append(warnings, "no image found")
-	}
-	if fields.Next != "" && sameDocument(fields.Next, page.URL) {
-		warnings = append(warnings, "next link points to the current page")
 	}
 	if fields.AltText == "" {
 		fields.AltText = altText(doc, fields.Images)
@@ -53,10 +40,38 @@ func (pageExtractor) Extract(page Page, overrides Overrides) (Result, error) {
 	return Result{Fields: fields, Warnings: warnings}, nil
 }
 
+// common runs what every kind shares: open metadata first, then the kind's own
+// patterns, and overrides over all of them.
+func common(doc *goquery.Document, page Page, overrides Overrides, patterns Fields) (Fields, []string) {
+	fields, warnings := jsonLD(doc)
+	merge(&fields, openGraph(doc))
+	merge(&fields, linkRelations(doc))
+	merge(&fields, patterns)
+	merge(&fields, Fields{Title: strings.TrimSpace(doc.Find("title").First().Text())})
+
+	overridden := selected(doc, overrides)
+	fields = overlay(fields, overridden)
+	warnings = append(warnings, resolve(&fields, page.URL)...)
+
+	if fields.Next != "" && sameDocument(fields.Next, page.URL) {
+		warnings = append(warnings, "next link points to the current page")
+	}
+	return fields, warnings
+}
+
 // merge fills dst's empty fields from src.
 func merge(dst *Fields, src Fields) {
 	if dst.Title == "" {
 		dst.Title = src.Title
+	}
+	if dst.ContentHTML == "" {
+		dst.ContentHTML = src.ContentHTML
+	}
+	if dst.media == "" {
+		dst.media = src.media
+	}
+	if len(dst.Enclosures) == 0 {
+		dst.Enclosures = src.Enclosures
 	}
 	if dst.Summary == "" {
 		dst.Summary = src.Summary

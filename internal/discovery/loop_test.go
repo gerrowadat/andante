@@ -36,7 +36,7 @@ func newHarness(t *testing.T, lookahead int) *harness {
 	h := &harness{store: storetest.New(t), clock: sitetest.NewClock(), metrics: prometheus.NewRegistry()}
 	h.loop = discovery.NewLoop(discovery.LoopOptions{
 		Store:        h.store,
-		Registry:     discovery.NewRegistry(strategies.Crawl{}),
+		Registry:     discovery.NewRegistry(strategies.All()...),
 		Fetcher:      discovery.NewFetcher(sitetest.FetcherOptions(h.clock)),
 		Metrics:      discovery.NewMetrics(h.metrics),
 		Logger:       slog.New(slog.DiscardHandler),

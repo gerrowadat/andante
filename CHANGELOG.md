@@ -16,8 +16,7 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   provenance, and a multi-arch image on ghcr.io.
 - `andante-server` starts, migrates Postgres, creates a bootstrap API token, and
   serves `/healthz`, `/readyz` and `/metrics` on the admin listener.
-- The v1 admin API contract, with a generated server and client. API tokens and
-  sources work; other endpoints return 501 until they are built.
+- The v1 admin API contract, with a generated server and client.
 - Discovery: the `crawl` strategy, page extraction, a polite fetcher, probes, and
   a crawl loop that indexes lazily and watches the live end.
 - Reads: RRULE and replay pacing, computed from an append-only history, with skip,
@@ -25,6 +24,9 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Feeds: Atom, RSS 2.0 and JSON Feed through per-person tokens, a "next one now"
   control for owners, and OPML export.
 - The `andante` CLI, covering the whole API, and `GET /api/v1/version`.
+- Feeds as sources: the `feed`, `feed-paged` and `numeric` strategies, RFC 5005
+  archived feeds, `article` and `episode` extractors, opt-in full text, and OPML
+  import. The CLI's `source probe` and `source add` take `--strategy`.
 
 ### Security
 
