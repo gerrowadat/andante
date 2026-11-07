@@ -7,8 +7,8 @@ have a cluster.
 
 [Deploying](deploying.md) covers exposing ports, tunnels and backups.
 
-The Compose stack below has been run for real, end to end. The Nomad job validates, but it hasn't
-been run on an actual cluster yet. Patches welcome.
+The Compose stack below has been run for real, end to end. The Nomad job is an example to start from.
+It validates, but it hasn't been run on a cluster. Patches welcome.
 
 To run your own build, use `make docker` and set `ANDANTE_IMAGE=andante:dev` (Compose), or point
 the job's `image` at your own registry (Nomad).
