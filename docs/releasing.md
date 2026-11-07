@@ -21,21 +21,20 @@ runs `make test lint`, dispatches `release.yml` with the version and commit, and
 
 | Job | Runs on | What it does |
 |---|---|---|
-| `full-suite` | Every release, and some PRs | Checks the version and commit, runs everything `ci.yml` runs, `make e2e` and `build-dist.sh` twice to prove the archives are reproducible, smoke-tests the archives, generates the SBOM |
+| `full-suite` | Every release and dry run | Checks the version and commit, runs everything `ci.yml` runs, `make e2e` and `build-dist.sh` twice to prove the archives are reproducible, smoke-tests the archives, generates the SBOM |
 | `publish` | Publishing only | Attests build provenance over the archives, creates the tag, creates the GitHub release with the archives, `SHA256SUMS` and the SBOM |
 | `image` | Publishing only | Scans a linux/amd64 build with Trivy, failing on fixable CRITICAL or HIGH findings, then pushes linux/amd64 and linux/arm64 to `ghcr.io/gerrowadat/andante` tagged `X.Y.Z` and `X.Y` |
 
 Publishing means `publish=true` on a dispatch, or a pushed `vX.Y.Z` tag, and either runs the whole
 suite first.
 
-A pull request runs `full-suite` alone, without version and commit validation, and only when it
-touches something `ci.yml` can't vouch for: the release files, `go.mod`, the API documents,
-migrations, end-to-end tests, or how the binaries start and talk to each other. The list is at the
-top of `release.yml`. Docs and most Go packages skip it, because `ci.yml` covers those and the suite
-takes about 8 minutes. It isn't a required check, so a skipped PR can still merge.
+Pull requests don't run any of this. `ci.yml` and `e2e.yml` cover what the code does, and building and
+checking the release files only happens here, when a release is on the way. So packaging can go stale
+between releases, and the first you'd hear of it is a dry run.
 
-A dispatch without `publish=true` runs the suite and publishes nothing, so use that on a branch the
-filter skips:
+A dispatch without `publish=true` is that dry run: it runs the suite and publishes nothing. Do one
+before cutting a release, and on a branch that changes `release.yml`, `scripts/build-dist.sh` or
+anything else that packaging depends on:
 
 ```sh
 gh workflow run release.yml --ref my-branch -f publish=false

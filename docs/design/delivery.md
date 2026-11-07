@@ -41,6 +41,11 @@ Top-level `permissions: contents: read`.
 | `trivy-image` | Build the image, scan it to SARIF, **fail on fixable CRITICAL/HIGH** |
 | `gitleaks` | Secret scan of history |
 
+### `e2e.yml`: Code Changes on PRs and Main
+
+The end-to-end suite: the real binaries against Postgres and the fixture sites, driven through
+`pkg/client`. Docs-only changes skip it.
+
 ### `codeql.yml`: Push to Main, PRs, Weekly
 
 Standard Go CodeQL analysis.
@@ -56,8 +61,7 @@ OpenSSF Scorecard to SARIF, and it publishes results (the badge in the README).
 
 ### `release.yml`: Dispatched by `scripts/release.sh`, a Tag Push, or a PR
 
-On a PR only `full-suite` runs, without version and commit validation, and only for the paths listed
-in the workflow. A release always runs it.
+This doesn't run on PRs. A dispatch with `publish=false`, on `main` or a branch, is the dry run.
 
 1. `full-suite`: verify the commit matches the dispatched one; validate strict
    `vX.Y.Z`; everything in `ci.yml`; plus the end-to-end suite (a real
@@ -116,18 +120,18 @@ Dependabot alerts and security updates. Merged branches are deleted automaticall
   as high-severity findings, so the `workflows` job could not pass otherwise.
 - **Base images are pinned by digest as well as tag**, which goes beyond pinning
   actions.
-- **`security.yml` and `release.yml` run on PRs.** GitHub only dispatches a
-  workflow once its file is on the default branch, so a new or changed workflow
-  could not otherwise prove itself before merge. On a PR, `release.yml` runs
-  `full-suite` alone, without version and commit validation.
+- **`security.yml` runs on PRs,** and a change to `release.yml` proves itself with a dispatch on its
+  branch.
 - **SARIF uploads skip PRs from forks**, whose token cannot write security events.
 - **gitleaks scans history only on the scheduled and manual runs.** On a PR or a
   push it scans the commits in that event.
 - **Scorecard's results appear under `supply-chain/*` categories**, whatever the
   upload step names.
-- **`release.yml` only runs on PRs that need it.** Running it on all of them spent 8 minutes on docs
-  fixes. It's a path filter, and not a `ci.yml` job, so it can't block a PR. Required checks can't be
-  filtered this way, because a required check that never runs leaves a PR waiting for ever.
+- **Packaging only gets tested before a release.** `release.yml` used to run on PRs, which spent 8
+  minutes building archives nobody would ship. PRs now run `ci.yml`, and `e2e.yml` for code changes.
+  The catch is that packaging can go stale between releases, so a dry run comes first.
+- **`e2e.yml` has a path filter, so it isn't a required check.** A required check that never runs
+  leaves a PR waiting for ever.
 - **The image scan covers linux/amd64 only.** A multi-arch image cannot be loaded
   into the local daemon for Trivy to read.
 - **The image has no `latest` tag**, only `X.Y.Z` and `X.Y`.

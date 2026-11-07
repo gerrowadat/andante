@@ -69,7 +69,7 @@ test: ## Run the tests with the race detector, as CI does
 	$(GO) test -race -count=1 $(PKG)
 
 .PHONY: e2e
-e2e: ## Run the end-to-end suite, which only the release workflow runs in CI
+e2e: ## Run the end-to-end suite
 	docker compose up -d --wait postgres
 	ANDANTE_TEST_DATABASE_URL='$(DEV_DATABASE_URL)' ANDANTE_REQUIRE_DB=1 $(GO) test -tags=e2e -race -count=1 ./test/e2e/...
 
