@@ -17,8 +17,8 @@ version CI pins. A different local version can disagree with CI.
 
 | Target | What it does |
 |---|---|
-| `make build` | Builds `andante-server` and `andante` into `out/`, stamped with version, commit and date |
-| `make run` | Starts the `compose.yaml` Postgres, then `andante-server` against it with text logs |
+| `make build` | Builds `andante-server`, `andante-catalogue` and `andante` into `out/`, stamped with version, commit and date |
+| `make run` | Starts the `compose.yaml` Postgres, then both services against it with text logs |
 | `make test` | `go test -race -count=1 ./...`. Database tests skip |
 | `make test-db` | The same tests against the `compose.yaml` Postgres, with no skips |
 | `make e2e` | The end-to-end suite (build tag `e2e`), against the `compose.yaml` Postgres |
@@ -27,7 +27,7 @@ version CI pins. A different local version can disagree with CI.
 | `make spec-lint` | Spectral over `api/openapi.yaml`, in Docker as CI runs it |
 | `make spec-diff` | Compares `api/openapi.yaml` with `BASE` (default `origin/main`) and fails on a breaking change |
 | `make fmt` | `gofmt` over the tree |
-| `make generate` | Regenerates `internal/store/db/` with sqlc, and `internal/api/gen/` and `pkg/client/` with oapi-codegen. Needs a C compiler. CI fails if the result differs |
+| `make generate` | Regenerates both services' sqlc output and oapi-codegen code. Needs a C compiler. CI fails if the result differs |
 | `make docker` | Builds the image for this machine's platform as `andante:dev` |
 | `make docker-scan` | Builds that image and scans it as CI does; needs Trivy |
 | `make deploy-check` | Validates the Compose stack and the Nomad job locally, and tests the Prometheus alerts; needs `nomad` and Docker |
@@ -42,14 +42,20 @@ failure, so run `make test-db` before pushing anything that touches the database
 
 ## Changing the Schema
 
-Add a numbered file to `internal/store/migrations/`, put queries in `internal/store/queries/`, and
-run `make generate`. `internal/store/db/` is generated, so never edit it by hand. Migrations are
-embedded in the binary and run when the server starts.
+Add a numbered file to `migrations/` and queries to `queries/`, under `internal/store/` for the server
+or `internal/catalogue/store/` for the catalogue, and run `make generate`. `db/` is generated, so never
+edit it by hand. Migrations are embedded in the binary and run when the service starts.
+
+The compose Postgres only creates the catalogue's database on an empty volume. If `make run` can't
+find it, run `docker compose down -v`.
 
 ## Changing the API
 
-Change `api/openapi.yaml` first, then run `make generate`, then write the handler. Within
-`/api/v1` changes are additive only, and `make spec-diff` shows whether yours is.
+Change `api/openapi.yaml` first, then run `make generate`, then write the handler. Within `/api/v1`
+changes are additive only, and `make spec-diff` shows whether yours is. `api/catalogue.yaml` works the
+same way, but it's private, so it can change with the server that calls it.
+
+`internal/stacktest` runs both services in one test, with a real sync between them.
 
 ## CI
 

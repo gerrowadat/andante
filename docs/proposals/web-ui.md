@@ -1,10 +1,10 @@
-# Proposal: Two Services and a Web UI
+# Proposal: Users and a Web UI
 
-Status: proposed, for review. Nothing here is built.
+Status: accepted, being built. Phase 11, the split into two services, has shipped and is in
+[`design/architecture.md`](../design/architecture.md). The rest of this is still to come. Open
+questions are in issues #28 to #31.
 
-This splits andante in two and adds a website. One service knows about serials, and fetches and
-stores them. The other knows about people: who they are, where they've got to, how fast they're
-going, and their feeds. A user logs in, pastes a site's address or picks from what's already
+This adds people and a website to `andante-server`. A user logs in, pastes a site's address or picks from what's already
 indexed, chooses a pace, and gets a feed.
 
 Nobody uses the API or has data to keep, so this assumes a clean start. There's no migration, and
@@ -19,108 +19,14 @@ Nobody uses the API or has data to keep, so this assumes a clean start. There's 
 | Exposure | Safe on the public internet behind a TLS proxy |
 | Feed URLs | Can always be shown again |
 | Structure | A catalogue service for feed-level data, and a separate user-facing service with its own model |
+| Reads | Private to their user. You share one by handing out a viewer link |
+| Editing sources | Admins only, for now |
+| Friends | A viewer link needs no account |
+| Binaries | `andante-server` stays one binary for the UI, API and feeds for now. This stays open as we build |
 
-## The Two Services
+## Additions to the Catalogue API
 
-```
-                     ┌──────────── andante-server ────────────┐
- browser ──┐         │ users, logins, reads, segments, tokens │
- CLI ──────┼─ HTTPS ▶│ web UI, /api/v1, /f/ feeds             │
- readers ──┘         │ copy of sources and entries            │
-                     └───────┬─────────────────────┬──────────┘
-                             │ catalogue API       │
-                             ▼                     ▼
-                     ┌── andante-catalogue ──┐   Postgres
-                     │ sources, entries      │   database: andante
-                     │ crawling, discovery   │
-                     │ politeness, probes    │──▶ Postgres
-                     └───────────────────────┘    database: catalogue
-```
-
-**`andante-catalogue`** is the infrastructure. It holds sources and entries, and does all the
-talking to other people's websites. It has never heard of a user, a read or a schedule. Its API is
-private, with one service token, and only `andante-server` calls it.
-
-**`andante-server`** is everything a person touches. It owns users, reads, segments and tokens,
-serves the UI and the feeds, and is the only API the CLI talks to. `internal/schedule` moves here
-unchanged, because it's pure.
-
-Each has its own database and Postgres role, so a cross-service join can't happen by accident. Each
-has its own migrations, its own OpenAPI document and its own models.
-
-| Today | Moves to |
-|---|---|
-| `internal/discovery`, `internal/extract` | `andante-catalogue` |
-| `internal/schedule`, `internal/reads`, `internal/feed` | `andante-server` |
-| `api/openapi.yaml` | `andante-server`, rewritten. `api/catalogue.yaml` is new |
-
-## How Data Moves
-
-### Entries Flow Down
-
-`andante-server` keeps its own copy of sources and entries, and only ever reads that copy. Feed
-requests, Browse and the pacing arithmetic never call the catalogue.
-
-I looked at having feed requests fetch from the catalogue live. Replay needs every entry's dates on
-each request, and it would tie every feed to the catalogue being up. The current design promises
-that a broken crawl never breaks a feed, and a copy keeps that promise.
-
-The catalogue gives every source and entry a `revision` when it changes, written under one lock so
-that revisions commit in order. There's no separate log to prune:
-
-```
-GET /changes?after=18234&wait=30s
-```
-
-That long-polls and returns changed sources and entries in order, including tombstones for deleted
-sources. The server stores the last revision it applied, in the same transaction as the changes.
-
-### Release Times
-
-Today an entry can't be released before its `discovered_at`. In the new model that comes from the
-server's copy: `available_at` is set once, when an entry first arrives, and never changes. So an
-entry can't count as released before the server could show it, however far the sync falls behind,
-and release times stay stable.
-
-This means the server's copy can't be rebuilt from nothing without moving recent release times. It
-gets backed up with everything else.
-
-### Demand Flows Up
-
-Lazy indexing needs to know how far people have got. The server works out the furthest due position
-for each source and tells the catalogue:
-
-```
-PUT /sources/{id}/demand
-{"seq": 412}
-```
-
-The catalogue keeps `--crawl-lookahead` entries ahead of that. A source with no demand gets its
-first `--crawl-lookahead` entries, as now. The server clears demand when the last read on a source
-goes. If the server is down, the crawl just stops growing.
-
-A serial is fetched once, whatever the number of readers, because the catalogue doesn't know how
-many there are.
-
-### What Happens When One Is Down
-
-| Down | Still works | Stops |
-|---|---|---|
-| `andante-catalogue` | Login, feeds, releases until the copy runs out, Browse, reads | Adding sources, new entries, probes |
-| `andante-server` | Crawling up to the last demand | Feeds, the UI, the CLI |
-
-## The Catalogue API
-
-Private. All of this is what the current API does for sources, plus changes, demand and discovery.
-
-| Method and path | Purpose |
-|---|---|
-| `GET/POST /sources`, `GET/PATCH/DELETE /sources/{id}` | Sources |
-| `GET /changes` | Changes after a revision |
-| `PUT /sources/{id}/demand` | How far the index needs to go |
-| `POST /sources/{id}/crawls` | Ask for a crawl |
-| `POST /probes` | Try a config, saving nothing |
-| `POST /discoveries` | Turn a site's address into candidate sources |
+`POST /sources` and `DELETE /sources/{id}` already exist. These are new.
 
 ### Discovery
 
@@ -189,6 +95,7 @@ build step, and every form works without JavaScript.
 | Add | Paste an address, pick a candidate, check the sample, pick a pace. Goes to the existing source if there is one |
 | Read | History, pause, resume, skip, jump, change pace, delete |
 | Feed links | Copy a URL, add a person, revoke one |
+| Feed page | `GET /f/{token}`, for anyone with the link and no login: the source, the pace, and how far along the read is |
 | Source | One source's details, last error, entries, retry, and whether you're tracking it |
 | Source edit | Title, kind, selectors, pause, delete. Admins only |
 | Users | Invite, disable, reset, roles. Admins only |
@@ -198,6 +105,12 @@ A new user starts on Browse, because the serial they want may already be there. 
 goes straight to the pace form, makes a read and shows the feed link. You can track the same source
 twice, because reading a serial again is a new read. Browse doesn't show how many people follow a
 source, or who.
+
+The feed page is what a friend with a viewer link sees in a browser. Feeds today name the source and
+link to it, but don't say how fast they're going, so the page spells that out in words, along with
+the position, how much is left and the next release. It's on the public listener, it shows only what
+the feed URL already grants, and it's rendered from the read. The feed's own description gets the
+pace too.
 
 The pace form has presets (one a day, weekdays, three a week, the original timing at 7x), and an
 advanced box for an RRULE. The presets use the same shorthand as the CLI, so that code moves into a
@@ -282,17 +195,8 @@ like everything else. The ops listener keeps the things that have no auth.
 
 ## Delivery
 
-Both binaries go in the image and release archives. The Compose stack gets a second service and a
-second database, and the Nomad job gets a second task. Backups now mean two `pg_dump`s, and the
-server's matters more, because the catalogue can be crawled again and people's reads can't.
-
-`/readyz` on the server reports its database, and reports sync lag as a metric, not as a failure,
-because feeds work without the catalogue. New metrics cover sync lag, logins and sessions.
-
 Tests use `httptest`, and a small fake OIDC provider, so CI needs no real one. The tests that matter
-most check that one user can't reach another's reads or tokens, on every route. A new one kills the
-catalogue and checks that feeds still work.
-
+most check that one user can't reach another's reads or tokens, on every route. 
 `make spec-diff` fails on the rewrite, and `contracts` is a required check, so the PR that replaces
 the contract needs a one-off exception in `scripts/spec-diff.sh`, removed straight after. The
 additive-only rule applies from then on.
@@ -303,7 +207,7 @@ Each phase leaves a working system, and each is one PR.
 
 | # | Delivers |
 |---|---|
-| 11 | Split the repository: `andante-catalogue` with its database, API, revisions, `/changes` and demand. `andante-server` syncs and serves feeds from its copy |
+| 11 | Done: `andante-catalogue` with its database, API, revisions, `/changes` and demand. `andante-server` syncs and serves feeds from its copy |
 | 12 | Users, personal API tokens and `user_id` everywhere. Rewritten `/api/v1`, CLI and end-to-end suite. Encrypted feed tokens |
 | 13 | Password login, sessions, invites, CSRF, headers, rate limits, audit log |
 | 14 | Pages: Home, Browse, reads, feed links, sources, users, with per-user tests on every route |
@@ -322,9 +226,5 @@ Nothing should go public before phase 16.
 
 ## Questions Still Open
 
-- Should a user be able to see other users' reads of the same source, for a group read? This says
-  no, and you share a read by handing out a viewer link.
-- Should users edit a source they added? This says admins only.
-- Should friends with a viewer link stay without an account? This assumes yes.
-- Is one binary each right, or should `andante-server` split its UI from its API? I think one is
-  enough, because they share a model and a login.
+- [#31](https://github.com/gerrowadat/andante/issues/31): one binary for now, but keep asking whether
+  the UI and API should split as this gets built.

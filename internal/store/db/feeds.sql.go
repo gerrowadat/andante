@@ -76,7 +76,7 @@ func (q *Queries) LatestSegmentID(ctx context.Context, readID int64) (int64, err
 }
 
 const listEntriesInRange = `-- name: ListEntriesInRange :many
-SELECT id, source_id, seq, kind, url, guid, title, summary, content_html, images, alt_text, enclosures, duration, extra, original_date, content_hash, discovered_at FROM entries WHERE source_id = $1 AND seq >= $2 AND seq <= $3 ORDER BY seq DESC
+SELECT id, source_id, seq, kind, url, guid, title, summary, content_html, images, alt_text, enclosures, duration, extra, original_date, discovered_at, available_at FROM entries WHERE source_id = $1 AND seq >= $2 AND seq <= $3 ORDER BY seq DESC
 `
 
 type ListEntriesInRangeParams struct {
@@ -110,8 +110,8 @@ func (q *Queries) ListEntriesInRange(ctx context.Context, arg ListEntriesInRange
 			&i.Duration,
 			&i.Extra,
 			&i.OriginalDate,
-			&i.ContentHash,
 			&i.DiscoveredAt,
+			&i.AvailableAt,
 		); err != nil {
 			return nil, err
 		}

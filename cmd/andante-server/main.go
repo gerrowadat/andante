@@ -19,9 +19,8 @@ import (
 	"github.com/gerrowadat/andante/internal/api"
 	"github.com/gerrowadat/andante/internal/buildinfo"
 	"github.com/gerrowadat/andante/internal/config"
-	"github.com/gerrowadat/andante/internal/discovery"
-	"github.com/gerrowadat/andante/internal/discovery/strategies"
 	"github.com/gerrowadat/andante/internal/reads"
+	"github.com/gerrowadat/andante/internal/replica"
 	"github.com/gerrowadat/andante/internal/server"
 	"github.com/gerrowadat/andante/internal/store"
 	"github.com/prometheus/client_golang/prometheus"
@@ -104,27 +103,24 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	now := func() time.Time { return time.Now().Add(cfg.TestClockOffset) }
 
 	reg := prometheus.NewRegistry()
-	registry := discovery.NewRegistry(strategies.All()...)
-	metrics := discovery.NewMetrics(reg)
-	fetcher := discovery.NewFetcher(discovery.FetcherOptions{
-		UserAgent:    cfg.CrawlerUserAgent(),
-		Interval:     cfg.CrawlInterval,
-		Timeout:      cfg.CrawlRequestTimeout,
-		BackoffCap:   cfg.CrawlBackoffCap,
-		RobotsTTL:    cfg.RobotsTTL,
-		MaxBody:      cfg.CrawlMaxBody,
-		AllowPrivate: cfg.CrawlAllowPrivate,
-	})
 	readService := reads.New(reads.Options{
 		Store:           st,
 		DefaultTimezone: cfg.DefaultTimezone,
 		MinDatedShare:   cfg.ReplayMinDatedShare,
 		Now:             now,
 	})
+	catalogue, err := replica.NewClient(cfg.CatalogueURL, cfg.CatalogueToken, nil)
+	if err != nil {
+		return err
+	}
+	syncer := replica.New(replica.Options{
+		Store: st, Client: catalogue, Logger: logger, Registry: reg,
+		Furthest: readService.Furthest, DemandInterval: cfg.DemandInterval,
+	})
 	apiHandler, err := api.New(api.Options{
 		Store:        st,
-		Strategies:   registry,
-		Prober:       discovery.NewProber(registry, fetcher, metrics),
+		Catalogue:    catalogue,
+		Sync:         syncer,
 		Reads:        readService,
 		BaseURL:      cfg.BaseURL,
 		Registry:     reg,
@@ -149,28 +145,12 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		return err
 	}
 
-	loop := discovery.NewLoop(discovery.LoopOptions{
-		Store:        st,
-		Registry:     registry,
-		Fetcher:      fetcher,
-		Metrics:      metrics,
-		Logger:       logger,
-		Lookahead:    cfg.CrawlLookahead,
-		TailInterval: cfg.TailInterval,
-		PollInterval: cfg.CrawlPollInterval,
-		Furthest:     readService.Furthest,
-	})
-
-	// The two stop together. A crawl never holds up serving, and serving ending
-	// for any reason ends the crawl.
+	// The two stop together. Syncing never holds up serving, and serving ending for
+	// any reason ends the sync.
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var wg sync.WaitGroup
-	wg.Go(func() {
-		if err := loop.Run(ctx); err != nil {
-			logger.Error("crawl loop stopped", "error", err)
-		}
-	})
+	wg.Go(func() { syncer.Run(ctx) })
 	err = srv.Run(ctx)
 	cancel()
 	wg.Wait()

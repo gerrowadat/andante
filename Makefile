@@ -18,6 +18,7 @@ PROMETHEUS_IMAGE ?= prom/prometheus:v3.7.3@sha256:49214755b6153f90a597adcbff0252
 
 # The compose.yaml database, for make run and make test-db.
 DEV_DATABASE_URL ?= postgres://andante:andante@localhost:5432/andante?sslmode=disable
+DEV_CATALOGUE_DATABASE_URL ?= postgres://andante:andante@localhost:5432/catalogue?sslmode=disable
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
@@ -33,10 +34,15 @@ LDFLAGS   := -X $(BUILDINFO).version=$(VERSION) \
 ##@ Getting started
 
 .PHONY: run
-run: ## Run andante-server against the compose.yaml Postgres with text logs
+run: ## Run both services against the compose.yaml Postgres with text logs
 	docker compose up -d --wait postgres
+	$(GO) run -ldflags='$(LDFLAGS)' ./cmd/andante-catalogue \
+	  --database-url='$(DEV_CATALOGUE_DATABASE_URL)' --base-url=http://localhost:8080 --api-token=dev-catalogue-token \
+	  --log-format=text & \
+	trap "kill $$!" EXIT; \
 	$(GO) run -ldflags='$(LDFLAGS)' ./cmd/andante-server \
-	  --database-url='$(DEV_DATABASE_URL)' --base-url=http://localhost:8080 --log-format=text
+	  --database-url='$(DEV_DATABASE_URL)' --base-url=http://localhost:8080 --log-format=text \
+	  --catalogue-url=http://127.0.0.1:8082/v1 --catalogue-token=dev-catalogue-token
 
 .PHONY: help
 help: ## List the targets
@@ -53,8 +59,9 @@ version: ## Print the version that `make build` stamps
 ##@ Building and checking
 
 .PHONY: build
-build: ## Build both binaries into out/, version-stamped
+build: ## Build the binaries into out/, version-stamped
 	$(GO) build -trimpath -ldflags='$(LDFLAGS)' -o $(OUT)/andante-server ./cmd/andante-server
+	$(GO) build -trimpath -ldflags='$(LDFLAGS)' -o $(OUT)/andante-catalogue ./cmd/andante-catalogue
 	$(GO) build -trimpath -ldflags='$(LDFLAGS)' -o $(OUT)/andante ./cmd/andante
 
 .PHONY: test
@@ -93,11 +100,13 @@ generate: ## Regenerate generated code with sqlc and oapi-codegen
 	$(GO) run github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION) generate
 	$(GO) tool oapi-codegen -config api/oapi-client.yaml api/openapi.yaml
 	$(GO) tool oapi-codegen -config api/oapi-server.yaml api/openapi.yaml
+	$(GO) tool oapi-codegen -config api/oapi-catalogue-client.yaml api/catalogue.yaml
+	$(GO) tool oapi-codegen -config api/oapi-catalogue-server.yaml api/catalogue.yaml
 
 .PHONY: spec-lint
-spec-lint: ## Lint api/openapi.yaml with Spectral, in Docker as CI does
+spec-lint: ## Lint the API documents with Spectral, in Docker as CI does
 	docker run --rm -v "$(CURDIR):/work:ro" -w /work $(SPECTRAL_IMAGE) \
-	  lint api/openapi.yaml --ruleset .spectral.yaml --fail-severity=warn
+	  lint api/openapi.yaml api/catalogue.yaml --ruleset .spectral.yaml --fail-severity=warn
 
 .PHONY: spec-diff
 spec-diff: ## Compare api/openapi.yaml with BASE (default origin/main), failing on breaking changes

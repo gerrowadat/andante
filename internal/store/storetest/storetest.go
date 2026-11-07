@@ -11,8 +11,11 @@ import (
 	"net/url"
 	"os"
 	"testing"
+	"time"
 
+	catalogue "github.com/gerrowadat/andante/internal/catalogue/store"
 	"github.com/gerrowadat/andante/internal/store"
+	"github.com/gerrowadat/andante/internal/store/db"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -86,4 +89,43 @@ func exec(t *testing.T, dsn, sql string) {
 	if _, err := conn.Exec(ctx, sql); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// Catalogue returns a migrated catalogue store in a schema of its own.
+func Catalogue(t *testing.T) *catalogue.Store {
+	t.Helper()
+	s, err := catalogue.Open(t.Context(), DSN(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s.Close)
+	if err := s.Migrate(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+// AddSource puts a source in the server's copy, as the sync would. It takes the
+// next free ID unless params has one, and fills in what a test doesn't care about.
+func AddSource(t *testing.T, s *store.Store, params db.UpsertSourceParams) (db.Source, error) {
+	t.Helper()
+	if params.ID == 0 {
+		if err := s.Pool().QueryRow(t.Context(), "SELECT coalesce(max(id), 0) + 1 FROM sources").Scan(&params.ID); err != nil {
+			return db.Source{}, err
+		}
+	}
+	if params.Extra == nil {
+		params.Extra = []byte("{}")
+	}
+	if params.CreatedAt.IsZero() {
+		params.CreatedAt = time.Now()
+	}
+	revision, err := s.SyncRevision(t.Context())
+	if err != nil {
+		return db.Source{}, err
+	}
+	if err := s.ApplyChanges(t.Context(), []store.Change{{Revision: revision + 1, Source: &params}}); err != nil {
+		return db.Source{}, err
+	}
+	return s.GetSource(t.Context(), params.ID)
 }

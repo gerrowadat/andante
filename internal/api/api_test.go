@@ -7,9 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"log/slog"
 	"net/http"
-	"net/http/httptest"
 	"regexp"
 	"strconv"
 	"strings"
@@ -18,12 +16,9 @@ import (
 
 	specfile "github.com/gerrowadat/andante/api"
 	"github.com/gerrowadat/andante/internal/api"
-	"github.com/gerrowadat/andante/internal/discovery"
 	"github.com/gerrowadat/andante/internal/discovery/sitetest"
-	"github.com/gerrowadat/andante/internal/discovery/strategies"
-	"github.com/gerrowadat/andante/internal/reads"
+	"github.com/gerrowadat/andante/internal/stacktest"
 	"github.com/gerrowadat/andante/internal/store"
-	"github.com/gerrowadat/andante/internal/store/storetest"
 	"github.com/gerrowadat/andante/pkg/client"
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/oapi-codegen/nullable"
@@ -34,6 +29,7 @@ import (
 const problemJSON = "application/problem+json"
 
 type fixture struct {
+	stack    *stacktest.Stack
 	url      string
 	token    string
 	store    *store.Store
@@ -44,35 +40,18 @@ type fixture struct {
 // newFixture serves the API on a real database, with one API token.
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
-	st := storetest.New(t)
-	reg := prometheus.NewRegistry()
-	registry := discovery.NewRegistry(strategies.All()...)
-	fetcher := discovery.NewFetcher(sitetest.FetcherOptions(sitetest.NewClock()))
-	handler, err := api.New(api.Options{
-		Store:        st,
-		Strategies:   registry,
-		Prober:       discovery.NewProber(registry, fetcher, discovery.NewMetrics(reg)),
-		Reads:        reads.New(reads.Options{Store: st, DefaultTimezone: "UTC", MinDatedShare: 0.9}),
-		BaseURL:      "https://andante.example/",
-		Registry:     reg,
-		Logger:       slog.New(slog.DiscardHandler),
-		ProbeTimeout: time.Minute,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	srv := httptest.NewServer(handler)
-	t.Cleanup(srv.Close)
+	stack := stacktest.New(t)
+	st, reg := stack.Store, stack.Registry
 
 	_, token, err := st.CreateAPIToken(t.Context(), "test")
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := client.NewClientWithResponses(srv.URL+api.BasePath, client.WithRequestEditorFn(bearer(token)))
+	c, err := client.NewClientWithResponses(stack.URL+api.BasePath, client.WithRequestEditorFn(bearer(token)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &fixture{url: srv.URL, token: token, store: st, client: c, registry: reg}
+	return &fixture{url: stack.URL, token: token, store: st, client: c, registry: reg, stack: stack}
 }
 
 func bearer(token string) client.RequestEditorFn {
@@ -318,8 +297,8 @@ func TestEntries(t *testing.T) {
 		t.Fatalf("empty list: %d %s", empty.StatusCode(), empty.Body)
 	}
 
-	const insert = `INSERT INTO entries (source_id, seq, kind, url, duration, enclosures)
-		VALUES ($1, $2, 'episode', $3, '90 seconds', '[{"url":"https://a.example/1.mp3","type":"audio/mpeg","length":10}]')`
+	const insert = `INSERT INTO entries (id, source_id, seq, kind, url, discovered_at, duration, enclosures)
+		VALUES ((SELECT coalesce(max(id), 0) + 1 FROM entries), $1, $2, 'episode', $3, now(), '90 seconds', '[{"url":"https://a.example/1.mp3","type":"audio/mpeg","length":10}]')`
 	for _, e := range []struct {
 		seq int
 		url string
@@ -457,7 +436,7 @@ func (f *fixture) addEntries(t *testing.T, sourceID int64, n int, dated bool) {
 			date = time.Date(2010, 1, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, 7*i)
 		}
 		_, err := f.store.Pool().Exec(t.Context(),
-			"INSERT INTO entries (source_id, seq, kind, url, original_date, discovered_at) VALUES ($1, $2, 'page', $3, $4, now() - interval '1 hour')",
+			"INSERT INTO entries (id, source_id, seq, kind, url, original_date, discovered_at, available_at) VALUES ((SELECT coalesce(max(id), 0) + 1 FROM entries), $1, $2, 'page', $3, $4, now() - interval '1 hour', now() - interval '1 hour')",
 			sourceID, i, "https://comic.example/"+strconv.Itoa(i), date)
 		if err != nil {
 			t.Fatal(err)
@@ -1322,5 +1301,39 @@ func TestRequestID(t *testing.T) {
 	defer resp2.Body.Close()
 	if got := resp2.Header.Get("X-Request-ID"); got == "" || strings.Contains(got, " ") {
 		t.Errorf("X-Request-ID = %q, want a generated one", got)
+	}
+}
+
+func TestReadsAndFeedsDoNotNeedTheCatalogue(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	created, err := f.client.CreateSourceWithResponse(ctx, client.SourceCreate{
+		Slug: "s", Title: "t", HomeURL: "https://comic.example/", DefaultKind: client.Page, Config: crawlConfig(t, "https://comic.example/1"),
+	})
+	if err != nil || created.JSON201 == nil {
+		t.Fatalf("create source: %v %s", err, created.Body)
+	}
+	id := created.JSON201.ID
+	f.stack.CatalogueServer.Close()
+
+	listed, err := f.client.GetSourceWithResponse(ctx, id)
+	if err != nil || listed.JSON200 == nil {
+		t.Errorf("get source with the catalogue down: %v %d", err, listed.StatusCode())
+	}
+	f.addEntries(t, id, 2, true)
+	read, err := f.client.CreateReadWithResponse(ctx, client.ReadCreate{SourceID: id, Name: "r", Pacing: rrulePacing(t)})
+	if err != nil || read.JSON201 == nil {
+		t.Fatalf("create a read with the catalogue down: %v %s", err, read.Body)
+	}
+
+	down, err := f.client.CreateSourceWithResponse(ctx, client.SourceCreate{
+		Slug: "t", Title: "t", HomeURL: "https://comic.example/", DefaultKind: client.Page, Config: crawlConfig(t, "https://comic.example/2"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if down.StatusCode() != http.StatusServiceUnavailable || down.ApplicationProblemJSONDefault == nil ||
+		!strings.HasSuffix(down.ApplicationProblemJSONDefault.Type, "#catalogue-unavailable") {
+		t.Errorf("create with the catalogue down: %d %s", down.StatusCode(), down.Body)
 	}
 }

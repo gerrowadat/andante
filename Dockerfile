@@ -30,6 +30,7 @@ RUN LDFLAGS="-X github.com/gerrowadat/andante/internal/buildinfo.version=${VERSI
       -X github.com/gerrowadat/andante/internal/buildinfo.commit=${COMMIT} \
       -X github.com/gerrowadat/andante/internal/buildinfo.date=${DATE}" \
  && go build -trimpath -ldflags="${LDFLAGS}" -o /out/andante-server ./cmd/andante-server \
+ && go build -trimpath -ldflags="${LDFLAGS}" -o /out/andante-catalogue ./cmd/andante-catalogue \
  && go build -trimpath -ldflags="${LDFLAGS}" -o /out/andante ./cmd/andante
 
 # No shell and no package manager, so there is no apk upgrade step to keep the
@@ -47,6 +48,6 @@ LABEL org.opencontainers.image.title="andante" \
       org.opencontainers.image.revision="${COMMIT}" \
       org.opencontainers.image.created="${DATE}"
 
-COPY --from=build /out/andante-server /out/andante /usr/local/bin/
+COPY --from=build /out/andante-server /out/andante-catalogue /out/andante /usr/local/bin/
 
 ENTRYPOINT ["/usr/local/bin/andante-server"]

@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gerrowadat/andante/internal/catalogue/store/db"
 	"github.com/gerrowadat/andante/internal/discovery/sitetest"
-	"github.com/gerrowadat/andante/internal/store/db"
 )
 
 func (h *harness) sourceOf(t *testing.T, strategy, kind string, config map[string]any) db.Source {

@@ -66,6 +66,8 @@ func TestUnreachableDatabaseFails(t *testing.T) {
 	code, _, stderr := runCaptured(t,
 		"--database-url=postgres://andante@127.0.0.1:1/andante?connect_timeout=1",
 		"--base-url=https://andante.example",
+		"--catalogue-url=http://127.0.0.1:1/v1",
+		"--catalogue-token=token",
 		"--log-format=text",
 	)
 	if code != 1 {

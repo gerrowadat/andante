@@ -45,9 +45,6 @@ WHERE id = sqlc.arg(id);
 UPDATE sources SET image_url = coalesce(sqlc.narg(image_url), image_url), extra = sqlc.arg(extra)
 WHERE id = sqlc.arg(id);
 
--- name: FindSourceByFeedURL :one
-SELECT * FROM sources WHERE config->>'feed_url' = $1 ORDER BY id LIMIT 1;
-
 -- name: RequestCrawl :execrows
 UPDATE sources SET due_at = now() WHERE id = $1;
 
