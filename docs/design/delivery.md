@@ -56,7 +56,8 @@ OpenSSF Scorecard to SARIF, and it publishes results (the badge in the README).
 
 ### `release.yml`: Dispatched by `scripts/release.sh`, a Tag Push, or a PR
 
-On a PR only `full-suite` runs, without version and commit validation.
+On a PR only `full-suite` runs, without version and commit validation, and only for the paths listed
+in the workflow. A release always runs it.
 
 1. `full-suite`: verify the commit matches the dispatched one; validate strict
    `vX.Y.Z`; everything in `ci.yml`; plus the end-to-end suite (a real
@@ -124,6 +125,9 @@ Dependabot alerts and security updates. Merged branches are deleted automaticall
   push it scans the commits in that event.
 - **Scorecard's results appear under `supply-chain/*` categories**, whatever the
   upload step names.
+- **`release.yml` only runs on PRs that need it.** Running it on all of them spent 8 minutes on docs
+  fixes. It's a path filter, and not a `ci.yml` job, so it can't block a PR. Required checks can't be
+  filtered this way, because a required check that never runs leaves a PR waiting for ever.
 - **The image scan covers linux/amd64 only.** A multi-arch image cannot be loaded
   into the local daemon for Trivy to read.
 - **The image has no `latest` tag**, only `X.Y.Z` and `X.Y`.
