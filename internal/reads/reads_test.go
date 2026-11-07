@@ -7,20 +7,19 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log/slog"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/gerrowadat/andante/internal/discovery"
 	"github.com/gerrowadat/andante/internal/discovery/sitetest"
-	"github.com/gerrowadat/andante/internal/discovery/strategies"
 	"github.com/gerrowadat/andante/internal/reads"
+	"github.com/gerrowadat/andante/internal/replica"
 	"github.com/gerrowadat/andante/internal/schedule"
+	"github.com/gerrowadat/andante/internal/stacktest"
 	"github.com/gerrowadat/andante/internal/store"
 	"github.com/gerrowadat/andante/internal/store/db"
 	"github.com/gerrowadat/andante/internal/store/storetest"
-	"github.com/prometheus/client_golang/prometheus"
+	"github.com/gerrowadat/andante/pkg/client"
 )
 
 const dailyAt7 = "FREQ=DAILY;BYHOUR=7;BYMINUTE=0;BYSECOND=0"
@@ -39,7 +38,7 @@ func newFixture(t *testing.T, entries int) *fixture {
 	f := &fixture{store: st, clock: clock, service: reads.New(reads.Options{
 		Store: st, DefaultTimezone: "UTC", MinDatedShare: 0.9, Now: clock.Now,
 	})}
-	source, err := st.CreateSource(t.Context(), db.InsertSourceParams{
+	source, err := storetest.AddSource(t, st, db.UpsertSourceParams{
 		Slug: "s", Title: "t", HomeUrl: "https://comic.example/", DefaultKind: "page",
 		Strategy: "crawl", Config: []byte(`{"strategy":"crawl","start_url":"https://comic.example/1"}`), State: "indexing",
 	})
@@ -59,7 +58,7 @@ func (f *fixture) addEntries(t *testing.T, from, n int, dated bool) {
 			date = time.Date(2010, 1, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, 7*i)
 		}
 		_, err := f.store.Pool().Exec(t.Context(),
-			"INSERT INTO entries (source_id, seq, kind, url, original_date, discovered_at) VALUES ($1, $2, 'page', $3, $4, $5)",
+			"INSERT INTO entries (id, source_id, seq, kind, url, original_date, discovered_at, available_at) VALUES ((SELECT coalesce(max(id), 0) + 1 FROM entries), $1, $2, 'page', $3, $4, $5, $5)",
 			f.source.ID, i, "https://comic.example/"+time.Duration(i).String(), date, f.clock.Now().Add(-time.Hour))
 		if err != nil {
 			t.Fatal(err)
@@ -349,55 +348,36 @@ func TestFurthest(t *testing.T) {
 }
 
 func TestDiscoveryLookaheadFollowsReads(t *testing.T) {
-	st := storetest.New(t)
 	clock := sitetest.NewClock()
 	site := sitetest.Serve(t, "comiccontrol")
-	service := reads.New(reads.Options{Store: st, DefaultTimezone: "UTC", MinDatedShare: 0.9, Now: clock.Now})
-	loop := discovery.NewLoop(discovery.LoopOptions{
-		Store:        st,
-		Registry:     discovery.NewRegistry(strategies.Crawl{}),
-		Fetcher:      discovery.NewFetcher(sitetest.FetcherOptions(clock)),
-		Metrics:      discovery.NewMetrics(prometheus.NewRegistry()),
-		Logger:       slog.New(slog.DiscardHandler),
-		Clock:        clock,
-		Lookahead:    1,
-		TailInterval: 6 * time.Hour,
-		PollInterval: time.Minute,
-		Furthest:     service.Furthest,
-	})
-	config, err := json.Marshal(map[string]string{"strategy": "crawl", "start_url": site.URL + "/1.html"})
+	stack := stacktest.NewWith(t, stacktest.Options{Lookahead: 1, Now: clock.Now})
+	var config client.SourceConfig
+	if err := config.FromCrawlConfig(client.CrawlConfig{Strategy: client.Crawl, StartURL: site.URL + "/1.html"}); err != nil {
+		t.Fatal(err)
+	}
+	source, err := stack.Client.CreateSource(t.Context(), replica.SourceCreate{SourceCreate: client.SourceCreate{
+		Slug: "s", Title: "t", HomeURL: site.URL, DefaultKind: client.Page, Config: config,
+	}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	source, err := st.CreateSource(t.Context(), db.InsertSourceParams{
-		Slug: "s", Title: "t", HomeUrl: site.URL, DefaultKind: "page", Strategy: "crawl", Config: config, State: "indexing",
-	})
-	if err != nil {
+	if err := stack.Sync.CatchUp(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	settle := func() int64 {
 		t.Helper()
-		for range 20 {
-			worked, err := loop.Tick(t.Context())
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !worked {
-				break
-			}
-		}
-		count, _, err := st.EntryStats(t.Context(), source.ID)
+		stack.Settle(t)
+		count, _, err := stack.Catalogue.EntryStats(t.Context(), source.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
 		return count
 	}
-
 	if got := settle(); got != 1 {
 		t.Fatalf("with no reads: %d entries, want the lookahead of 1", got)
 	}
 
-	read, err := service.Create(t.Context(), reads.CreateParams{SourceID: source.ID, Name: "r", Pacing: daily(), Initial: 1})
+	read, err := stack.Reads.Create(t.Context(), reads.CreateParams{SourceID: source.ID, Name: "r", Pacing: daily(), Initial: 1})
 	if err != nil {
 		t.Fatal(err)
 	}

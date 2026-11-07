@@ -202,6 +202,7 @@ func (h *handler) CreateRead(ctx context.Context, r gen.CreateReadRequestObject)
 	if err != nil {
 		return nil, err
 	}
+	h.demandChanged(ctx, created.Read.SourceID)
 	return gen.CreateRead201JSONResponse(body), nil
 }
 
@@ -245,9 +246,14 @@ func (h *handler) UpdateRead(ctx context.Context, r gen.UpdateReadRequestObject)
 }
 
 func (h *handler) DeleteRead(ctx context.Context, r gen.DeleteReadRequestObject) (gen.DeleteReadResponseObject, error) {
+	found, err := h.reads.Get(ctx, r.ID)
+	if err != nil {
+		return nil, readError(r.ID, err)
+	}
 	if err := h.reads.Delete(ctx, r.ID); err != nil {
 		return nil, readError(r.ID, err)
 	}
+	h.demandChanged(ctx, found.Read.SourceID)
 	return gen.DeleteRead204Response{}, nil
 }
 
@@ -302,6 +308,7 @@ func (h *handler) CreateAdjustment(ctx context.Context, r gen.CreateAdjustmentRe
 	if err != nil {
 		return nil, err
 	}
+	h.demandChanged(ctx, adjusted.Read.SourceID)
 	return gen.CreateAdjustment200JSONResponse(body), nil
 }
 
@@ -343,4 +350,12 @@ func (h *handler) ListSegments(ctx context.Context, r gen.ListSegmentsRequestObj
 		Body:    client.SegmentList{Items: result.items, Next: result.next},
 		Headers: gen.ListSegments200ResponseHeaders{Link: result.link},
 	}, nil
+}
+
+// demandChanged tells the catalogue straight away, so that a new read doesn't wait
+// for the next round. The next round fixes a failure, so a read doesn't depend on it.
+func (h *handler) demandChanged(ctx context.Context, sourceID int64) {
+	if err := h.sync.PushDemand(ctx, sourceID); err != nil {
+		h.logger.Warn("could not report demand", "source", sourceID, "error", err)
+	}
 }

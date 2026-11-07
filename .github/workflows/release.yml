@@ -219,6 +219,7 @@ jobs:
           dir="$work/andante-$VERSION-linux-amd64"
           "$dir/andante" version | tee /dev/stderr | grep -q -- "$VERSION"
           "$dir/andante-server" --version | tee /dev/stderr | grep -q -- "$VERSION"
+          "$dir/andante-catalogue" --version | tee /dev/stderr | grep -q -- "$VERSION"
           tar -xzf "dist/andante-$VERSION-linux-arm64.tar.gz" -C "$work"
           file "$work/andante-$VERSION-linux-arm64/andante-server" | grep -q 'ARM aarch64'
           tar -xzf "dist/andante-$VERSION-darwin-arm64.tar.gz" -C "$work"

@@ -6,6 +6,9 @@
 flag wins over its variable. These only cover what the process needs to start. Sources, reads,
 schedules and tokens live in the database and change through the API. There are no config files.
 
+andante is two services. These are the flags for `andante-server`. [`andante-catalogue`](#andante-catalogue)
+has its own.
+
 ## Flags
 
 | Flag | Env | Default | Purpose |
@@ -14,6 +17,9 @@ schedules and tokens live in the database and change through the API. There are 
 | `--base-url` | `ANDANTE_BASE_URL` | required | Public URL used in feed links; absolute http(s) |
 | `--listen` | `ANDANTE_LISTEN` | `:8080` | Public listener (feeds) |
 | `--admin-listen` | `ANDANTE_ADMIN_LISTEN` | `127.0.0.1:8081` | Admin listener (API, health, metrics) |
+| `--catalogue-url` | `ANDANTE_CATALOGUE_URL` | required | Address of `andante-catalogue`, including `/v1` |
+| `--catalogue-token` | `ANDANTE_CATALOGUE_TOKEN` | required | The catalogue's API token |
+| `--demand-interval` | `ANDANTE_DEMAND_INTERVAL` | `30s` | How often to tell the catalogue how far readers have got |
 | `--default-timezone` | `ANDANTE_DEFAULT_TIMEZONE` | `UTC` | IANA time zone for new reads |
 | `--user-agent` | `ANDANTE_USER_AGENT` | `andante/<version> (+<base-url>)` | Crawler identity |
 | `--crawl-interval` | `ANDANTE_CRAWL_INTERVAL` | `5s` | Minimum gap between requests to one host |
@@ -39,8 +45,23 @@ schedules and tokens live in the database and change through the API. There are 
 | `--replay-min-dated-share` | `ANDANTE_REPLAY_MIN_DATED_SHARE` | `0.9` | Share of a source's entries that need dates before replay works without a `default_gap` |
 | `--feed-rate-limit` | `ANDANTE_FEED_RATE_LIMIT` | `60` | Requests a feed token may make per hour |
 
-Durations use Go's format (`500ms`, `5s`, `2m`) and must be positive. How the crawl settings fit
-together is in [sources](sources.md).
+Durations use Go's format (`500ms`, `5s`, `2m`) and must be positive.
+
+## andante-catalogue
+
+| Flag | Env | Default | Purpose |
+|---|---|---|---|
+| `--database-url` | `ANDANTE_CATALOGUE_DATABASE_URL` | required | Postgres DSN. A different database to the server's |
+| `--api-token` | `ANDANTE_CATALOGUE_TOKEN` | required | The token `andante-server` must present |
+| `--base-url` | `ANDANTE_BASE_URL` | required | This instance's public URL, named in the `User-Agent` |
+| `--listen` | `ANDANTE_CATALOGUE_LISTEN` | `127.0.0.1:8082` | The API, `/healthz`, `/readyz` and `/metrics` |
+| `--write-timeout` | `ANDANTE_CATALOGUE_WRITE_TIMEOUT` | `60s` | Must be over 30s, because a held `/changes` request can last that long |
+
+| `--probe-timeout` | `ANDANTE_PROBE_TIMEOUT` | `5m` | Time allowed for a probe |
+
+It also takes `--log-format`, `--log-level`, `--read-header-timeout`, `--read-timeout`,
+`--idle-timeout`, `--shutdown-timeout` and `--readiness-timeout`, as above. How the crawl settings
+fit together is in [sources](sources.md).
 
 ## The Bootstrap API Token
 
@@ -55,4 +76,7 @@ binary and run under a Postgres advisory lock, so several servers starting toget
 once. `/readyz` returns 200 once the database is reachable with every migration applied.
 
 The admin listener carries `/healthz`, `/readyz` and `/metrics`. Don't expose it publicly. The
-public listener only serves feeds, so that one can be.
+public listener only serves feeds, so that one can be. Don't expose the catalogue's listener either.
+
+The server doesn't need the catalogue to start, and `/readyz` doesn't depend on it, because feeds
+work without it.

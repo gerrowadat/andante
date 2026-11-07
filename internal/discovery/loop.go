@@ -12,8 +12,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/gerrowadat/andante/internal/store"
-	"github.com/gerrowadat/andante/internal/store/db"
+	"github.com/gerrowadat/andante/internal/catalogue/store"
+	"github.com/gerrowadat/andante/internal/catalogue/store/db"
 )
 
 // batchSize is the most pages one source gets per pass, so that one long archive

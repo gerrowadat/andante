@@ -8,9 +8,7 @@ import (
 	"encoding/json"
 	"flag"
 	"io"
-	"log/slog"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,20 +16,14 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	specfile "github.com/gerrowadat/andante/api"
-	"github.com/gerrowadat/andante/internal/api"
 	"github.com/gerrowadat/andante/internal/buildinfo"
-	"github.com/gerrowadat/andante/internal/discovery"
 	"github.com/gerrowadat/andante/internal/discovery/sitetest"
-	"github.com/gerrowadat/andante/internal/discovery/strategies"
-	"github.com/gerrowadat/andante/internal/reads"
+	"github.com/gerrowadat/andante/internal/stacktest"
 	"github.com/gerrowadat/andante/internal/store"
-	"github.com/gerrowadat/andante/internal/store/storetest"
 	"github.com/gerrowadat/andante/pkg/client"
 	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/spf13/cobra"
 )
 
@@ -44,30 +36,13 @@ type harness struct {
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
-	st := storetest.New(t)
-	reg := prometheus.NewRegistry()
-	registry := discovery.NewRegistry(strategies.All()...)
-	fetcher := discovery.NewFetcher(sitetest.FetcherOptions(sitetest.NewClock()))
-	handler, err := api.New(api.Options{
-		Store:        st,
-		Strategies:   registry,
-		Prober:       discovery.NewProber(registry, fetcher, discovery.NewMetrics(reg)),
-		Reads:        reads.New(reads.Options{Store: st, DefaultTimezone: "UTC", MinDatedShare: 0.9}),
-		BaseURL:      "https://andante.example/",
-		Registry:     reg,
-		Logger:       slog.New(slog.DiscardHandler),
-		ProbeTimeout: time.Minute,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	srv := httptest.NewServer(handler)
-	t.Cleanup(srv.Close)
+	stack := stacktest.New(t)
+	st := stack.Store
 	_, token, err := st.CreateAPIToken(t.Context(), "bootstrap")
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &harness{url: srv.URL, token: token, store: st}
+	return &harness{url: stack.URL, token: token, store: st}
 }
 
 type result struct {
@@ -101,7 +76,7 @@ func (h *harness) comic(t *testing.T) {
 	h.ok(t, "source", "add", "https://comic.example/1", "--slug", "comic", "--title", "A Comic")
 	for i := range 5 {
 		_, err := h.store.Pool().Exec(t.Context(),
-			"INSERT INTO entries (source_id, seq, kind, url, title, original_date, discovered_at) VALUES (1, $1, 'page', $2, $3, '2010-01-01', now() - interval '1 hour')",
+			"INSERT INTO entries (id, source_id, seq, kind, url, title, original_date, discovered_at, available_at) VALUES ((SELECT coalesce(max(id), 0) + 1 FROM entries), 1, $1, 'page', $2, $3, '2010-01-01', now() - interval '1 hour', now() - interval '1 hour')",
 			i, "https://comic.example/"+strconv.Itoa(i), "Page "+strconv.Itoa(i))
 		if err != nil {
 			t.Fatal(err)

@@ -117,8 +117,9 @@ attribute, or else its text. Selectors are checked when the config is written.
 
 ## How Indexing Works
 
-andante indexes lazily. It keeps a source `--crawl-lookahead` entries ahead of the furthest
-read on it, and a source with no reads gets its first `--crawl-lookahead` entries.
+`andante-catalogue` does the crawling, so the flags here are its own. It indexes lazily, and a serial
+is only crawled once, however many reads it has. It keeps a source `--crawl-lookahead` entries ahead
+of the furthest read on it, and a source with no reads gets its first `--crawl-lookahead` entries.
 `POST /sources/{id}/crawls` asks for a pass now.
 
 | State | Meaning |

@@ -25,7 +25,7 @@ func (q *Queries) DeleteRead(ctx context.Context, id int64) (int64, error) {
 }
 
 const getRead = `-- name: GetRead :one
-SELECT id, source_id, name, catch_up, buffer, config, created_at, start_seq FROM reads WHERE id = $1
+SELECT id, source_id, name, start_seq, catch_up, buffer, config, created_at FROM reads WHERE id = $1
 `
 
 func (q *Queries) GetRead(ctx context.Context, id int64) (Read, error) {
@@ -35,17 +35,17 @@ func (q *Queries) GetRead(ctx context.Context, id int64) (Read, error) {
 		&i.ID,
 		&i.SourceID,
 		&i.Name,
+		&i.StartSeq,
 		&i.CatchUp,
 		&i.Buffer,
 		&i.Config,
 		&i.CreatedAt,
-		&i.StartSeq,
 	)
 	return i, err
 }
 
 const getReadForUpdate = `-- name: GetReadForUpdate :one
-SELECT id, source_id, name, catch_up, buffer, config, created_at, start_seq FROM reads WHERE id = $1 FOR UPDATE
+SELECT id, source_id, name, start_seq, catch_up, buffer, config, created_at FROM reads WHERE id = $1 FOR UPDATE
 `
 
 func (q *Queries) GetReadForUpdate(ctx context.Context, id int64) (Read, error) {
@@ -55,11 +55,11 @@ func (q *Queries) GetReadForUpdate(ctx context.Context, id int64) (Read, error) 
 		&i.ID,
 		&i.SourceID,
 		&i.Name,
+		&i.StartSeq,
 		&i.CatchUp,
 		&i.Buffer,
 		&i.Config,
 		&i.CreatedAt,
-		&i.StartSeq,
 	)
 	return i, err
 }
@@ -68,7 +68,7 @@ const insertRead = `-- name: InsertRead :one
 
 INSERT INTO reads (source_id, name, catch_up, buffer, config, start_seq)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, source_id, name, catch_up, buffer, config, created_at, start_seq
+RETURNING id, source_id, name, start_seq, catch_up, buffer, config, created_at
 `
 
 type InsertReadParams struct {
@@ -96,11 +96,11 @@ func (q *Queries) InsertRead(ctx context.Context, arg InsertReadParams) (Read, e
 		&i.ID,
 		&i.SourceID,
 		&i.Name,
+		&i.StartSeq,
 		&i.CatchUp,
 		&i.Buffer,
 		&i.Config,
 		&i.CreatedAt,
-		&i.StartSeq,
 	)
 	return i, err
 }
@@ -148,7 +148,7 @@ func (q *Queries) InsertSegment(ctx context.Context, arg InsertSegmentParams) er
 }
 
 const listEntryTimes = `-- name: ListEntryTimes :many
-SELECT seq, original_date, discovered_at FROM entries WHERE source_id = $1 ORDER BY seq
+SELECT seq, original_date, available_at AS discovered_at FROM entries WHERE source_id = $1 ORDER BY seq
 `
 
 type ListEntryTimesRow struct {
@@ -178,7 +178,7 @@ func (q *Queries) ListEntryTimes(ctx context.Context, sourceID int64) ([]ListEnt
 }
 
 const listReads = `-- name: ListReads :many
-SELECT id, source_id, name, catch_up, buffer, config, created_at, start_seq FROM reads WHERE id > $1 ORDER BY id LIMIT $2
+SELECT id, source_id, name, start_seq, catch_up, buffer, config, created_at FROM reads WHERE id > $1 ORDER BY id LIMIT $2
 `
 
 type ListReadsParams struct {
@@ -199,11 +199,11 @@ func (q *Queries) ListReads(ctx context.Context, arg ListReadsParams) ([]Read, e
 			&i.ID,
 			&i.SourceID,
 			&i.Name,
+			&i.StartSeq,
 			&i.CatchUp,
 			&i.Buffer,
 			&i.Config,
 			&i.CreatedAt,
-			&i.StartSeq,
 		); err != nil {
 			return nil, err
 		}
@@ -216,7 +216,7 @@ func (q *Queries) ListReads(ctx context.Context, arg ListReadsParams) ([]Read, e
 }
 
 const listReadsOfSource = `-- name: ListReadsOfSource :many
-SELECT id, source_id, name, catch_up, buffer, config, created_at, start_seq FROM reads WHERE source_id = $1 ORDER BY id
+SELECT id, source_id, name, start_seq, catch_up, buffer, config, created_at FROM reads WHERE source_id = $1 ORDER BY id
 `
 
 func (q *Queries) ListReadsOfSource(ctx context.Context, sourceID int64) ([]Read, error) {
@@ -232,11 +232,11 @@ func (q *Queries) ListReadsOfSource(ctx context.Context, sourceID int64) ([]Read
 			&i.ID,
 			&i.SourceID,
 			&i.Name,
+			&i.StartSeq,
 			&i.CatchUp,
 			&i.Buffer,
 			&i.Config,
 			&i.CreatedAt,
-			&i.StartSeq,
 		); err != nil {
 			return nil, err
 		}
@@ -333,7 +333,7 @@ func (q *Queries) ListSegmentsPage(ctx context.Context, arg ListSegmentsPagePara
 }
 
 const updateRead = `-- name: UpdateRead :one
-UPDATE reads SET name = $2, config = $3 WHERE id = $1 RETURNING id, source_id, name, catch_up, buffer, config, created_at, start_seq
+UPDATE reads SET name = $2, config = $3 WHERE id = $1 RETURNING id, source_id, name, start_seq, catch_up, buffer, config, created_at
 `
 
 type UpdateReadParams struct {
@@ -349,11 +349,11 @@ func (q *Queries) UpdateRead(ctx context.Context, arg UpdateReadParams) (Read, e
 		&i.ID,
 		&i.SourceID,
 		&i.Name,
+		&i.StartSeq,
 		&i.CatchUp,
 		&i.Buffer,
 		&i.Config,
 		&i.CreatedAt,
-		&i.StartSeq,
 	)
 	return i, err
 }

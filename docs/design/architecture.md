@@ -6,33 +6,90 @@ design record.
 
 ## Components
 
+There are two services, and each has its own database, migrations, OpenAPI document and models,
+so a cross-service join can't happen by accident.
+
 ```
-              ┌──────────── admin listener (tailnet) ─────────────┐
- andante CLI ─┤  /api/v1/*   /healthz  /readyz  /metrics          │
- (pkg/client) └──────────────────────┬────────────────────────────┘
+              ┌──────────── admin listener (tailnet) ───────────┐
+ andante CLI ─┤  /api/v1/*   /healthz  /readyz  /metrics        │
+ (pkg/client) └──────────────────────┬──────────────────────────┘
                                      │
-                     ┌───────────────┼────────────────┐
-                     ▼               ▼                ▼
-                discovery        schedule           feed
-            (crawler, strategies,  (pure math)   (render, decorators)
-             extractors)              ▲                │
-                     │                │                │
-                     ▼                │                │
-                 ┌──────────── Postgres ───────────────┘
-                 │ sources, entries, reads, segments, tokens
-                 └─────────────────────────────────────▲
-                                                       │
-              ┌──────────── public listener ───────────┴──────────┐
- feed readers ┤  GET /f/{token}.atom  .rss  .json                 │
-              │  GET|POST /f/{token}/next   (owner tokens only)   │
-              └───────────────────────────────────────────────────┘
+                     ┌───────── andante-server ─────────┐
+                     │ reads, segments, tokens          │
+                     │ schedule (pure maths), feed      │
+                     │ copy of sources and entries      │──▶ Postgres: andante
+                     └───┬─────────────────────┬────────┘
+                         │ catalogue API       │
+                         ▼                     │
+        ┌── andante-catalogue ──┐              │
+        │ sources, entries      │              │
+        │ crawling, discovery   │──▶ Postgres: catalogue
+        └───────────────────────┘              │
+                                               │
+              ┌──────────── public listener ───┴────────────────┐
+ feed readers ┤  GET /f/{token}.atom  .rss  .json               │
+              │  GET|POST /f/{token}/next   (owner tokens only) │
+              └─────────────────────────────────────────────────┘
 ```
 
-- **andante-server** is one process: both listeners, and the discovery loop in a goroutine. One replica is the supported deployment; the crawl loop
-  takes a Postgres advisory lock, so a second replica serves feeds but does not
-  crawl.
-- **andante** (CLI) is a separate binary that only talks HTTP to the admin API
-  through the generated client in `pkg/client`.
+- **andante-catalogue** is the infrastructure. It holds sources and entries, and does all the
+  talking to other people's websites. It has never heard of a user or a read. Its API is private,
+  with one service token, and only `andante-server` calls it. The crawl loop takes a Postgres
+  advisory lock, so a second replica doesn't crawl.
+- **andante-server** is everything a person touches: reads, tokens, feeds, and the API the CLI
+  uses. It's one process with both listeners, plus the sync in a goroutine. One replica is the
+  supported deployment.
+- **andante** (CLI) is a separate binary that only talks HTTP to the admin API through the
+  generated client in `pkg/client`.
+
+## How the Services Talk
+
+### Entries Flow Down
+
+`andante-server` keeps its own copy of sources and entries, and only ever reads that copy. Feed
+requests and the pacing arithmetic never call the catalogue. I looked at fetching live, but replay
+needs every entry's dates on each request, and it would tie every feed to the catalogue being up.
+
+Every source and entry gets a `revision` when it changes, from one sequence, in a trigger, so no
+write can forget. The trigger takes an advisory lock until commit, which makes revisions commit in
+order, so a reader that has seen a revision has seen everything below it. Transactions that also
+lock a row take the same lock first, so that two writers can't each hold what the other wants.
+
+There's no log to prune. `GET /v1/changes?after=N&wait=25` reads the tables themselves, holds an
+empty answer for up to `wait` seconds, and returns current rows in revision order, with tombstones
+for deleted sources. The server stores the last revision it applied in the same transaction as the
+changes, and a change at or below that is skipped, so two overlapping pulls do no harm.
+
+A source's revision moves on every crawl and an entry's doesn't, so an entry can arrive before its
+source. So nothing ties `entries.source_id` to `sources` in the copy.
+
+### Release Times
+
+An entry can't be released before it's been seen. In the copy that's `available_at`, set once, when
+the entry first arrives. An entry can't count as released before the server could show it, however
+far the sync falls behind, and release times stay stable. It also means the copy can't be rebuilt
+from nothing without moving recent release times, so it gets backed up with everything else.
+
+### Demand Flows Up
+
+The server tells the catalogue how far readers have got with `PUT /v1/sources/{id}/demand`, and
+`DELETE` when the last read goes. It does this when a read changes, and every `--demand-interval`,
+because a read's position moves with the clock. The catalogue keeps `--crawl-lookahead` entries
+ahead of that. If the server is down, the crawl stops growing and nothing else happens.
+
+A serial is fetched once however many people read it, because the catalogue doesn't know how many
+there are.
+
+### What Happens When One Is Down
+
+| Down | Still works | Stops |
+|---|---|---|
+| `andante-catalogue` | Feeds, releases until the copy runs out, reads, tokens, listing sources | Changing sources, new entries, probes. Those calls get a 503 |
+| `andante-server` | Crawling up to the last demand | Feeds and the CLI |
+
+The sync retries from 250ms, doubling up to 30s. A deleted source with a read stays in the copy.
+The catalogue refuses to delete a source with demand, so that takes a race, and a read shouldn't pay
+for it.
 
 ## Configuration
 
@@ -47,7 +104,7 @@ lock.
 ## Data Model
 
 ```sql
-sources (
+sources (                                  -- in the catalogue; the server's copy has no cursor
   id            bigint generated always as identity primary key,
   slug          text unique not null,
   title         text not null,
@@ -60,6 +117,8 @@ sources (
   cursor        jsonb,                    -- strategy-owned resume state
   state         text not null,            -- indexing | tail | paused | error
   due_at        timestamptz,              -- next crawl; set by POST .../crawls and the crawl scheduler
+  demand_seq    integer,                  -- catalogue only: how far readers have got
+  revision      bigint not null default 0,  -- catalogue only
   last_crawled_at timestamptz,
   last_error    text,
   created_at    timestamptz not null default now()
@@ -83,6 +142,7 @@ entries (
   original_date timestamptz,
   content_hash  bytea,
   discovered_at timestamptz not null default now(),
+  revision      bigint not null default 0,   -- catalogue; the server's copy has available_at instead
   unique (source_id, seq)
 )
 create unique index on entries (source_id, guid) where guid is not null;
@@ -136,7 +196,7 @@ api_tokens (
   last_used_at  timestamptz
 )
 
-crawl_log (
+crawl_log (                               -- catalogue only
   id            bigint generated always as identity primary key,
   source_id     bigint not null references sources on delete cascade,
   url           text not null,
@@ -211,6 +271,14 @@ Source slugs are bounded by what the user creates, so they are acceptable as a
 label. Tokens and read IDs are never labels.
 
 ## Where This Diverged From the Proposal
+
+- **The catalogue API is smaller than proposed.** The server reads sources from its copy, so
+  there's no `GET /sources` or `GET /sources/{id}`. `wait` is in seconds, and clearing demand is a
+  `DELETE`.
+- **The copy's entries have no foreign key,** for the reason above. The proposal said revisions
+  arrive in order, and they do, but a source is at its latest revision.
+- **Held requests let go on shutdown.** The end-to-end suite found that a held `/changes` kept
+  `SIGTERM` waiting for the whole shutdown timeout.
 
 - **The flag table moved to `configuration.md`,** so that there is one list to keep
   current.

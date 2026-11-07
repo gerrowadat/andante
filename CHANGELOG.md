@@ -6,6 +6,13 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- andante is now two services. `andante-catalogue` holds sources and entries and does the crawling,
+  and `andante-server` keeps a copy and owns reads, tokens and feeds. Each needs its own database,
+  and there's no migration from v0.0.1. Crawl flags moved to `andante-catalogue`, and the server
+  gains `--catalogue-url`, `--catalogue-token` and `--demand-interval`.
+
 ## [0.0.1] - 2026-11-06
 
 The first release. andante indexes a serial's archive and replays it as a paced feed.

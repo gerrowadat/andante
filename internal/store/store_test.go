@@ -13,10 +13,9 @@ import (
 
 	"github.com/gerrowadat/andante/internal/store"
 	"github.com/gerrowadat/andante/internal/store/storetest"
-	"github.com/jackc/pgx/v5/pgconn"
 )
 
-const wantMigrations = 2
+const wantMigrations = 1
 
 func appliedMigrations(t *testing.T, s *store.Store) int {
 	t.Helper()
@@ -71,7 +70,7 @@ func TestConcurrentMigrationsApplyOnce(t *testing.T) {
 
 func TestSchemaHasEveryTable(t *testing.T) {
 	s := storetest.New(t)
-	for _, table := range []string{"sources", "entries", "reads", "read_segments", "feed_tokens", "api_tokens", "crawl_log"} {
+	for _, table := range []string{"sources", "entries", "reads", "read_segments", "feed_tokens", "api_tokens"} {
 		var exists bool
 		err := s.Pool().QueryRow(t.Context(), "SELECT to_regclass($1) IS NOT NULL", table).Scan(&exists)
 		if err != nil {
@@ -80,44 +79,6 @@ func TestSchemaHasEveryTable(t *testing.T) {
 		if !exists {
 			t.Errorf("table %s does not exist", table)
 		}
-	}
-}
-
-func TestEntryIdentity(t *testing.T) {
-	const insert = "INSERT INTO entries (source_id, seq, kind, url, guid) VALUES ($1, $2, 'page', $3, $4)"
-	s := storetest.New(t)
-	ctx := t.Context()
-	var source int64
-	err := s.Pool().QueryRow(ctx, `INSERT INTO sources (slug, title, home_url, default_kind, strategy, config, state)
-		VALUES ('s', 't', 'https://example.com/', 'page', 'crawl', '{}', 'indexing') RETURNING id`).Scan(&source)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	url, guidA, guidB := "https://example.com/show", "a", "b"
-	steps := []struct {
-		name      string
-		seq       int
-		url, guid *string
-		wantDup   bool
-	}{
-		{name: "first with a guid", seq: 1, url: &url, guid: &guidA},
-		{name: "same link, different guid", seq: 2, url: &url, guid: &guidB},
-		{name: "same guid", seq: 3, guid: &guidA, wantDup: true},
-		{name: "no link, new guid", seq: 4, guid: new("c")},
-		{name: "first without a guid", seq: 5, url: new("https://example.com/1")},
-		{name: "same URL without a guid", seq: 6, url: new("https://example.com/1"), wantDup: true},
-		{name: "link shared with a guid entry", seq: 7, url: &url},
-	}
-	for _, step := range steps {
-		t.Run(step.name, func(t *testing.T) {
-			_, err := s.Pool().Exec(ctx, insert, source, step.seq, step.url, step.guid)
-			var pgErr *pgconn.PgError
-			gotDup := errors.As(err, &pgErr) && pgErr.Code == "23505"
-			if gotDup != step.wantDup || (err != nil && !gotDup) {
-				t.Errorf("insert: %v, want duplicate %v", err, step.wantDup)
-			}
-		})
 	}
 }
 
