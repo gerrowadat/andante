@@ -164,7 +164,7 @@ func (p *public) serveFeed(w http.ResponseWriter, r *http.Request) {
 		p.opts.Logger.Warn("could not record a token's use", "error", err)
 	}
 
-	read, err := p.opts.Store.GetRead(ctx, token.ReadID)
+	read, err := p.opts.Store.GetRead(ctx, store.Holder, token.ReadID)
 	if err != nil {
 		p.fail(w, err)
 		return
@@ -302,7 +302,7 @@ func (p *public) confirmNext(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	read, err := p.opts.Store.GetRead(r.Context(), token.ReadID)
+	read, err := p.opts.Store.GetRead(r.Context(), store.Holder, token.ReadID)
 	if err != nil {
 		p.fail(w, err)
 		return
@@ -327,7 +327,7 @@ func (p *public) releaseNext(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	_, err := p.opts.Reads.Adjust(ctx, token.ReadID, schedule.Skip{Count: 1})
+	_, err := p.opts.Reads.Adjust(ctx, store.Holder, token.ReadID, schedule.Skip{Count: 1})
 	if errors.Is(err, schedule.ErrNothingToSkip) {
 		http.Error(w, "there is no next entry yet", http.StatusConflict)
 		return
@@ -347,7 +347,7 @@ func (p *public) releaseNext(w http.ResponseWriter, r *http.Request) {
 // released returns where to send someone after a release: the entry's original
 // page, or the source's home page if it has none.
 func (p *public) released(ctx context.Context, readID int64) (string, error) {
-	read, err := p.opts.Store.GetRead(ctx, readID)
+	read, err := p.opts.Store.GetRead(ctx, store.Holder, readID)
 	if err != nil {
 		return "", err
 	}

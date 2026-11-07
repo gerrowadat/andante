@@ -29,25 +29,29 @@ func (s *Store) CreateRead(ctx context.Context, read db.InsertReadParams, first 
 	return created, nil
 }
 
-// GetRead returns a read, or ErrNotFound.
-func (s *Store) GetRead(ctx context.Context, id int64) (db.Read, error) {
-	read, err := s.queries.GetRead(ctx, id)
+// GetRead returns a read the actor can reach. Someone else's is ErrNotFound.
+func (s *Store) GetRead(ctx context.Context, actor Actor, id int64) (db.Read, error) {
+	read, err := s.queries.GetRead(ctx, db.GetReadParams{ID: id, Anyone: actor.Admin, UserID: actor.UserID})
 	if err != nil {
 		return db.Read{}, fmt.Errorf("get read %d: %w", id, translate(err))
 	}
 	return read, nil
 }
 
-// ListReads returns up to limit reads with IDs above after.
-func (s *Store) ListReads(ctx context.Context, after int64, limit int32) ([]db.Read, error) {
-	reads, err := s.queries.ListReads(ctx, db.ListReadsParams{ID: after, Limit: limit})
+// ListReads returns up to limit reads with IDs above after: the actor's own, or with
+// all, everyone's, which only an admin can have.
+func (s *Store) ListReads(ctx context.Context, actor Actor, all bool, after int64, limit int32) ([]db.Read, error) {
+	reads, err := s.queries.ListReads(ctx, db.ListReadsParams{
+		After: after, Anyone: all && actor.Admin, UserID: actor.UserID, PageSize: limit,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("list reads: %w", err)
 	}
 	return reads, nil
 }
 
-// ListReadsOfSource returns every read of a source.
+// ListReadsOfSource returns every read of a source, whoever's it is, for working out
+// demand. It's not for anything a user asked for.
 func (s *Store) ListReadsOfSource(ctx context.Context, sourceID int64) ([]db.Read, error) {
 	reads, err := s.queries.ListReadsOfSource(ctx, sourceID)
 	if err != nil {
@@ -56,8 +60,9 @@ func (s *Store) ListReadsOfSource(ctx context.Context, sourceID int64) ([]db.Rea
 	return reads, nil
 }
 
-// UpdateRead changes what can change about a read.
-func (s *Store) UpdateRead(ctx context.Context, params db.UpdateReadParams) (db.Read, error) {
+// UpdateRead changes what can change about a read the actor can reach.
+func (s *Store) UpdateRead(ctx context.Context, actor Actor, params db.UpdateReadParams) (db.Read, error) {
+	params.Anyone, params.UserID = actor.Admin, actor.UserID
 	read, err := s.queries.UpdateRead(ctx, params)
 	if err != nil {
 		return db.Read{}, fmt.Errorf("update read %d: %w", params.ID, translate(err))
@@ -65,9 +70,9 @@ func (s *Store) UpdateRead(ctx context.Context, params db.UpdateReadParams) (db.
 	return read, nil
 }
 
-// DeleteRead deletes a read, its history and its feed tokens.
-func (s *Store) DeleteRead(ctx context.Context, id int64) error {
-	rows, err := s.queries.DeleteRead(ctx, id)
+// DeleteRead deletes a read the actor can reach, with its history and feed tokens.
+func (s *Store) DeleteRead(ctx context.Context, actor Actor, id int64) error {
+	rows, err := s.queries.DeleteRead(ctx, db.DeleteReadParams{ID: id, Anyone: actor.Admin, UserID: actor.UserID})
 	if err != nil {
 		return fmt.Errorf("delete read %d: %w", id, err)
 	}
@@ -87,9 +92,9 @@ func (s *Store) Segments(ctx context.Context, readID int64) ([]db.ReadSegment, e
 }
 
 // SegmentsPage returns up to limit of a read's segments with IDs above after, or
-// ErrNotFound if the read does not exist.
-func (s *Store) SegmentsPage(ctx context.Context, readID, after int64, limit int32) ([]db.ReadSegment, error) {
-	if _, err := s.GetRead(ctx, readID); err != nil {
+// ErrNotFound if the actor can't reach the read.
+func (s *Store) SegmentsPage(ctx context.Context, actor Actor, readID, after int64, limit int32) ([]db.ReadSegment, error) {
+	if _, err := s.GetRead(ctx, actor, readID); err != nil {
 		return nil, err
 	}
 	segments, err := s.queries.ListSegmentsPage(ctx, db.ListSegmentsPageParams{ReadID: readID, ID: after, Limit: limit})
@@ -111,10 +116,10 @@ func (s *Store) EntryTimes(ctx context.Context, sourceID int64) ([]db.ListEntryT
 // AppendSegment adds the segment build returns, in a transaction that locks the
 // read's row. Concurrent adjustments therefore serialise, and each one sees the
 // segment the one before it appended.
-func (s *Store) AppendSegment(ctx context.Context, readID int64, build func(db.Read, []db.ReadSegment, []db.ListEntryTimesRow) (db.InsertSegmentParams, error)) error {
+func (s *Store) AppendSegment(ctx context.Context, actor Actor, readID int64, build func(db.Read, []db.ReadSegment, []db.ListEntryTimesRow) (db.InsertSegmentParams, error)) error {
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		q := s.queries.WithTx(tx)
-		read, err := q.GetReadForUpdate(ctx, readID)
+		read, err := q.GetReadForUpdate(ctx, db.GetReadForUpdateParams{ID: readID, Anyone: actor.Admin, UserID: actor.UserID})
 		if err != nil {
 			return err
 		}

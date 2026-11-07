@@ -9,7 +9,7 @@
 #   nomad var put nomad/jobs/andante \
 #     database_url='postgres://andante:...@db.example:5432/andante' \
 #     catalogue_database_url='postgres://catalogue:...@db.example:5432/catalogue' \
-#     admin_token='...' \
+#     secret='...' \
 #     catalogue_token='...'
 #
 # Change datacenters and ANDANTE_BASE_URL, and pin the image to a release.
@@ -34,7 +34,7 @@ job "andante" {
       port "public" {
         to = 8080
       }
-      port "admin" {
+      port "ops" {
         to = 8081
       }
       port "catalogue" {
@@ -49,9 +49,9 @@ job "andante" {
     }
 
     service {
-      name     = "andante-admin"
+      name     = "andante-ops"
       provider = "nomad"
-      port     = "admin"
+      port     = "ops"
 
       check {
         name     = "ready"
@@ -114,13 +114,13 @@ job "andante" {
 
       config {
         image = "ghcr.io/gerrowadat/andante:0.0.1"
-        ports = ["public", "admin"]
+        ports = ["public", "ops"]
       }
 
       env {
         ANDANTE_BASE_URL      = "https://feeds.example.com"
         ANDANTE_LISTEN        = ":8080"
-        ANDANTE_ADMIN_LISTEN  = ":8081"
+        ANDANTE_OPS_LISTEN    = ":8081"
         ANDANTE_CATALOGUE_URL = "http://127.0.0.1:8082/v1"
       }
 
@@ -130,8 +130,7 @@ job "andante" {
         data        = <<-EOT
           {{ with nomadVar "nomad/jobs/andante" -}}
           ANDANTE_DATABASE_URL={{ .database_url }}
-          ANDANTE_ADMIN_TOKEN={{ .admin_token }}
-          ANDANTE_TOKEN={{ .admin_token }}
+          ANDANTE_SECRET={{ .secret }}
           ANDANTE_CATALOGUE_TOKEN={{ .catalogue_token }}
           {{- end }}
         EOT

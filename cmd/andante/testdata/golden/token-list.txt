@@ -1,3 +1,3 @@
-ID  ROLE    LABEL  LAST SEEN  REVOKED
-1   viewer  Alex   -          -
-2   owner   Me     -          -
+ID  ROLE    LABEL  LAST SEEN  REVOKED  RSS
+1   viewer  Alex   -          -        https://andante.example/f/<token>.rss
+2   owner   Me     -          -        https://andante.example/f/<token>.rss

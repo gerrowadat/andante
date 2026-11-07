@@ -12,6 +12,7 @@ import (
 
 type ApiToken struct {
 	ID         int64
+	UserID     int64
 	TokenHash  []byte
 	Label      string
 	CreatedAt  time.Time
@@ -40,18 +41,20 @@ type Entry struct {
 }
 
 type FeedToken struct {
-	ID         int64
-	ReadID     int64
-	TokenHash  []byte
-	Role       string
-	Label      string
-	CreatedAt  time.Time
-	RevokedAt  *time.Time
-	LastSeenAt *time.Time
+	ID          int64
+	ReadID      int64
+	TokenHash   []byte
+	TokenSealed []byte
+	Role        string
+	Label       string
+	CreatedAt   time.Time
+	RevokedAt   *time.Time
+	LastSeenAt  *time.Time
 }
 
 type Read struct {
 	ID        int64
+	UserID    int64
 	SourceID  int64
 	Name      string
 	StartSeq  int32
@@ -78,6 +81,11 @@ type ReadSegment struct {
 	CreatedAt  time.Time
 }
 
+type SecretCheck struct {
+	OnlyRow bool
+	Sealed  []byte
+}
+
 type Source struct {
 	ID            int64
 	Slug          string
@@ -98,4 +106,12 @@ type Source struct {
 type SyncState struct {
 	OnlyRow  bool
 	Revision int64
+}
+
+type User struct {
+	ID         int64
+	Name       string
+	Role       string
+	CreatedAt  time.Time
+	DisabledAt *time.Time
 }

@@ -16,7 +16,6 @@ import (
 	"net/http"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 	"syscall"
@@ -75,6 +74,8 @@ func freeAddr(t *testing.T) string {
 
 type process struct {
 	cmd    *exec.Cmd
+	bin    string
+	dsn    string
 	admin  string
 	public string
 	mu     sync.Mutex
@@ -82,7 +83,10 @@ type process struct {
 	waited chan error
 }
 
-const catalogueToken = "e2e-catalogue-token"
+const (
+	catalogueToken = "e2e-catalogue-token"
+	secret         = "an-end-to-end-secret-of-enough-length"
+)
 
 // startServer starts andante-server. With no --catalogue-url in flags it points
 // nowhere, which is fine for anything that doesn't touch sources.
@@ -93,11 +97,12 @@ func startServer(t *testing.T, bin, dsn string, flags ...string) *process {
 		"--database-url=" + dsn,
 		"--base-url=https://andante.example",
 		"--listen=" + p.public,
-		"--admin-listen=" + p.admin,
+		"--ops-listen=" + p.admin,
 		"--log-format=text",
 		"--catalogue-url=http://127.0.0.1:1/v1",
 		"--catalogue-token=" + catalogueToken,
-	}, flags...)...))
+		"--secret=" + secret,
+	}, flags...)...), bin, dsn)
 }
 
 // startCatalogue starts andante-catalogue. Its listener is in admin, because that's
@@ -111,7 +116,7 @@ func startCatalogue(t *testing.T, bin, dsn string, flags ...string) *process {
 		"--listen=" + p.admin,
 		"--api-token=" + catalogueToken,
 		"--log-format=text",
-	}, flags...)...))
+	}, flags...)...), bin, dsn)
 }
 
 // startBoth starts a catalogue, with crawlFlags, and a server that uses it.
@@ -124,9 +129,19 @@ func startBoth(t *testing.T, flags ...string) *process {
 
 func (p *process) flag() string { return "--catalogue-url=http://" + p.admin + "/v1" }
 
-func (p *process) start(t *testing.T, cmd *exec.Cmd) *process {
+// addUser runs andante-server user add, as an operator would, and returns the token.
+func (p *process) addUser(t *testing.T, name string) string {
 	t.Helper()
-	p.cmd = cmd
+	out, err := exec.Command(p.bin, "user", "add", name, "--admin", "--database-url="+p.dsn).Output()
+	if err != nil {
+		t.Fatalf("user add: %v", err)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func (p *process) start(t *testing.T, cmd *exec.Cmd, bin, dsn string) *process {
+	t.Helper()
+	p.cmd, p.bin, p.dsn = cmd, bin, dsn
 	stderr, err := p.cmd.StderrPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -188,10 +203,6 @@ func TestTwoServersShareOneDatabase(t *testing.T) {
 	a.waitReady(t)
 	b.waitReady(t)
 
-	all := a.output() + b.output()
-	if got := strings.Count(all, "shown only this once"); got != 1 {
-		t.Errorf("bootstrap token logged %d times, want 1. Logs:\n%s", got, all)
-	}
 	if err := storetest.Open(t, dsn).Ready(context.Background()); err != nil {
 		t.Errorf("Ready after both started: %v", err)
 	}
@@ -217,13 +228,10 @@ func TestAPIThroughTheRealServer(t *testing.T) {
 	p := startBoth(t)
 	p.waitReady(t)
 
-	match := regexp.MustCompile(`token=([A-Za-z0-9_-]{43})`).FindStringSubmatch(p.output())
-	if match == nil {
-		t.Fatalf("no bootstrap token in the logs:\n%s", p.output())
-	}
-	c, err := client.NewClientWithResponses("http://"+p.admin+"/api/v1",
+	token := p.addUser(t, "admin")
+	c, err := client.NewClientWithResponses("http://"+p.public+"/api/v1",
 		client.WithRequestEditorFn(func(_ context.Context, r *http.Request) error {
-			r.Header.Set("Authorization", "Bearer "+match[1])
+			r.Header.Set("Authorization", "Bearer "+token)
 			return nil
 		}))
 	if err != nil {
@@ -275,11 +283,14 @@ func TestAPIThroughTheRealServer(t *testing.T) {
 		t.Fatalf("entries: %d %s", entries.StatusCode(), entries.Body)
 	}
 
-	if code := status(p.admin + "/api/v1/sources"); code != http.StatusUnauthorized {
+	if code := status(p.public + "/api/v1/sources"); code != http.StatusUnauthorized {
 		t.Errorf("no token: %d, want 401", code)
 	}
-	if code := status(p.public + "/api/v1/sources"); code != http.StatusNotFound {
-		t.Errorf("public listener: %d, want 404", code)
+	if code := status(p.admin + "/api/v1/sources"); code != http.StatusNotFound {
+		t.Errorf("ops listener: %d, want 404", code)
+	}
+	if code := status(p.public + "/metrics"); code != http.StatusNotFound {
+		t.Errorf("metrics on the public listener: %d, want 404", code)
 	}
 	body, err := http.Get("http://" + p.admin + "/metrics")
 	if err != nil {
@@ -300,13 +311,10 @@ func TestFeedsThroughTheRealServer(t *testing.T) {
 	p := startBoth(t)
 	p.waitReady(t)
 
-	match := regexp.MustCompile(`token=([A-Za-z0-9_-]{43})`).FindStringSubmatch(p.output())
-	if match == nil {
-		t.Fatalf("no bootstrap token in the logs:\n%s", p.output())
-	}
-	c, err := client.NewClientWithResponses("http://"+p.admin+"/api/v1",
+	apiToken := p.addUser(t, "admin")
+	c, err := client.NewClientWithResponses("http://"+p.public+"/api/v1",
 		client.WithRequestEditorFn(func(_ context.Context, r *http.Request) error {
-			r.Header.Set("Authorization", "Bearer "+match[1])
+			r.Header.Set("Authorization", "Bearer "+apiToken)
 			return nil
 		}))
 	if err != nil {
@@ -374,13 +382,10 @@ func TestProbeOutlivesTheWriteTimeout(t *testing.T) {
 	p := startServer(t, bin, storetest.DSN(t), catalogue.flag(), "--write-timeout=200ms")
 	p.waitReady(t)
 
-	match := regexp.MustCompile(`token=([A-Za-z0-9_-]{43})`).FindStringSubmatch(p.output())
-	if match == nil {
-		t.Fatalf("no bootstrap token in the logs:\n%s", p.output())
-	}
-	c, err := client.NewClientWithResponses("http://"+p.admin+"/api/v1",
+	token := p.addUser(t, "admin")
+	c, err := client.NewClientWithResponses("http://"+p.public+"/api/v1",
 		client.WithRequestEditorFn(func(_ context.Context, r *http.Request) error {
-			r.Header.Set("Authorization", "Bearer "+match[1])
+			r.Header.Set("Authorization", "Bearer "+token)
 			return nil
 		}))
 	if err != nil {
@@ -417,12 +422,13 @@ func TestSIGTERMShutsDownCleanly(t *testing.T) {
 	}
 }
 
-func TestRestartKeepsTheBootstrapToken(t *testing.T) {
+func TestRestartKeepsUsers(t *testing.T) {
 	bin := buildServer(t)
 	dsn := storetest.DSN(t)
 
 	first := startServer(t, bin, dsn)
 	first.waitReady(t)
+	token := first.addUser(t, "dave")
 	if err := first.cmd.Process.Signal(syscall.SIGTERM); err != nil {
 		t.Fatal(err)
 	}
@@ -430,7 +436,30 @@ func TestRestartKeepsTheBootstrapToken(t *testing.T) {
 
 	second := startServer(t, bin, dsn)
 	second.waitReady(t)
-	if strings.Contains(second.output(), "shown only this once") {
-		t.Errorf("a restart generated another token. Logs:\n%s", second.output())
+	if strings.Contains(second.output(), "no users yet") {
+		t.Errorf("the second start lost the user. Logs:\n%s", second.output())
+	}
+	st := storetest.Open(t, dsn)
+	if _, ok, err := st.AuthenticateAPIToken(context.Background(), token); err != nil || !ok {
+		t.Errorf("the token after a restart: %v, %v", ok, err)
+	}
+}
+
+func TestTheWrongSecretStopsTheServer(t *testing.T) {
+	bin := buildServer(t)
+	dsn := storetest.DSN(t)
+	first := startServer(t, bin, dsn)
+	first.waitReady(t)
+	if err := first.cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	<-first.waited
+
+	second := startServer(t, bin, dsn, "--secret="+strings.Repeat("x", 32))
+	if err := <-second.waited; err == nil {
+		t.Fatal("the server started with the wrong secret")
+	}
+	if !strings.Contains(second.output(), "--secret is not the one") {
+		t.Errorf("no clear message. Logs:\n%s", second.output())
 	}
 }

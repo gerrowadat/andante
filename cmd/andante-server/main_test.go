@@ -14,6 +14,8 @@ import (
 	"testing"
 
 	"github.com/gerrowadat/andante/internal/buildinfo"
+	"github.com/gerrowadat/andante/internal/seal"
+	"github.com/gerrowadat/andante/internal/store/storetest"
 )
 
 // exited carries the code kong passes to its exit function, which must stop
@@ -68,6 +70,7 @@ func TestUnreachableDatabaseFails(t *testing.T) {
 		"--base-url=https://andante.example",
 		"--catalogue-url=http://127.0.0.1:1/v1",
 		"--catalogue-token=token",
+		"--secret="+strings.Repeat("s", 32),
 		"--log-format=text",
 	)
 	if code != 1 {
@@ -119,5 +122,58 @@ func TestUnknownArgumentFails(t *testing.T) {
 	}
 	if stderr == "" {
 		t.Error("stderr is empty, want an error message")
+	}
+}
+
+func TestUserCommands(t *testing.T) {
+	dsn := storetest.DSN(t)
+	code, token, stderr := runCaptured(t, "user", "add", "dave", "--admin", "--database-url="+dsn)
+	if code != 0 || len(strings.TrimSpace(token)) != 43 {
+		t.Fatalf("user add: exit %d, %q, %q", code, token, stderr)
+	}
+	st := storetest.Open(t, dsn)
+	actor, ok, err := st.AuthenticateAPIToken(t.Context(), strings.TrimSpace(token))
+	if err != nil || !ok || !actor.Admin {
+		t.Errorf("the token: %+v, %v, %v", actor, ok, err)
+	}
+	if code, _, _ := runCaptured(t, "user", "add", "dave", "--database-url="+dsn); code != 1 {
+		t.Errorf("a second dave: exit %d", code)
+	}
+
+	code, fresh, _ := runCaptured(t, "user", "reset", "dave", "--database-url="+dsn)
+	if code != 0 {
+		t.Fatalf("user reset: exit %d", code)
+	}
+	if _, ok, _ := st.AuthenticateAPIToken(t.Context(), strings.TrimSpace(fresh)); !ok {
+		t.Error("the new token doesn't work")
+	}
+	if _, ok, _ := st.AuthenticateAPIToken(t.Context(), strings.TrimSpace(token)); ok {
+		t.Error("the old token survived a reset")
+	}
+}
+
+func TestRotateSecretCommand(t *testing.T) {
+	dsn := storetest.DSN(t)
+	st := storetest.Open(t, dsn)
+	if err := st.Migrate(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	first, second := strings.Repeat("a", 32), strings.Repeat("b", 32)
+	box, err := seal.New(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UseBox(t.Context(), box); err != nil {
+		t.Fatal(err)
+	}
+
+	if code, _, _ := runCaptured(t, "rotate-secret", "--database-url="+dsn, "--secret="+second, "--new-secret="+first); code != 1 {
+		t.Errorf("rotating from the wrong secret: exit %d", code)
+	}
+	if code, _, stderr := runCaptured(t, "rotate-secret", "--database-url="+dsn, "--secret="+first, "--new-secret="+second); code != 0 {
+		t.Errorf("rotating: exit %d, %q", code, stderr)
+	}
+	if code, _, stderr := runCaptured(t, "rotate-secret", "--database-url="+dsn, "--forget-urls", "--new-secret="+first); code != 0 {
+		t.Errorf("forgetting: exit %d, %q", code, stderr)
 	}
 }

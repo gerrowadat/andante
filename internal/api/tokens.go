@@ -37,7 +37,7 @@ func (h *handler) ListAPITokens(ctx context.Context, r gen.ListAPITokensRequestO
 	if err != nil {
 		return nil, err
 	}
-	rows, err := h.store.ListAPITokens(ctx, p.after, p.fetchLimit())
+	rows, err := h.store.ListAPITokens(ctx, actorOf(ctx), p.after, p.fetchLimit())
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +53,7 @@ func (h *handler) ListAPITokens(ctx context.Context, r gen.ListAPITokensRequestO
 }
 
 func (h *handler) CreateAPIToken(ctx context.Context, r gen.CreateAPITokenRequestObject) (gen.CreateAPITokenResponseObject, error) {
-	token, raw, err := h.store.CreateAPIToken(ctx, r.Body.Label)
+	token, raw, err := h.store.CreateAPIToken(ctx, actorOf(ctx), r.Body.Label)
 	if err != nil {
 		return nil, err
 	}
@@ -66,12 +66,12 @@ func (h *handler) CreateAPIToken(ctx context.Context, r gen.CreateAPITokenReques
 }
 
 func (h *handler) RevokeAPIToken(ctx context.Context, r gen.RevokeAPITokenRequestObject) (gen.RevokeAPITokenResponseObject, error) {
-	err := h.store.RevokeAPIToken(ctx, r.ID)
+	err := h.store.RevokeAPIToken(ctx, actorOf(ctx), r.ID)
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		return nil, notFound("API token", r.ID)
 	case errors.Is(err, store.ErrLastToken):
-		return nil, newProblem(http.StatusConflict, problemConflict, "this is the last active API token")
+		return nil, newProblem(http.StatusConflict, problemConflict, "this is your last active API token")
 	case err != nil:
 		return nil, err
 	}

@@ -12,23 +12,24 @@ run by hand.
 
 | Listener | Default | Carries | Who should reach it |
 |---|---|---|---|
-| Public | `:8080` | Feeds only | Feed readers, so the internet if you share feeds |
-| Admin | `127.0.0.1:8081` | The API, `/healthz`, `/readyz`, `/metrics` | You and Prometheus, and nobody else |
+| Public | `:8080` | Feeds and the API | Feed readers and the CLI |
+| Ops | `127.0.0.1:8081` | `/healthz`, `/readyz`, `/metrics` | Prometheus, and nobody else |
 | Catalogue | `127.0.0.1:8082` | Its private API, `/healthz`, `/readyz`, `/metrics` | `andante-server` and Prometheus |
 
-Keep the admin listener on loopback or a private network. Its API needs a token, but
-`/metrics` and the health endpoints don't.
+Keep the ops listener on loopback or a private network, because `/metrics` and the health endpoints
+have no auth. The API needs a token, but there's no rate limiting on it until the login work lands,
+so hold off on putting it on the open internet.
 
 Set `--base-url` to the address readers will use, because feed links are built from it.
 
-On first start with no `--admin-token`, the server generates a token and logs it once.
-Make others with `andante api-token`. [Configuration](configuration.md) has every setting.
+A new database has no users, so run `andante-server user add <name> --admin` for your first API token.
+[Configuration](configuration.md) has that and every other setting.
 
 ## Nomad
 
 See [running andante](running.md#with-nomad) for the job itself. One thing to be aware of:
-the job maps both ports onto the host, so limit who can reach the admin port with your
-cluster's firewall, or remove that mapping.
+the job maps all its ports onto the host, so limit who can reach the ops and catalogue ports with
+your cluster's firewall, or remove those mappings.
 
 ## Docker
 
@@ -48,13 +49,14 @@ docker run -d --name andante --network andante \
   -p 8080:8080 -p 127.0.0.1:8081:8081 \
   -e ANDANTE_DATABASE_URL='postgres://.../andante' \
   -e ANDANTE_BASE_URL=https://feeds.example.com \
-  -e ANDANTE_ADMIN_LISTEN=:8081 \
+  -e ANDANTE_OPS_LISTEN=:8081 \
+  -e ANDANTE_SECRET="$SECRET" \
   -e ANDANTE_CATALOGUE_URL=http://catalogue:8082/v1 \
   -e ANDANTE_CATALOGUE_TOKEN="$TOKEN" \
   ghcr.io/gerrowadat/andante:0.0.1
 ```
 
-Inside a container the admin listener has to bind to all interfaces to be published, so
+Inside a container the ops listener has to bind to all interfaces to be published, so
 `-p 127.0.0.1:` is the bit that keeps it private. The image holds the `andante` CLI too.
 
 ## Binary
@@ -65,7 +67,7 @@ Download an archive from the [releases page](https://github.com/gerrowadat/andan
 ```sh
 export ANDANTE_BASE_URL=https://feeds.example.com ANDANTE_CATALOGUE_TOKEN="$TOKEN"
 ANDANTE_CATALOGUE_DATABASE_URL='postgres://.../catalogue' ./andante-catalogue &
-ANDANTE_DATABASE_URL='postgres://.../andante' ANDANTE_CATALOGUE_URL=http://127.0.0.1:8082/v1 ./andante-server
+ANDANTE_DATABASE_URL='postgres://.../andante' ANDANTE_SECRET="$SECRET" ANDANTE_CATALOGUE_URL=http://127.0.0.1:8082/v1 ./andante-server
 ```
 
 ## Exposing Only the Feeds
@@ -89,8 +91,8 @@ ingress:
   - service: http_status:404
 ```
 
-Then set `--base-url` to whatever name you chose. Don't route anything to the admin
-listener. On a tailnet, reach it with `ANDANTE_URL=http://<host>:8081`.
+Then set `--base-url` to whatever name you chose. Don't route anything to the ops or catalogue
+listeners. Note that this publishes the API too.
 
 ## Backups
 
@@ -112,7 +114,7 @@ docker compose exec -T postgres pg_restore --clean --if-exists -U andante -d and
 docker compose exec -T postgres pg_restore --clean --if-exists -U andante -d catalogue < catalogue.dump
 ```
 
-Keep dumps private. Tokens are stored as hashes, but a dump still holds your reads and
-history. Restored feeds keep their item IDs and positions, because a read's position is
+Keep dumps private, and store `--secret` separately. Feed tokens in a dump are sealed with it, and
+with both, someone has your feed URLs. A dump without the secret still holds your reads and history. Restored feeds keep their item IDs and positions, because a read's position is
 computed from its stored history and the clock. Entries due while the server was down
 appear with the times they were due. See [reads](reads.md).

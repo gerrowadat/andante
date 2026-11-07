@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 Dave O'Connor
 
-// Command andante is the andante CLI. It talks to a server's admin API, through
+// Command andante is the andante CLI. It talks to a server's API, through
 // pkg/client, and nothing else.
 package main
 
@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	defaultURL     = "http://127.0.0.1:8081"
+	defaultURL     = "http://127.0.0.1:8080"
 	apiPath        = "/api/v1"
 	versionTimeout = 2 * time.Second
 
@@ -70,11 +70,11 @@ func newRootCmd(stdout, stderr io.Writer) *cobra.Command {
 	root.SetVersionTemplate("{{.Version}}\n")
 
 	flags := root.PersistentFlags()
-	flags.StringVar(&a.url, "url", envOr("ANDANTE_URL", defaultURL), "admin API address (ANDANTE_URL)")
+	flags.StringVar(&a.url, "url", envOr("ANDANTE_URL", defaultURL), "API address (ANDANTE_URL)")
 	flags.StringVar(&a.token, "token", os.Getenv("ANDANTE_TOKEN"), "API token (ANDANTE_TOKEN, which keeps it out of process listings)")
 	flags.StringVarP(&a.output, "output", "o", outputTable, "output: table, or json for the API's response unchanged")
 
-	root.AddCommand(a.versionCmd(), a.sourceCmd(), a.readCmd(), a.tokenCmd(), a.exportCmd(), a.importCmd(), a.apiTokenCmd(), a.apiCmd())
+	root.AddCommand(a.versionCmd(), a.whoamiCmd(), a.sourceCmd(), a.readCmd(), a.tokenCmd(), a.exportCmd(), a.importCmd(), a.apiTokenCmd(), a.apiCmd())
 	return root
 }
 
@@ -237,6 +237,23 @@ func (p *page) cursorParam() *client.Cursor {
 		return nil
 	}
 	return &p.cursor
+}
+
+func (a *app) whoamiCmd() *cobra.Command {
+	return operation(&cobra.Command{
+		Use:   "whoami",
+		Short: "Show who this token belongs to.",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			resp, err := a.client.GetMeWithResponse(cmd.Context())
+			if err != nil {
+				return err
+			}
+			return a.show(resp.StatusCode(), resp.Body, func(w *table) {
+				w.printf("Name:\t%s\nRole:\t%s\n", resp.JSON200.Name, resp.JSON200.Role)
+			})
+		},
+	}, "getMe")
 }
 
 func (a *app) versionCmd() *cobra.Command {

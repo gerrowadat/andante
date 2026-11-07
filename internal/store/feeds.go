@@ -14,19 +14,48 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// CreateFeedToken stores a new token and returns it with its raw value, which
-// exists nowhere else: only its hash is kept.
-func (s *Store) CreateFeedToken(ctx context.Context, readID int64, role, label string) (db.FeedToken, string, error) {
+// CreateFeedToken stores a new token on a read the actor can reach, and returns it
+// with its raw value. It's looked up by hash, and kept sealed so that its URL can be
+// shown again.
+func (s *Store) CreateFeedToken(ctx context.Context, actor Actor, readID int64, role, label string) (db.FeedToken, string, error) {
+	if _, err := s.GetRead(ctx, actor, readID); err != nil {
+		return db.FeedToken{}, "", err
+	}
 	raw, err := newToken()
 	if err != nil {
 		return db.FeedToken{}, "", err
 	}
+	if s.box == nil {
+		return db.FeedToken{}, "", errors.New("the store has no secret to seal tokens with")
+	}
+	sealed, err := s.box.Seal([]byte(raw), sealFeedToken)
+	if err != nil {
+		return db.FeedToken{}, "", err
+	}
 	hash := sha256.Sum256([]byte(raw))
-	token, err := s.queries.InsertFeedToken(ctx, db.InsertFeedTokenParams{ReadID: readID, TokenHash: hash[:], Role: role, Label: label})
+	token, err := s.queries.InsertFeedToken(ctx, db.InsertFeedTokenParams{
+		ReadID: readID, TokenHash: hash[:], TokenSealed: sealed, Role: role, Label: label,
+	})
 	if err != nil {
 		return db.FeedToken{}, "", fmt.Errorf("insert feed token: %w", translate(err))
 	}
 	return token, raw, nil
+}
+
+// RawFeedToken opens a token's sealed value. It returns "" if it has none, because
+// the secret was lost.
+func (s *Store) RawFeedToken(token db.FeedToken) (string, error) {
+	if token.TokenSealed == nil {
+		return "", nil
+	}
+	if s.box == nil {
+		return "", errors.New("the store has no secret to open tokens with")
+	}
+	raw, err := s.box.Open(token.TokenSealed, sealFeedToken)
+	if err != nil {
+		return "", fmt.Errorf("open feed token %d: %w", token.ID, err)
+	}
+	return string(raw), nil
 }
 
 // LookupFeedToken returns the active token raw stands for, or ErrNotFound.
@@ -54,9 +83,9 @@ func (s *Store) TouchFeedToken(ctx context.Context, id int64) error {
 }
 
 // ListFeedTokens returns up to limit of a read's tokens with IDs above after, or
-// ErrNotFound if the read does not exist.
-func (s *Store) ListFeedTokens(ctx context.Context, readID, after int64, limit int32) ([]db.FeedToken, error) {
-	if _, err := s.GetRead(ctx, readID); err != nil {
+// ErrNotFound if the actor can't reach the read.
+func (s *Store) ListFeedTokens(ctx context.Context, actor Actor, readID, after int64, limit int32) ([]db.FeedToken, error) {
+	if _, err := s.GetRead(ctx, actor, readID); err != nil {
 		return nil, err
 	}
 	tokens, err := s.queries.ListFeedTokens(ctx, db.ListFeedTokensParams{ReadID: readID, ID: after, Limit: limit})
@@ -66,9 +95,10 @@ func (s *Store) ListFeedTokens(ctx context.Context, readID, after int64, limit i
 	return tokens, nil
 }
 
-// RevokeFeedToken revokes a token. Revoking one already revoked succeeds.
-func (s *Store) RevokeFeedToken(ctx context.Context, id int64) error {
-	rows, err := s.queries.RevokeFeedToken(ctx, id)
+// RevokeFeedToken revokes a token on a read the actor can reach. Revoking one
+// already revoked succeeds.
+func (s *Store) RevokeFeedToken(ctx context.Context, actor Actor, id int64) error {
+	rows, err := s.queries.RevokeFeedToken(ctx, db.RevokeFeedTokenParams{ID: id, Anyone: actor.Admin, UserID: actor.UserID})
 	if err != nil {
 		return fmt.Errorf("revoke feed token %d: %w", id, err)
 	}

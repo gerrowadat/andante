@@ -1,6 +1,6 @@
 # Monitoring
 
-Everything here is on `andante-server`'s admin listener and on `andante-catalogue`'s listener. Scrape
+Everything here is on `andante-server`'s ops listener and on `andante-catalogue`'s listener. Scrape
 both.
 
 ## Health Endpoints

@@ -25,7 +25,7 @@ import (
 func testConfig() config.Config {
 	return config.Config{
 		Listen:            "127.0.0.1:0",
-		AdminListen:       "127.0.0.1:0",
+		OpsListen:         "127.0.0.1:0",
 		ReadHeaderTimeout: time.Second,
 		ReadTimeout:       5 * time.Second,
 		WriteTimeout:      5 * time.Second,
@@ -94,7 +94,7 @@ func alwaysReady(context.Context) error { return nil }
 
 func TestHealthz(t *testing.T) {
 	s, _ := start(t, testConfig(), func(context.Context) error { return errors.New("down") }, io.Discard)
-	if code, _ := get(t, "http://"+s.AdminAddr().String()+"/healthz"); code != http.StatusOK {
+	if code, _ := get(t, "http://"+s.OpsAddr().String()+"/healthz"); code != http.StatusOK {
 		t.Errorf("/healthz = %d, want 200 even when not ready", code)
 	}
 }
@@ -102,13 +102,13 @@ func TestHealthz(t *testing.T) {
 func TestReadyz(t *testing.T) {
 	t.Run("ready", func(t *testing.T) {
 		s, _ := start(t, testConfig(), alwaysReady, io.Discard)
-		if code, _ := get(t, "http://"+s.AdminAddr().String()+"/readyz"); code != http.StatusOK {
+		if code, _ := get(t, "http://"+s.OpsAddr().String()+"/readyz"); code != http.StatusOK {
 			t.Errorf("/readyz = %d, want 200", code)
 		}
 	})
 	t.Run("not ready", func(t *testing.T) {
 		s, _ := start(t, testConfig(), func(context.Context) error { return errors.New("secret detail") }, io.Discard)
-		code, body := get(t, "http://"+s.AdminAddr().String()+"/readyz")
+		code, body := get(t, "http://"+s.OpsAddr().String()+"/readyz")
 		if code != http.StatusServiceUnavailable {
 			t.Errorf("/readyz = %d, want 503", code)
 		}
@@ -123,7 +123,7 @@ func TestReadyz(t *testing.T) {
 			<-ctx.Done()
 			return ctx.Err()
 		}, io.Discard)
-		if code, _ := get(t, "http://"+s.AdminAddr().String()+"/readyz"); code != http.StatusServiceUnavailable {
+		if code, _ := get(t, "http://"+s.OpsAddr().String()+"/readyz"); code != http.StatusServiceUnavailable {
 			t.Errorf("/readyz = %d, want 503", code)
 		}
 	})
@@ -131,7 +131,7 @@ func TestReadyz(t *testing.T) {
 
 func TestMetrics(t *testing.T) {
 	s, _ := start(t, testConfig(), alwaysReady, io.Discard)
-	code, body := get(t, "http://"+s.AdminAddr().String()+"/metrics")
+	code, body := get(t, "http://"+s.OpsAddr().String()+"/metrics")
 	if code != http.StatusOK {
 		t.Fatalf("/metrics = %d, want 200", code)
 	}
@@ -146,7 +146,7 @@ func TestMetrics(t *testing.T) {
 	}
 }
 
-func TestAPIIsOnlyOnTheAdminListener(t *testing.T) {
+func TestTheAPIIsPublicAndOpsRoutesAreNot(t *testing.T) {
 	cfg := testConfig()
 	api := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusTeapot) })
 	s, err := New(cfg, Deps{Ready: alwaysReady, Registry: prometheus.NewRegistry(), Logger: slog.New(slog.DiscardHandler), API: api})
@@ -161,11 +161,16 @@ func TestAPIIsOnlyOnTheAdminListener(t *testing.T) {
 		<-done
 	})
 
-	if code, _ := get(t, "http://"+s.AdminAddr().String()+"/api/v1/sources"); code != http.StatusTeapot {
-		t.Errorf("admin /api/v1/sources = %d, want the API", code)
+	if code, _ := get(t, "http://"+s.PublicAddr().String()+"/api/v1/sources"); code != http.StatusTeapot {
+		t.Errorf("public /api/v1/sources = %d, want the API", code)
 	}
-	if code, _ := get(t, "http://"+s.PublicAddr().String()+"/api/v1/sources"); code != http.StatusNotFound {
-		t.Errorf("public /api/v1/sources = %d, want 404", code)
+	if code, _ := get(t, "http://"+s.OpsAddr().String()+"/api/v1/sources"); code != http.StatusNotFound {
+		t.Errorf("ops /api/v1/sources = %d, want 404", code)
+	}
+	for _, path := range []string{"/healthz", "/readyz", "/metrics"} {
+		if code, _ := get(t, "http://"+s.PublicAddr().String()+path); code != http.StatusNotFound {
+			t.Errorf("public %s = %d, want 404", path, code)
+		}
 	}
 }
 
@@ -190,7 +195,7 @@ func TestHandlersCanOutliveTheWriteTimeout(t *testing.T) {
 		cancel()
 		<-done
 	})
-	if code, body := get(t, "http://"+s.AdminAddr().String()+"/api/v1/probes"); code != http.StatusOK || body != "finished" {
+	if code, body := get(t, "http://"+s.PublicAddr().String()+"/api/v1/probes"); code != http.StatusOK || body != "finished" {
 		t.Errorf("got %d %q", code, body)
 	}
 }
@@ -208,7 +213,7 @@ func TestLogsNeverContainThePath(t *testing.T) {
 	var logs lockedBuffer
 	s, stop := start(t, testConfig(), alwaysReady, &logs)
 	get(t, "http://"+s.PublicAddr().String()+"/f/secret-feed-token.atom")
-	get(t, "http://"+s.AdminAddr().String()+"/healthz")
+	get(t, "http://"+s.OpsAddr().String()+"/healthz")
 	if err := stop(); err != nil {
 		t.Fatal(err)
 	}
@@ -258,7 +263,7 @@ func TestShutdownFinishesInFlightRequests(t *testing.T) {
 
 	result := make(chan int, 1)
 	go func() {
-		resp, err := http.Get("http://" + s.AdminAddr().String() + "/readyz")
+		resp, err := http.Get("http://" + s.OpsAddr().String() + "/readyz")
 		if err != nil {
 			t.Error(err)
 			result <- 0
@@ -298,7 +303,7 @@ func TestShutdownTimesOut(t *testing.T) {
 		return nil
 	}, io.Discard)
 	go func() {
-		if resp, err := http.Get("http://" + s.AdminAddr().String() + "/readyz"); err == nil {
+		if resp, err := http.Get("http://" + s.OpsAddr().String() + "/readyz"); err == nil {
 			_ = resp.Body.Close()
 		}
 	}()
@@ -313,7 +318,7 @@ func TestNewFailsWhenAListenerCannotBind(t *testing.T) {
 	taken := s.PublicAddr().String()
 	for name, mutate := range map[string]func(*config.Config){
 		"public": func(c *config.Config) { c.Listen = taken },
-		"admin":  func(c *config.Config) { c.AdminListen = taken },
+		"ops":    func(c *config.Config) { c.OpsListen = taken },
 	} {
 		t.Run(name, func(t *testing.T) {
 			cfg := testConfig()

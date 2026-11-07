@@ -51,7 +51,7 @@ database.
 
 ## The API Is the Only Way In
 
-The admin API, described by an OpenAPI document, is the single interface for changing state.
+The API, described by an OpenAPI document, is the single interface for changing state.
 The CLI is a client of it, and so will any UI be. Nothing writes config by reaching into the
 database. Within a major version the API only grows, and CI enforces this.
 
@@ -88,7 +88,7 @@ If one of these turns out to be wrong for andante, the deviation and the reasoni
 
 ## Small, and Extensible at the Seams
 
-v1 is small on purpose: no comments, no accounts, no UI beyond what the CLI needs. It grows at
+v1 is small on purpose: no comments, and accounts only so that people can have their own reads. It grows at
 named seams instead: discovery strategies (`Strategy`), page extraction (`Extractor`), entry
 kinds (`page`, `episode`, `article`), pacing modes (`rrule`, `replay`), feed item content
 (`Decorator`), output formats, and per-read options (`reads.config jsonb`). A new feature

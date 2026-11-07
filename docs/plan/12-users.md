@@ -18,8 +18,7 @@ Everything people own belongs to a user, and the CLI works as a user.
   A command to re-encrypt.
 - Update the CLI and its docs.
 
-The contract changes on purpose, so `scripts/spec-diff.sh` needs a one-off exception, removed in the
-same PR. The additive-only rule applies again from then on.
+This turned out to be additive, so `spec-diff` needed no exception.
 
 ## Out of Scope
 

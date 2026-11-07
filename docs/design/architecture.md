@@ -10,12 +10,15 @@ There are two services, and each has its own database, migrations, OpenAPI docum
 so a cross-service join can't happen by accident.
 
 ```
-              ┌──────────── admin listener (tailnet) ───────────┐
- andante CLI ─┤  /api/v1/*   /healthz  /readyz  /metrics        │
- (pkg/client) └──────────────────────┬──────────────────────────┘
+              ┌──────────── public listener ────────────────────┐
+ andante CLI ─┤  /api/v1/*   (needs a token)                    │
+ (pkg/client) │                                                 │
+ feed readers ┤  GET /f/{token}.atom  .rss  .json               │
+              │  GET|POST /f/{token}/next   (owner tokens only) │
+              └──────────────────────┬──────────────────────────┘
                                      │
                      ┌───────── andante-server ─────────┐
-                     │ reads, segments, tokens          │
+                     │ users, reads, segments, tokens   │
                      │ schedule (pure maths), feed      │
                      │ copy of sources and entries      │──▶ Postgres: andante
                      └───┬─────────────────────┬────────┘
@@ -24,22 +27,19 @@ so a cross-service join can't happen by accident.
         ┌── andante-catalogue ──┐              │
         │ sources, entries      │              │
         │ crawling, discovery   │──▶ Postgres: catalogue
-        └───────────────────────┘              │
-                                               │
-              ┌──────────── public listener ───┴────────────────┐
- feed readers ┤  GET /f/{token}.atom  .rss  .json               │
-              │  GET|POST /f/{token}/next   (owner tokens only) │
-              └─────────────────────────────────────────────────┘
+        └───────────────────────┘
+
+ Prometheus ── ops listener: /healthz  /readyz  /metrics
 ```
 
 - **andante-catalogue** is the infrastructure. It holds sources and entries, and does all the
   talking to other people's websites. It has never heard of a user or a read. Its API is private,
   with one service token, and only `andante-server` calls it. The crawl loop takes a Postgres
   advisory lock, so a second replica doesn't crawl.
-- **andante-server** is everything a person touches: reads, tokens, feeds, and the API the CLI
-  uses. It's one process with both listeners, plus the sync in a goroutine. One replica is the
+- **andante-server** is everything a person touches: users, reads, tokens, feeds, and the API the
+  CLI uses. It's one process with both listeners, plus the sync in a goroutine. One replica is the
   supported deployment.
-- **andante** (CLI) is a separate binary that only talks HTTP to the admin API through the
+- **andante** (CLI) is a separate binary that only talks HTTP to the API through the
   generated client in `pkg/client`.
 
 ## How the Services Talk
@@ -91,12 +91,28 @@ The sync retries from 250ms, doubling up to 30s. A deleted source with a read st
 The catalogue refuses to delete a source with demand, so that takes a race, and a read shouldn't pay
 for it.
 
+## Users
+
+Sources are shared and reads are private. A read has a `user_id` with a foreign key, and every store
+method that reaches a read takes a `store.Actor`, so there's no way to fetch one without saying whose
+it is. Someone else's is `ErrNotFound`. An admin's actor reaches anything. `store.Holder` is the same
+thing for code that's already established the right, such as a feed request with a valid token, and
+it's never for anything a user asked for by ID.
+
+Feed tokens get their owner from their read, and API tokens have a `user_id`. Every route that takes
+an ID is covered by a test that walks the OpenAPI document, so a new one fails until it's listed.
+
+A feed token is looked up by its hash, and a copy is sealed with AES-256-GCM under `--secret` so that
+its URL can be shown again. If someone gets the database and the secret, they get the feed URLs. A
+feed URL only reads a feed and, for an owner token, releases the next entry, and I think that's a
+fair trade for not making people subscribe again. A sealed check value in the database means the
+server refuses to start with the wrong secret.
+
 ## Configuration
 
 Bootstrap only, through flags with environment variable counterparts (kong).
 [`configuration.md`](../configuration.md) lists them. Every timing parameter is a flag.
-On first start with no API tokens in the database and no `--admin-token`, the server
-generates one, stores its hash and logs it once.
+Users come from `andante-server user add`, which prints an API token.
 
 Migrations are embedded (goose + `embed.FS`) and run on start under a Postgres advisory
 lock.
@@ -215,7 +231,7 @@ never stored or recoverable; that is why an OPML export issues new tokens.
 ## Admin API (v1)
 
 OpenAPI 3.1 document at `api/openapi.yaml`, served at
-`GET /api/v1/openapi.json` on the admin listener. Server interface and client are
+`GET /api/v1/openapi.json`. Server interface and client are
 generated with oapi-codegen (std-http server, strict mode). Errors are RFC 9457
 problem details. Lists use opaque cursors (`?cursor=…&limit=…`) with a `next`
 link in the body and a `Link` header. `PATCH` takes a JSON merge patch (RFC 7396).
@@ -272,6 +288,15 @@ label. Tokens and read IDs are never labels.
 
 ## Where This Diverged From the Proposal
 
+- **Feed tokens have no `user_id`.** The proposal gave them one, but they get it from their read, so
+  the two can't disagree.
+- **`/api/v1` didn't need a new contract.** The proposal expected a rewrite and a one-off exception to
+  `spec-diff`, but users turned out to be additive: `GET /me`, `user_id` on reads, `?all`, `?q`, `?kind`
+  and `urls` on feed tokens. What changed is who a call applies to, which a spec can't express.
+- **The API moved to the public listener,** and the admin listener became ops, with only health and
+  metrics. Every API route needs a token, so the listener that has none is the one kept private.
+- **`--admin-token` went.** A first token in an env var is a secret that can't be rotated, and it only
+  existed because there were no users.
 - **The catalogue API is smaller than proposed.** The server reads sources from its copy, so
   there's no `GET /sources` or `GET /sources/{id}`. `wait` is in seconds, and clearing demand is a
   `DELETE`.
@@ -286,8 +311,6 @@ label. Tokens and read IDs are never labels.
   counts the entries released at the start, so it could not say where a read began.
 - **`sources.due_at` means "forced" when set,** and not simply the next crawl. See
   [`discovery.md`](discovery.md).
-- **The admin listener defaults to loopback,** rather than assuming a tailnet. Where it
-  is reachable from is a deployment choice. See [`deploying.md`](../deploying.md).
 - **`GET /api/v1/version` and `andante_build_info` were added,** so that a client and an
   operator can both tell what is running.
 - **`--test-clock-offset` was added** for the end-to-end suite, which runs the real

@@ -169,16 +169,28 @@ func (q *Queries) ListSourceIDs(ctx context.Context) ([]int64, error) {
 }
 
 const listSources = `-- name: ListSources :many
-SELECT id, slug, title, home_url, default_kind, image_url, extra, strategy, config, state, due_at, last_crawled_at, last_error, created_at FROM sources WHERE id > $1 ORDER BY id LIMIT $2
+SELECT id, slug, title, home_url, default_kind, image_url, extra, strategy, config, state, due_at, last_crawled_at, last_error, created_at FROM sources
+WHERE id > $1
+  AND ($2::text = '' OR title ILIKE '%' || $2 || '%' OR slug ILIKE '%' || $2 || '%')
+  AND ($3::text = '' OR default_kind = $3)
+ORDER BY id LIMIT $4
 `
 
 type ListSourcesParams struct {
-	ID    int64
-	Limit int32
+	After    int64
+	Q        string
+	Kind     string
+	PageSize int32
 }
 
+// An empty q or kind matches everything.
 func (q *Queries) ListSources(ctx context.Context, arg ListSourcesParams) ([]Source, error) {
-	rows, err := q.db.Query(ctx, listSources, arg.ID, arg.Limit)
+	rows, err := q.db.Query(ctx, listSources,
+		arg.After,
+		arg.Q,
+		arg.Kind,
+		arg.PageSize,
+	)
 	if err != nil {
 		return nil, err
 	}

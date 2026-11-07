@@ -52,8 +52,24 @@ CREATE TABLE sync_state (
 );
 INSERT INTO sync_state (revision) VALUES (0);
 
+CREATE TABLE users (
+    id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    name        text UNIQUE NOT NULL,
+    role        text NOT NULL,
+    created_at  timestamptz NOT NULL DEFAULT now(),
+    disabled_at timestamptz
+);
+
+-- Sealed with --secret, so that starting with the wrong one fails at once and not
+-- when someone asks for a feed URL.
+CREATE TABLE secret_check (
+    only_row boolean PRIMARY KEY DEFAULT true CHECK (only_row),
+    sealed   bytea NOT NULL
+);
+
 CREATE TABLE reads (
     id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    user_id    bigint NOT NULL REFERENCES users,
     source_id  bigint NOT NULL REFERENCES sources,
     name       text NOT NULL,
     start_seq  integer NOT NULL DEFAULT 0,
@@ -86,6 +102,9 @@ CREATE TABLE feed_tokens (
     id           bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     read_id      bigint NOT NULL REFERENCES reads ON DELETE CASCADE,
     token_hash   bytea UNIQUE NOT NULL,
+    -- The raw token, sealed with --secret, so that its URL can be shown again. Null
+    -- if the secret was lost: the token still works, but nobody can show it.
+    token_sealed bytea,
     role         text NOT NULL,
     label        text NOT NULL,
     created_at   timestamptz NOT NULL DEFAULT now(),
@@ -95,6 +114,7 @@ CREATE TABLE feed_tokens (
 
 CREATE TABLE api_tokens (
     id           bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    user_id      bigint NOT NULL REFERENCES users,
     token_hash   bytea UNIQUE NOT NULL,
     label        text NOT NULL,
     created_at   timestamptz NOT NULL DEFAULT now(),
@@ -107,6 +127,8 @@ DROP TABLE api_tokens;
 DROP TABLE feed_tokens;
 DROP TABLE read_segments;
 DROP TABLE reads;
+DROP TABLE secret_check;
+DROP TABLE users;
 DROP TABLE sync_state;
 DROP TABLE entries;
 DROP TABLE sources;

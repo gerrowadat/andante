@@ -22,6 +22,7 @@ import (
 	"github.com/gerrowadat/andante/internal/discovery/sitetest"
 	"github.com/gerrowadat/andante/internal/stacktest"
 	"github.com/gerrowadat/andante/internal/store"
+	"github.com/gerrowadat/andante/internal/store/storetest"
 	"github.com/gerrowadat/andante/pkg/client"
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/spf13/cobra"
@@ -38,10 +39,7 @@ func newHarness(t *testing.T) *harness {
 	t.Helper()
 	stack := stacktest.New(t)
 	st := stack.Store
-	_, token, err := st.CreateAPIToken(t.Context(), "bootstrap")
-	if err != nil {
-		t.Fatal(err)
-	}
+	_, token := storetest.User(t, st, "admin", true)
 	return &harness{url: stack.URL, token: token, store: st}
 }
 
@@ -86,9 +84,12 @@ func (h *harness) comic(t *testing.T) {
 
 var timestamp = regexp.MustCompile(`\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(Z|[+-]\d{2}:\d{2})`)
 
+var feedURL = regexp.MustCompile(`/f/[A-Za-z0-9_-]{43}`)
+
 func golden(t *testing.T, name, got string) {
 	t.Helper()
 	got = timestamp.ReplaceAllString(got, "<time>")
+	got = feedURL.ReplaceAllString(got, "/f/<token>")
 	path := filepath.Join("testdata", "golden", name)
 	if *update {
 		if err := os.WriteFile(path, []byte(got), 0o600); err != nil {
@@ -630,5 +631,13 @@ func TestHelpMentionsEveryCommand(t *testing.T) {
 		if !strings.Contains(r.stdout, name) {
 			t.Errorf("no %s in help", name)
 		}
+	}
+}
+
+func TestWhoAmI(t *testing.T) {
+	h := newHarness(t)
+	got := h.ok(t, "whoami")
+	if !strings.Contains(got, "admin") {
+		t.Errorf("whoami = %s", got)
 	}
 }
