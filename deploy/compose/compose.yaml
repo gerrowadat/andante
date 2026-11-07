@@ -48,16 +48,14 @@ services:
     environment:
       ANDANTE_DATABASE_URL: postgres://andante:${POSTGRES_PASSWORD}@postgres:5432/andante?sslmode=disable
       ANDANTE_BASE_URL: ${ANDANTE_BASE_URL:?set it in .env}
-      ANDANTE_ADMIN_LISTEN: :8081
-      ANDANTE_ADMIN_TOKEN: ${ANDANTE_ADMIN_TOKEN:?set it in .env}
+      ANDANTE_OPS_LISTEN: :8081
+      ANDANTE_SECRET: ${ANDANTE_SECRET:?set it in .env}
       ANDANTE_CATALOGUE_URL: http://catalogue:8082/v1
       ANDANTE_CATALOGUE_TOKEN: ${ANDANTE_CATALOGUE_TOKEN:?set it in .env}
-      # For the CLI inside the container, so that docker compose exec just works.
-      ANDANTE_TOKEN: ${ANDANTE_ADMIN_TOKEN}
     ports:
       - ${ANDANTE_PUBLIC_PORT:-8080}:8080
-      # Loopback only. This port is the API, and /metrics has no auth.
-      - 127.0.0.1:${ANDANTE_ADMIN_PORT:-8081}:8081
+      # Loopback only. /metrics and the health checks have no auth.
+      - 127.0.0.1:${ANDANTE_OPS_PORT:-8081}:8081
 
 volumes:
   postgres-data:

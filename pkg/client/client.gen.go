@@ -410,6 +410,24 @@ func (e SourcePatchState) Valid() bool {
 	}
 }
 
+// Defines values for UserRole.
+const (
+	UserRoleAdmin UserRole = "admin"
+	UserRoleUser  UserRole = "user"
+)
+
+// Valid indicates whether the value is a known member of the UserRole enum.
+func (e UserRole) Valid() bool {
+	switch e {
+	case UserRoleAdmin:
+		return true
+	case UserRoleUser:
+		return true
+	default:
+		return false
+	}
+}
+
 // APIToken defines model for APIToken.
 type APIToken struct {
 	CreatedAt  time.Time                    `json:"created_at"`
@@ -531,6 +549,9 @@ type FeedToken struct {
 	ReadID     int64                        `json:"read_id"`
 	RevokedAt  nullable.Nullable[time.Time] `json:"revoked_at,omitempty"`
 	Role       Role                         `json:"role"`
+
+	// Urls The token's feed URLs. Left out of a list if the token is revoked, or the secret it was sealed with was lost.
+	Urls *FeedURLs `json:"urls,omitempty"`
 }
 
 // FeedTokenCreate defines model for FeedTokenCreate.
@@ -545,6 +566,13 @@ type FeedTokenList struct {
 
 	// Next The next page, or null on the last one.
 	Next nullable.Nullable[NextLink] `json:"next"`
+}
+
+// FeedURLs The token's feed URLs. Left out of a list if the token is revoked, or the secret it was sealed with was lost.
+type FeedURLs struct {
+	Atom string `json:"atom"`
+	JSON string `json:"json"`
+	Rss  string `json:"rss"`
 }
 
 // FieldError defines model for FieldError.
@@ -574,13 +602,11 @@ type IssuedFeedToken struct {
 	Role      Role                     `json:"role"`
 	Suggested IssuedFeedTokenSuggested `json:"suggested"`
 
-	// Token The raw token, shown only here.
+	// Token The raw token.
 	Token string `json:"token"`
-	Urls  struct {
-		Atom string `json:"atom"`
-		JSON string `json:"json"`
-		Rss  string `json:"rss"`
-	} `json:"urls"`
+
+	// Urls The token's feed URLs. Left out of a list if the token is revoked, or the secret it was sealed with was lost.
+	Urls FeedURLs `json:"urls"`
 }
 
 // IssuedFeedTokenSuggested defines model for IssuedFeedToken.Suggested.
@@ -752,6 +778,7 @@ type Read struct {
 	Position int32     `json:"position"`
 	SourceID int64     `json:"source_id"`
 	State    ReadState `json:"state"`
+	UserID   int64     `json:"user_id"`
 }
 
 // ReadState defines model for Read.State.
@@ -916,6 +943,17 @@ type SourcePatch struct {
 // SourcePatchState defines model for SourcePatch.State.
 type SourcePatchState string
 
+// User defines model for User.
+type User struct {
+	CreatedAt time.Time `json:"created_at"`
+	ID        int64     `json:"id"`
+	Name      string    `json:"name"`
+	Role      UserRole  `json:"role"`
+}
+
+// UserRole defines model for User.Role.
+type UserRole string
+
 // Version defines model for Version.
 type Version struct {
 	Commit  string `json:"commit"`
@@ -948,6 +986,9 @@ type ListReadsParams struct {
 
 	// Limit The most items to return.
 	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// All Admins only. Everyone's reads, not just your own.
+	All *bool `form:"all,omitempty" json:"all,omitempty"`
 }
 
 // ListSegmentsParams defines parameters for ListSegments.
@@ -975,6 +1016,12 @@ type ListSourcesParams struct {
 
 	// Limit The most items to return.
 	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Q Only sources with this in their title or slug.
+	Q *string `form:"q,omitempty" json:"q,omitempty"`
+
+	// Kind Only sources of this kind.
+	Kind *Kind `form:"kind,omitempty" json:"kind,omitempty"`
 }
 
 // ListEntriesParams defines parameters for ListEntries.
@@ -1665,6 +1712,13 @@ type ClientInterface interface {
 	// Corresponds with POST /imports/opml (the `ImportOPML` operationId).
 	ImportOPMLWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetMe Who this token belongs to
+	//
+	// Returns the user the API token belongs to.
+	//
+	// Corresponds with GET /me (the `GetMe` operationId).
+	GetMe(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetSpec Get this document
 	//
 	// Returns this OpenAPI document as JSON. Needs no token.
@@ -1774,7 +1828,7 @@ type ClientInterface interface {
 
 	// ListFeedTokens List a read's feed tokens
 	//
-	// Lists the read's feed tokens. Raw tokens are never returned.
+	// Lists the read's feed tokens, with their URLs.
 	//
 	// Corresponds with GET /reads/{id}/tokens (the `ListFeedTokens` operationId).
 	ListFeedTokens(ctx context.Context, id ID, params *ListFeedTokensParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1799,7 +1853,7 @@ type ClientInterface interface {
 
 	// ListSources List sources
 	//
-	// Lists every source, oldest first.
+	// Lists every source, oldest first. Sources are shared by all users.
 	//
 	// Corresponds with GET /sources (the `ListSources` operationId).
 	ListSources(ctx context.Context, params *ListSourcesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -2002,6 +2056,23 @@ func (c *Client) ExportOPML(ctx context.Context, body ExportOPMLJSONRequestBody,
 // Corresponds with POST /imports/opml (the `ImportOPML` operationId).
 func (c *Client) ImportOPMLWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewImportOPMLRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetMe Who this token belongs to
+//
+// Returns the user the API token belongs to.
+//
+// Corresponds with GET /me (the `GetMe` operationId).
+func (c *Client) GetMe(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetMeRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -2251,7 +2322,7 @@ func (c *Client) ListSegments(ctx context.Context, id ID, params *ListSegmentsPa
 
 // ListFeedTokens List a read's feed tokens
 //
-// Lists the read's feed tokens. Raw tokens are never returned.
+// Lists the read's feed tokens, with their URLs.
 //
 // Corresponds with GET /reads/{id}/tokens (the `ListFeedTokens` operationId).
 func (c *Client) ListFeedTokens(ctx context.Context, id ID, params *ListFeedTokensParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -2306,7 +2377,7 @@ func (c *Client) CreateFeedToken(ctx context.Context, id ID, body CreateFeedToke
 
 // ListSources List sources
 //
-// Lists every source, oldest first.
+// Lists every source, oldest first. Sources are shared by all users.
 //
 // Corresponds with GET /sources (the `ListSources` operationId).
 func (c *Client) ListSources(ctx context.Context, params *ListSourcesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -2708,6 +2779,33 @@ func NewImportOPMLRequestWithBody(server string, contentType string, body io.Rea
 	return req, nil
 }
 
+// NewGetMeRequest constructs an http.Request for the GetMe method
+func NewGetMeRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/me")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetSpecRequest constructs an http.Request for the GetSpec method
 func NewGetSpecRequest(server string) (*http.Request, error) {
 	var err error
@@ -2818,6 +2916,18 @@ func NewListReadsRequest(server string, params *ListReadsParams) (*http.Request,
 		if params.Limit != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.All != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "all", *params.All, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -3288,6 +3398,30 @@ func NewListSourcesRequest(server string, params *ListSourcesParams) (*http.Requ
 
 		}
 
+		if params.Q != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "q", *params.Q, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Kind != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "kind", *params.Kind, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if encoded := queryValues.Encode(); encoded != "" {
 			rawQueryFragments = append(rawQueryFragments, encoded)
 		}
@@ -3732,6 +3866,15 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /imports/opml (the `ImportOPML` operationId).
 	ImportOPMLWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ImportOPMLResponse, error)
 
+	// GetMeWithResponse Who this token belongs to
+	//
+	// Returns the user the API token belongs to.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /me (the `GetMe` operationId).
+	GetMeWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetMeResponse, error)
+
 	// GetSpecWithResponse Get this document
 	//
 	// Returns this OpenAPI document as JSON. Needs no token.
@@ -3851,7 +3994,7 @@ type ClientWithResponsesInterface interface {
 
 	// ListFeedTokensWithResponse List a read's feed tokens
 	//
-	// Lists the read's feed tokens. Raw tokens are never returned.
+	// Lists the read's feed tokens, with their URLs.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -3878,7 +4021,7 @@ type ClientWithResponsesInterface interface {
 
 	// ListSourcesWithResponse List sources
 	//
-	// Lists every source, oldest first.
+	// Lists every source, oldest first. Sources are shared by all users.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -4203,6 +4346,54 @@ func (r ImportOPMLResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r ImportOPMLResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetMeResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *User
+	// ApplicationProblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationProblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetMeResponse) GetJSON200() *User {
+	return r.JSON200
+}
+
+// GetApplicationProblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r GetMeResponse) GetApplicationProblemJSONDefault() *Problem {
+	return r.ApplicationProblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetMeResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetMeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetMeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetMeResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -5281,6 +5472,21 @@ func (c *ClientWithResponses) ImportOPMLWithBodyWithResponse(ctx context.Context
 	return ParseImportOPMLResponse(rsp)
 }
 
+// GetMeWithResponse Who this token belongs to
+//
+// Returns the user the API token belongs to.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /me (the `GetMe` operationId).
+func (c *ClientWithResponses) GetMeWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetMeResponse, error) {
+	rsp, err := c.GetMe(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetMeResponse(rsp)
+}
+
 // GetSpecWithResponse Get this document
 //
 // Returns this OpenAPI document as JSON. Needs no token.
@@ -5478,7 +5684,7 @@ func (c *ClientWithResponses) ListSegmentsWithResponse(ctx context.Context, id I
 
 // ListFeedTokensWithResponse List a read's feed tokens
 //
-// Lists the read's feed tokens. Raw tokens are never returned.
+// Lists the read's feed tokens, with their URLs.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -5523,7 +5729,7 @@ func (c *ClientWithResponses) CreateFeedTokenWithResponse(ctx context.Context, i
 
 // ListSourcesWithResponse List sources
 //
-// Lists every source, oldest first.
+// Lists every source, oldest first. Sources are shared by all users.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -5836,6 +6042,39 @@ func ParseImportOPMLResponse(rsp *http.Response) (*ImportOPMLResponse, error) {
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest OPMLImportResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationProblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetMeResponse parses an HTTP response from a GetMeWithResponse call
+func ParseGetMeResponse(rsp *http.Response) (*GetMeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetMeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest User
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

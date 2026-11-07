@@ -18,6 +18,7 @@ const (
 	TypeInvalidRead    = typeBase + "invalid-read"
 	TypeConflict       = typeBase + "conflict"
 	TypeProbeFailed    = typeBase + "probe-failed"
+	TypeForbidden      = typeBase + "forbidden"
 	TypeUnauthorized   = typeBase + "unauthorized"
 	TypeCatalogueDown  = typeBase + "catalogue-unavailable"
 	TypeBlank          = "about:blank"

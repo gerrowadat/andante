@@ -29,18 +29,19 @@ type Deps struct {
 	Ready    ReadyFunc
 	Registry *prometheus.Registry
 	Logger   *slog.Logger
-	// API is the admin API, mounted at api.BasePath. It may be nil.
+	// API is mounted at api.BasePath on the public listener. It may be nil.
 	API http.Handler
-	// Public serves the public listener. With none, it answers 404.
+	// Public serves the rest of the public listener. With none, it answers 404.
 	Public http.Handler
 }
 
-// Server holds andante's two listeners. Admin routes are only ever mounted on
-// the admin listener.
+// Server holds andante's two listeners. The public one has the feeds and the API,
+// which needs a token. Health and metrics have no auth, so they're only ever on the
+// ops listener.
 type Server struct {
-	logger        *slog.Logger
-	cfg           config.Config
-	public, admin *listener
+	logger      *slog.Logger
+	cfg         config.Config
+	public, ops *listener
 }
 
 type listener struct {
@@ -55,16 +56,22 @@ func New(cfg config.Config, deps Deps) (*Server, error) {
 	if deps.Public != nil {
 		publicHandler = deps.Public
 	}
+	if deps.API != nil {
+		mux := http.NewServeMux()
+		mux.Handle("/", publicHandler)
+		mux.Handle(api.BasePath+"/", deps.API)
+		publicHandler = mux
+	}
 	public, err := newListener(cfg, cfg.Listen, publicHandler, logger)
 	if err != nil {
 		return nil, fmt.Errorf("public listener: %w", err)
 	}
-	admin, err := newListener(cfg, cfg.AdminListen, adminMux(cfg, deps), logger)
+	ops, err := newListener(cfg, cfg.OpsListen, opsMux(cfg, deps), logger)
 	if err != nil {
 		_ = public.net.Close()
-		return nil, fmt.Errorf("admin listener: %w", err)
+		return nil, fmt.Errorf("ops listener: %w", err)
 	}
-	return &Server{logger: logger, cfg: cfg, public: public, admin: admin}, nil
+	return &Server{logger: logger, cfg: cfg, public: public, ops: ops}, nil
 }
 
 func newListener(cfg config.Config, addr string, handler http.Handler, logger *slog.Logger) (*listener, error) {
@@ -81,7 +88,7 @@ func newListener(cfg config.Config, addr string, handler http.Handler, logger *s
 	}}, nil
 }
 
-func adminMux(cfg config.Config, deps Deps) *http.ServeMux {
+func opsMux(cfg config.Config, deps Deps) *http.ServeMux {
 	reg := deps.Registry
 	reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 	promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
@@ -104,30 +111,27 @@ func adminMux(cfg config.Config, deps Deps) *http.ServeMux {
 		_, _ = fmt.Fprintln(w, "ok")
 	})
 	mux.Handle("GET /metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
-	if deps.API != nil {
-		mux.Handle(api.BasePath+"/", deps.API)
-	}
 	return mux
 }
 
 // PublicAddr returns the address the public listener is bound to.
 func (s *Server) PublicAddr() net.Addr { return s.public.net.Addr() }
 
-// AdminAddr returns the address the admin listener is bound to.
-func (s *Server) AdminAddr() net.Addr { return s.admin.net.Addr() }
+// OpsAddr returns the address the ops listener is bound to.
+func (s *Server) OpsAddr() net.Addr { return s.ops.net.Addr() }
 
 // Run serves until ctx ends or a listener fails, then shuts down gracefully.
 func (s *Server) Run(ctx context.Context) error {
 	var wg sync.WaitGroup
 	failed := make(chan error, 2)
-	for _, l := range []*listener{s.public, s.admin} {
+	for _, l := range []*listener{s.public, s.ops} {
 		wg.Go(func() {
 			if err := l.http.Serve(l.net); !errors.Is(err, http.ErrServerClosed) {
 				failed <- err
 			}
 		})
 	}
-	s.logger.Info("listening", "public", s.PublicAddr().String(), "admin", s.AdminAddr().String())
+	s.logger.Info("listening", "public", s.PublicAddr().String(), "ops", s.OpsAddr().String())
 
 	var serveErr error
 	select {
@@ -138,7 +142,7 @@ func (s *Server) Run(ctx context.Context) error {
 	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), s.cfg.ShutdownTimeout)
 	defer cancel()
 	s.logger.Info("shutting down")
-	err := errors.Join(serveErr, s.public.http.Shutdown(shutdownCtx), s.admin.http.Shutdown(shutdownCtx))
+	err := errors.Join(serveErr, s.public.http.Shutdown(shutdownCtx), s.ops.http.Shutdown(shutdownCtx))
 	wg.Wait()
 	return err
 }

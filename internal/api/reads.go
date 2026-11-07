@@ -126,6 +126,7 @@ func readToAPI(v reads.View) (client.Read, error) {
 	}
 	read := client.Read{
 		ID:            v.Read.ID,
+		UserID:        v.Read.UserID,
 		SourceID:      v.Read.SourceID,
 		Name:          v.Read.Name,
 		CatchUp:       client.CatchUp(v.Read.CatchUp),
@@ -155,7 +156,7 @@ func (h *handler) ListReads(ctx context.Context, r gen.ListReadsRequestObject) (
 	if err != nil {
 		return nil, err
 	}
-	views, err := h.reads.List(ctx, p.after, p.fetchLimit())
+	views, err := h.reads.List(ctx, actorOf(ctx), r.Params.All != nil && *r.Params.All, p.after, p.fetchLimit())
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +176,7 @@ func (h *handler) CreateRead(ctx context.Context, r gen.CreateReadRequestObject)
 	if err != nil {
 		return nil, readError(0, err)
 	}
-	params := reads.CreateParams{SourceID: r.Body.SourceID, Name: r.Body.Name, Pacing: pacing, Initial: 1}
+	params := reads.CreateParams{UserID: actorOf(ctx).UserID, SourceID: r.Body.SourceID, Name: r.Body.Name, Pacing: pacing, Initial: 1}
 	if r.Body.StartSeq != nil {
 		start := int(*r.Body.StartSeq)
 		params.StartSeq = &start
@@ -207,7 +208,7 @@ func (h *handler) CreateRead(ctx context.Context, r gen.CreateReadRequestObject)
 }
 
 func (h *handler) GetRead(ctx context.Context, r gen.GetReadRequestObject) (gen.GetReadResponseObject, error) {
-	found, err := h.reads.Get(ctx, r.ID)
+	found, err := h.reads.Get(ctx, actorOf(ctx), r.ID)
 	if err != nil {
 		return nil, readError(r.ID, err)
 	}
@@ -234,7 +235,7 @@ func (h *handler) UpdateRead(ctx context.Context, r gen.UpdateReadRequestObject)
 			return nil, fmt.Errorf("encode config: %w", err)
 		}
 	}
-	updated, err := h.reads.Update(ctx, r.ID, patch)
+	updated, err := h.reads.Update(ctx, actorOf(ctx), r.ID, patch)
 	if err != nil {
 		return nil, readError(r.ID, err)
 	}
@@ -246,11 +247,11 @@ func (h *handler) UpdateRead(ctx context.Context, r gen.UpdateReadRequestObject)
 }
 
 func (h *handler) DeleteRead(ctx context.Context, r gen.DeleteReadRequestObject) (gen.DeleteReadResponseObject, error) {
-	found, err := h.reads.Get(ctx, r.ID)
+	found, err := h.reads.Get(ctx, actorOf(ctx), r.ID)
 	if err != nil {
 		return nil, readError(r.ID, err)
 	}
-	if err := h.reads.Delete(ctx, r.ID); err != nil {
+	if err := h.reads.Delete(ctx, actorOf(ctx), r.ID); err != nil {
 		return nil, readError(r.ID, err)
 	}
 	h.demandChanged(ctx, found.Read.SourceID)
@@ -300,7 +301,7 @@ func (h *handler) CreateAdjustment(ctx context.Context, r gen.CreateAdjustmentRe
 	if err != nil {
 		return nil, readError(r.ID, err)
 	}
-	adjusted, err := h.reads.Adjust(ctx, r.ID, adjustment)
+	adjusted, err := h.reads.Adjust(ctx, actorOf(ctx), r.ID, adjustment)
 	if err != nil {
 		return nil, readError(r.ID, err)
 	}
@@ -336,7 +337,7 @@ func (h *handler) ListSegments(ctx context.Context, r gen.ListSegmentsRequestObj
 	if err != nil {
 		return nil, err
 	}
-	rows, err := h.reads.Segments(ctx, r.ID, p.after, p.fetchLimit())
+	rows, err := h.reads.Segments(ctx, actorOf(ctx), r.ID, p.after, p.fetchLimit())
 	if err != nil {
 		return nil, readError(r.ID, err)
 	}

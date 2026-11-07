@@ -25,6 +25,7 @@ import (
 const dailyAt7 = "FREQ=DAILY;BYHOUR=7;BYMINUTE=0;BYSECOND=0"
 
 type fixture struct {
+	actor   store.Actor
 	store   *store.Store
 	clock   *sitetest.Clock
 	service *reads.Service
@@ -35,7 +36,8 @@ func newFixture(t *testing.T, entries int) *fixture {
 	t.Helper()
 	st := storetest.New(t)
 	clock := sitetest.NewClock()
-	f := &fixture{store: st, clock: clock, service: reads.New(reads.Options{
+	actor, _ := storetest.User(t, st, "reader", false)
+	f := &fixture{actor: actor, store: st, clock: clock, service: reads.New(reads.Options{
 		Store: st, DefaultTimezone: "UTC", MinDatedShare: 0.9, Now: clock.Now,
 	})}
 	source, err := storetest.AddSource(t, st, db.UpsertSourceParams{
@@ -68,7 +70,7 @@ func (f *fixture) addEntries(t *testing.T, from, n int, dated bool) {
 
 func (f *fixture) create(t *testing.T, p schedule.Pacing) reads.View {
 	t.Helper()
-	v, err := f.service.Create(t.Context(), reads.CreateParams{SourceID: f.source.ID, Name: "r", Pacing: p, Initial: 1})
+	v, err := f.service.Create(t.Context(), reads.CreateParams{UserID: f.actor.UserID, SourceID: f.source.ID, Name: "r", Pacing: p, Initial: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +83,7 @@ func daily() schedule.RRulePacing {
 
 func (f *fixture) adjust(t *testing.T, id int64, a schedule.Adjustment) reads.View {
 	t.Helper()
-	v, err := f.service.Adjust(t.Context(), id, a)
+	v, err := f.service.Adjust(t.Context(), f.actor, id, a)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +104,7 @@ func TestCreateAndPosition(t *testing.T) {
 	}
 
 	f.clock.Advance(72 * time.Hour)
-	got, err := f.service.Get(t.Context(), v.Read.ID)
+	got, err := f.service.Get(t.Context(), f.actor, v.Read.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +122,7 @@ func TestStates(t *testing.T) {
 	}
 	f.adjust(t, v.Read.ID, schedule.Resume{})
 	f.clock.Advance(30 * 24 * time.Hour)
-	done, err := f.service.Get(t.Context(), v.Read.ID)
+	done, err := f.service.Get(t.Context(), f.actor, v.Read.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +138,7 @@ func TestStartSeqAndInitial(t *testing.T) {
 	f := newFixture(t, 20)
 	start := 5
 	v, err := f.service.Create(t.Context(), reads.CreateParams{
-		SourceID: f.source.ID, Name: "r", Pacing: daily(), StartSeq: &start, Initial: 3,
+		UserID: f.actor.UserID, SourceID: f.source.ID, Name: "r", Pacing: daily(), StartSeq: &start, Initial: 3,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -149,13 +151,13 @@ func TestStartSeqAndInitial(t *testing.T) {
 func TestBuffer(t *testing.T) {
 	f := newFixture(t, 5)
 	v, err := f.service.Create(t.Context(), reads.CreateParams{
-		SourceID: f.source.ID, Name: "r", Pacing: daily(), Initial: 1, CatchUp: "buffer", Buffer: 2,
+		UserID: f.actor.UserID, SourceID: f.source.ID, Name: "r", Pacing: daily(), Initial: 1, CatchUp: "buffer", Buffer: 2,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	f.clock.Advance(30 * 24 * time.Hour)
-	got, err := f.service.Get(t.Context(), v.Read.ID)
+	got, err := f.service.Get(t.Context(), f.actor, v.Read.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +206,7 @@ func TestReplayNeedsDates(t *testing.T) {
 	f := newFixture(t, 0)
 	f.addEntries(t, 0, 10, false)
 	replay := schedule.ReplayPacing{Speed: 7}
-	_, err := f.service.Create(t.Context(), reads.CreateParams{SourceID: f.source.ID, Name: "r", Pacing: replay, Initial: 1})
+	_, err := f.service.Create(t.Context(), reads.CreateParams{UserID: f.actor.UserID, SourceID: f.source.ID, Name: "r", Pacing: replay, Initial: 1})
 	if !errors.Is(err, reads.ErrTooFewDates) {
 		t.Errorf("Create = %v, want ErrTooFewDates", err)
 	}
@@ -213,7 +215,7 @@ func TestReplayNeedsDates(t *testing.T) {
 	v := f.create(t, withGap)
 
 	rrule := f.create(t, daily())
-	if _, err := f.service.Adjust(t.Context(), rrule.Read.ID, schedule.Repace{Pacing: replay}); !errors.Is(err, reads.ErrTooFewDates) {
+	if _, err := f.service.Adjust(t.Context(), f.actor, rrule.Read.ID, schedule.Repace{Pacing: replay}); !errors.Is(err, reads.ErrTooFewDates) {
 		t.Errorf("Adjust = %v, want ErrTooFewDates", err)
 	}
 	if v.Read.ID == 0 {
@@ -223,11 +225,11 @@ func TestReplayNeedsDates(t *testing.T) {
 
 func TestCreateFailures(t *testing.T) {
 	f := newFixture(t, 1)
-	if _, err := f.service.Create(t.Context(), reads.CreateParams{SourceID: 9999, Name: "r", Pacing: daily()}); !errors.Is(err, reads.ErrSourceNotFound) {
+	if _, err := f.service.Create(t.Context(), reads.CreateParams{UserID: f.actor.UserID, SourceID: 9999, Name: "r", Pacing: daily()}); !errors.Is(err, reads.ErrSourceNotFound) {
 		t.Errorf("missing source: %v", err)
 	}
 	bad := schedule.RRulePacing{RRule: "nope", TimeZone: "UTC", PerRelease: 1}
-	if _, err := f.service.Create(t.Context(), reads.CreateParams{SourceID: f.source.ID, Name: "r", Pacing: bad}); !errors.Is(err, schedule.ErrInvalidPacing) {
+	if _, err := f.service.Create(t.Context(), reads.CreateParams{UserID: f.actor.UserID, SourceID: f.source.ID, Name: "r", Pacing: bad}); !errors.Is(err, schedule.ErrInvalidPacing) {
 		t.Errorf("bad rule: %v", err)
 	}
 }
@@ -236,7 +238,7 @@ func TestUpdate(t *testing.T) {
 	f := newFixture(t, 3)
 	v := f.create(t, daily())
 	name := "renamed"
-	updated, err := f.service.Update(t.Context(), v.Read.ID, reads.PatchParams{Name: &name, Config: json.RawMessage(`{"window":10}`)})
+	updated, err := f.service.Update(t.Context(), f.actor, v.Read.ID, reads.PatchParams{Name: &name, Config: json.RawMessage(`{"window":10}`)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,17 +248,17 @@ func TestUpdate(t *testing.T) {
 
 	// Sending the values it already has is not a change.
 	catchUp, buffer := "passthrough", 0
-	if _, err := f.service.Update(t.Context(), v.Read.ID, reads.PatchParams{CatchUp: &catchUp, Buffer: &buffer}); err != nil {
+	if _, err := f.service.Update(t.Context(), f.actor, v.Read.ID, reads.PatchParams{CatchUp: &catchUp, Buffer: &buffer}); err != nil {
 		t.Errorf("no-op patch: %v", err)
 	}
 	buffered, changed := "buffer", 3
-	if _, err := f.service.Update(t.Context(), v.Read.ID, reads.PatchParams{CatchUp: &buffered}); !errors.Is(err, reads.ErrFixedCatchUp) {
+	if _, err := f.service.Update(t.Context(), f.actor, v.Read.ID, reads.PatchParams{CatchUp: &buffered}); !errors.Is(err, reads.ErrFixedCatchUp) {
 		t.Errorf("catch_up: %v", err)
 	}
-	if _, err := f.service.Update(t.Context(), v.Read.ID, reads.PatchParams{Buffer: &changed}); !errors.Is(err, reads.ErrFixedCatchUp) {
+	if _, err := f.service.Update(t.Context(), f.actor, v.Read.ID, reads.PatchParams{Buffer: &changed}); !errors.Is(err, reads.ErrFixedCatchUp) {
 		t.Errorf("buffer: %v", err)
 	}
-	if _, err := f.service.Update(t.Context(), 9999, reads.PatchParams{Name: &name}); !errors.Is(err, store.ErrNotFound) {
+	if _, err := f.service.Update(t.Context(), f.actor, 9999, reads.PatchParams{Name: &name}); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("missing read: %v", err)
 	}
 }
@@ -264,16 +266,16 @@ func TestUpdate(t *testing.T) {
 func TestDelete(t *testing.T) {
 	f := newFixture(t, 1)
 	v := f.create(t, daily())
-	if err := f.service.Delete(t.Context(), v.Read.ID); err != nil {
+	if err := f.service.Delete(t.Context(), f.actor, v.Read.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.service.Get(t.Context(), v.Read.ID); !errors.Is(err, store.ErrNotFound) {
+	if _, err := f.service.Get(t.Context(), f.actor, v.Read.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("Get = %v", err)
 	}
-	if err := f.service.Delete(t.Context(), v.Read.ID); !errors.Is(err, store.ErrNotFound) {
+	if err := f.service.Delete(t.Context(), f.actor, v.Read.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("second Delete = %v", err)
 	}
-	if _, err := f.service.Adjust(t.Context(), v.Read.ID, schedule.Pause{}); !errors.Is(err, store.ErrNotFound) {
+	if _, err := f.service.Adjust(t.Context(), f.actor, v.Read.ID, schedule.Pause{}); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("Adjust = %v", err)
 	}
 }
@@ -282,7 +284,7 @@ func TestList(t *testing.T) {
 	f := newFixture(t, 3)
 	f.create(t, daily())
 	f.create(t, daily())
-	views, err := f.service.List(t.Context(), 0, 10)
+	views, err := f.service.List(t.Context(), f.actor, false, 0, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -300,7 +302,7 @@ func TestConcurrentAdjustmentsSerialise(t *testing.T) {
 	errs := make([]error, skips)
 	for i := range skips {
 		wg.Go(func() {
-			_, errs[i] = f.service.Adjust(context.Background(), v.Read.ID, schedule.Skip{Count: 1})
+			_, errs[i] = f.service.Adjust(context.Background(), f.actor, v.Read.ID, schedule.Skip{Count: 1})
 		})
 	}
 	wg.Wait()
@@ -308,7 +310,7 @@ func TestConcurrentAdjustmentsSerialise(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := f.service.Get(t.Context(), v.Read.ID)
+	got, err := f.service.Get(t.Context(), f.actor, v.Read.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -377,7 +379,8 @@ func TestDiscoveryLookaheadFollowsReads(t *testing.T) {
 		t.Fatalf("with no reads: %d entries, want the lookahead of 1", got)
 	}
 
-	read, err := stack.Reads.Create(t.Context(), reads.CreateParams{SourceID: source.ID, Name: "r", Pacing: daily(), Initial: 1})
+	actor, _ := storetest.User(t, stack.Store, "reader", false)
+	read, err := stack.Reads.Create(t.Context(), reads.CreateParams{UserID: actor.UserID, SourceID: source.ID, Name: "r", Pacing: daily(), Initial: 1})
 	if err != nil {
 		t.Fatal(err)
 	}

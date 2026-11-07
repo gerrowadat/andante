@@ -12,7 +12,9 @@ import (
 	"github.com/gerrowadat/andante/internal/buildinfo"
 )
 
-var required = []string{"--database-url=postgres://localhost/andante", "--base-url=https://andante.example/", "--catalogue-url=http://catalogue.example:8082/v1", "--catalogue-token=token"}
+var secret = strings.Repeat("s", 32)
+
+var required = []string{"--database-url=postgres://localhost/andante", "--base-url=https://andante.example/", "--catalogue-url=http://catalogue.example:8082/v1", "--catalogue-token=token", "--secret=" + secret}
 
 func parse(t *testing.T, args ...string) (*Config, error) {
 	t.Helper()
@@ -30,8 +32,8 @@ func TestDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Listen != ":8080" || c.AdminListen != "127.0.0.1:8081" {
-		t.Errorf("listeners = %q, %q", c.Listen, c.AdminListen)
+	if c.Listen != ":8080" || c.OpsListen != "127.0.0.1:8081" {
+		t.Errorf("listeners = %q, %q", c.Listen, c.OpsListen)
 	}
 	if c.DefaultTimezone != "UTC" || c.LogFormat != "json" || c.LogLevel != "info" {
 		t.Errorf("timezone, format, level = %q, %q, %q", c.DefaultTimezone, c.LogFormat, c.LogLevel)
@@ -45,10 +47,10 @@ func TestEnvVars(t *testing.T) {
 	envs := map[string]string{
 		"ANDANTE_DATABASE_URL":           "postgres://db/andante",
 		"ANDANTE_LISTEN":                 ":1",
-		"ANDANTE_ADMIN_LISTEN":           ":2",
+		"ANDANTE_OPS_LISTEN":             ":2",
 		"ANDANTE_BASE_URL":               "https://env.example",
 		"ANDANTE_DEFAULT_TIMEZONE":       "Europe/Dublin",
-		"ANDANTE_ADMIN_TOKEN":            "token",
+		"ANDANTE_SECRET":                 secret,
 		"ANDANTE_LOG_FORMAT":             "text",
 		"ANDANTE_LOG_LEVEL":              "debug",
 		"ANDANTE_READ_HEADER_TIMEOUT":    "2s",
@@ -72,9 +74,9 @@ func TestEnvVars(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := Config{
-		DatabaseURL: "postgres://db/andante", Listen: ":1", AdminListen: ":2",
+		DatabaseURL: "postgres://db/andante", Listen: ":1", OpsListen: ":2",
 		BaseURL: "https://env.example", DefaultTimezone: "Europe/Dublin",
-		AdminToken: "token", LogFormat: "text", LogLevel: "debug",
+		Secret: secret, LogFormat: "text", LogLevel: "debug",
 		ReadHeaderTimeout: 2 * time.Second, ReadTimeout: 3 * time.Second,
 		WriteTimeout: 4 * time.Second, IdleTimeout: 5 * time.Second, ShutdownTimeout: 6 * time.Second,
 		ReadinessTimeout: 7 * time.Second, ProbeTimeout: 15 * time.Second,
@@ -99,29 +101,32 @@ func TestFlagOverridesEnv(t *testing.T) {
 func TestRejected(t *testing.T) {
 	const db, base = "--database-url=postgres://localhost/andante", "--base-url=https://andante.example/"
 	const cat, tok = "--catalogue-url=http://c.example/v1", "--catalogue-token=token"
+	key := "--secret=" + secret
 	tests := []struct {
 		name string
 		args []string
 		want string
 	}{
-		{"missing database URL", []string{base, cat, tok}, "database-url"},
-		{"missing base URL", []string{db, cat, tok}, "base-url"},
-		{"missing catalogue URL", []string{db, base, tok}, "catalogue-url"},
-		{"missing catalogue token", []string{db, base, cat}, "catalogue-token"},
-		{"non-http catalogue URL", []string{db, base, tok, "--catalogue-url=ftp://c.example"}, "catalogue-url"},
-		{"bad DSN", []string{"--database-url=postgres://u:hunter2@host:notaport/db", base, cat, tok}, "database-url"},
-		{"negative test clock", []string{db, base, cat, tok, "--test-clock-offset=-1h"}, "test-clock-offset"},
-		{"relative base URL", []string{db, cat, tok, "--base-url=/feeds"}, "base-url"},
-		{"base URL with no host", []string{db, cat, tok, "--base-url=https://"}, "base-url"},
-		{"non-http base URL", []string{db, cat, tok, "--base-url=ftp://andante.example"}, "base-url"},
-		{"unparseable base URL", []string{db, cat, tok, "--base-url=http://[::1"}, "base-url"},
-		{"unknown time zone", []string{db, base, cat, tok, "--default-timezone=Mars/Olympus"}, "default-timezone"},
-		{"unknown log format", []string{db, base, cat, tok, "--log-format=xml"}, "log-format"},
-		{"unknown log level", []string{db, base, cat, tok, "--log-level=loud"}, "log-level"},
-		{"negative shutdown timeout", []string{db, base, cat, tok, "--shutdown-timeout=-1s"}, "shutdown-timeout"},
-		{"zero readiness timeout", []string{db, base, cat, tok, "--readiness-timeout=0s"}, "readiness-timeout"},
-		{"share above one", []string{db, base, cat, tok, "--replay-min-dated-share=1.5"}, "replay-min-dated-share"},
-		{"zero rate limit", []string{db, base, cat, tok, "--feed-rate-limit=0"}, "feed-rate-limit"},
+		{"missing database URL", []string{base, cat, tok, key}, "database-url"},
+		{"missing base URL", []string{db, cat, tok, key}, "base-url"},
+		{"missing catalogue URL", []string{db, base, tok, key}, "catalogue-url"},
+		{"missing catalogue token", []string{db, base, cat, key}, "catalogue-token"},
+		{"non-http catalogue URL", []string{db, base, tok, key, "--catalogue-url=ftp://c.example"}, "catalogue-url"},
+		{"missing secret", []string{db, base, cat, tok}, "secret"},
+		{"short secret", []string{db, base, cat, tok, "--secret=short"}, "secret"},
+		{"bad DSN", []string{"--database-url=postgres://u:hunter2@host:notaport/db", base, cat, tok, key}, "database-url"},
+		{"negative test clock", []string{db, base, cat, tok, key, "--test-clock-offset=-1h"}, "test-clock-offset"},
+		{"relative base URL", []string{db, cat, tok, key, "--base-url=/feeds"}, "base-url"},
+		{"base URL with no host", []string{db, cat, tok, key, "--base-url=https://"}, "base-url"},
+		{"non-http base URL", []string{db, cat, tok, key, "--base-url=ftp://andante.example"}, "base-url"},
+		{"unparseable base URL", []string{db, cat, tok, key, "--base-url=http://[::1"}, "base-url"},
+		{"unknown time zone", []string{db, base, cat, tok, key, "--default-timezone=Mars/Olympus"}, "default-timezone"},
+		{"unknown log format", []string{db, base, cat, tok, key, "--log-format=xml"}, "log-format"},
+		{"unknown log level", []string{db, base, cat, tok, key, "--log-level=loud"}, "log-level"},
+		{"negative shutdown timeout", []string{db, base, cat, tok, key, "--shutdown-timeout=-1s"}, "shutdown-timeout"},
+		{"zero readiness timeout", []string{db, base, cat, tok, key, "--readiness-timeout=0s"}, "readiness-timeout"},
+		{"share above one", []string{db, base, cat, tok, key, "--replay-min-dated-share=1.5"}, "replay-min-dated-share"},
+		{"zero rate limit", []string{db, base, cat, tok, key, "--feed-rate-limit=0"}, "feed-rate-limit"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

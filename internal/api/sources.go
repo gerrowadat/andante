@@ -54,7 +54,14 @@ func (h *handler) ListSources(ctx context.Context, r gen.ListSourcesRequestObjec
 	if err != nil {
 		return nil, err
 	}
-	rows, err := h.store.ListSources(ctx, p.after, p.fetchLimit())
+	filter := store.SourceFilter{}
+	if r.Params.Q != nil {
+		filter.Query = *r.Params.Q
+	}
+	if r.Params.Kind != nil {
+		filter.Kind = string(*r.Params.Kind)
+	}
+	rows, err := h.store.ListSources(ctx, filter, p.after, p.fetchLimit())
 	if err != nil {
 		return nil, err
 	}
@@ -103,6 +110,9 @@ func (h *handler) GetSource(ctx context.Context, r gen.GetSourceRequestObject) (
 }
 
 func (h *handler) UpdateSource(ctx context.Context, r gen.UpdateSourceRequestObject) (gen.UpdateSourceResponseObject, error) {
+	if !actorOf(ctx).Admin {
+		return nil, forbidden("only an admin can change a source")
+	}
 	updated, err := h.catalogue.UpdateSource(ctx, r.ID, *r.Body)
 	if err != nil {
 		return nil, err
@@ -112,6 +122,9 @@ func (h *handler) UpdateSource(ctx context.Context, r gen.UpdateSourceRequestObj
 }
 
 func (h *handler) DeleteSource(ctx context.Context, r gen.DeleteSourceRequestObject) (gen.DeleteSourceResponseObject, error) {
+	if !actorOf(ctx).Admin {
+		return nil, forbidden("only an admin can delete a source")
+	}
 	reads, err := h.store.CountReads(ctx, r.ID)
 	if err != nil {
 		return nil, err

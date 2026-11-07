@@ -17,6 +17,7 @@ import (
 	"github.com/gerrowadat/andante/internal/reads"
 	"github.com/gerrowadat/andante/internal/replica"
 	"github.com/gerrowadat/andante/internal/store"
+	"github.com/gerrowadat/andante/pkg/client"
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/getkin/kin-openapi/routers/gorillamux"
@@ -57,7 +58,7 @@ type handler struct {
 	kit       *httpapi.Kit
 }
 
-// New returns the admin API. Mount it at BasePath.
+// New returns the API. Mount it at BasePath.
 func New(opts Options) (http.Handler, error) {
 	specJSON, err := yaml.YAMLToJSON(api.OpenAPI)
 	if err != nil {
@@ -82,7 +83,7 @@ func New(opts Options) (http.Handler, error) {
 		specJSON: specJSON,
 	}
 	kit := &httpapi.Kit{
-		Logger: opts.Logger, Router: router, Valid: opts.Store.AuthenticateAPIToken,
+		Logger: opts.Logger, Router: router, Valid: h.authenticate,
 		ProbeRoute: "POST " + BasePath + "/probes", ProbeTimeout: opts.ProbeTimeout,
 	}
 	h.kit = kit
@@ -113,7 +114,37 @@ func New(opts Options) (http.Handler, error) {
 		Help: "Admin API requests, by route pattern and status.",
 	}, []string{"route", "status"})
 
-	return httpapi.WithRequestID(httpapi.CountRequests(requests, kit.RecoverPanics(validate(routes)))), nil
+	return httpapi.WithRequestID(httpapi.CountRequests(requests, kit.RecoverPanics(withActor(validate(routes))))), nil
+}
+
+type actorKey struct{}
+
+// withActor makes room in the context for who the request is for. The validator
+// authenticates, and it can't change the request it passes on, so it fills this in.
+func withActor(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), actorKey{}, &store.Actor{})))
+	})
+}
+
+func (h *handler) authenticate(ctx context.Context, token string) (bool, error) {
+	actor, ok, err := h.store.AuthenticateAPIToken(ctx, token)
+	if err != nil || !ok {
+		return false, err
+	}
+	if slot, found := ctx.Value(actorKey{}).(*store.Actor); found {
+		*slot = actor
+	}
+	return true, nil
+}
+
+// actorOf returns who the request is for. An operation without a token has a zero
+// Actor, which can't reach anything.
+func actorOf(ctx context.Context) store.Actor {
+	if slot, found := ctx.Value(actorKey{}).(*store.Actor); found {
+		return *slot
+	}
+	return store.Actor{}
 }
 
 // VisitGetSpecResponse sends the document as it is, with no round trip through
@@ -128,6 +159,14 @@ func (s specResponse) VisitGetSpecResponse(w http.ResponseWriter) error {
 
 func (h *handler) GetSpec(context.Context, gen.GetSpecRequestObject) (gen.GetSpecResponseObject, error) {
 	return specResponse(h.specJSON), nil
+}
+
+func (h *handler) GetMe(ctx context.Context, _ gen.GetMeRequestObject) (gen.GetMeResponseObject, error) {
+	user, err := h.store.GetUser(ctx, actorOf(ctx).UserID)
+	if err != nil {
+		return nil, err
+	}
+	return gen.GetMe200JSONResponse{ID: user.ID, Name: user.Name, Role: client.UserRole(user.Role), CreatedAt: user.CreatedAt}, nil
 }
 
 func (h *handler) GetVersion(context.Context, gen.GetVersionRequestObject) (gen.GetVersionResponseObject, error) {

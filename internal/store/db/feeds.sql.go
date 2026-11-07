@@ -9,8 +9,17 @@ import (
 	"context"
 )
 
+const forgetFeedTokenSecrets = `-- name: ForgetFeedTokenSecrets :exec
+UPDATE feed_tokens SET token_sealed = NULL
+`
+
+func (q *Queries) ForgetFeedTokenSecrets(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, forgetFeedTokenSecrets)
+	return err
+}
+
 const getActiveFeedTokenByHash = `-- name: GetActiveFeedTokenByHash :one
-SELECT id, read_id, token_hash, role, label, created_at, revoked_at, last_seen_at FROM feed_tokens WHERE token_hash = $1 AND revoked_at IS NULL
+SELECT id, read_id, token_hash, token_sealed, role, label, created_at, revoked_at, last_seen_at FROM feed_tokens WHERE token_hash = $1 AND revoked_at IS NULL
 `
 
 func (q *Queries) GetActiveFeedTokenByHash(ctx context.Context, tokenHash []byte) (FeedToken, error) {
@@ -20,6 +29,7 @@ func (q *Queries) GetActiveFeedTokenByHash(ctx context.Context, tokenHash []byte
 		&i.ID,
 		&i.ReadID,
 		&i.TokenHash,
+		&i.TokenSealed,
 		&i.Role,
 		&i.Label,
 		&i.CreatedAt,
@@ -31,14 +41,15 @@ func (q *Queries) GetActiveFeedTokenByHash(ctx context.Context, tokenHash []byte
 
 const insertFeedToken = `-- name: InsertFeedToken :one
 
-INSERT INTO feed_tokens (read_id, token_hash, role, label) VALUES ($1, $2, $3, $4) RETURNING id, read_id, token_hash, role, label, created_at, revoked_at, last_seen_at
+INSERT INTO feed_tokens (read_id, token_hash, token_sealed, role, label) VALUES ($1, $2, $3, $4, $5) RETURNING id, read_id, token_hash, token_sealed, role, label, created_at, revoked_at, last_seen_at
 `
 
 type InsertFeedTokenParams struct {
-	ReadID    int64
-	TokenHash []byte
-	Role      string
-	Label     string
+	ReadID      int64
+	TokenHash   []byte
+	TokenSealed []byte
+	Role        string
+	Label       string
 }
 
 // SPDX-License-Identifier: Apache-2.0
@@ -47,6 +58,7 @@ func (q *Queries) InsertFeedToken(ctx context.Context, arg InsertFeedTokenParams
 	row := q.db.QueryRow(ctx, insertFeedToken,
 		arg.ReadID,
 		arg.TokenHash,
+		arg.TokenSealed,
 		arg.Role,
 		arg.Label,
 	)
@@ -55,6 +67,7 @@ func (q *Queries) InsertFeedToken(ctx context.Context, arg InsertFeedTokenParams
 		&i.ID,
 		&i.ReadID,
 		&i.TokenHash,
+		&i.TokenSealed,
 		&i.Role,
 		&i.Label,
 		&i.CreatedAt,
@@ -124,7 +137,7 @@ func (q *Queries) ListEntriesInRange(ctx context.Context, arg ListEntriesInRange
 }
 
 const listFeedTokens = `-- name: ListFeedTokens :many
-SELECT id, read_id, token_hash, role, label, created_at, revoked_at, last_seen_at FROM feed_tokens WHERE read_id = $1 AND id > $2 ORDER BY id LIMIT $3
+SELECT id, read_id, token_hash, token_sealed, role, label, created_at, revoked_at, last_seen_at FROM feed_tokens WHERE read_id = $1 AND id > $2 ORDER BY id LIMIT $3
 `
 
 type ListFeedTokensParams struct {
@@ -146,6 +159,7 @@ func (q *Queries) ListFeedTokens(ctx context.Context, arg ListFeedTokensParams) 
 			&i.ID,
 			&i.ReadID,
 			&i.TokenHash,
+			&i.TokenSealed,
 			&i.Role,
 			&i.Label,
 			&i.CreatedAt,
@@ -162,12 +176,63 @@ func (q *Queries) ListFeedTokens(ctx context.Context, arg ListFeedTokensParams) 
 	return items, nil
 }
 
-const revokeFeedToken = `-- name: RevokeFeedToken :execrows
-UPDATE feed_tokens SET revoked_at = coalesce(revoked_at, now()) WHERE id = $1
+const listSealedFeedTokens = `-- name: ListSealedFeedTokens :many
+SELECT id, token_sealed FROM feed_tokens WHERE token_sealed IS NOT NULL
 `
 
-func (q *Queries) RevokeFeedToken(ctx context.Context, id int64) (int64, error) {
-	result, err := q.db.Exec(ctx, revokeFeedToken, id)
+type ListSealedFeedTokensRow struct {
+	ID          int64
+	TokenSealed []byte
+}
+
+func (q *Queries) ListSealedFeedTokens(ctx context.Context) ([]ListSealedFeedTokensRow, error) {
+	rows, err := q.db.Query(ctx, listSealedFeedTokens)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSealedFeedTokensRow
+	for rows.Next() {
+		var i ListSealedFeedTokensRow
+		if err := rows.Scan(&i.ID, &i.TokenSealed); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const resealFeedToken = `-- name: ResealFeedToken :exec
+UPDATE feed_tokens SET token_sealed = $2 WHERE id = $1
+`
+
+type ResealFeedTokenParams struct {
+	ID          int64
+	TokenSealed []byte
+}
+
+func (q *Queries) ResealFeedToken(ctx context.Context, arg ResealFeedTokenParams) error {
+	_, err := q.db.Exec(ctx, resealFeedToken, arg.ID, arg.TokenSealed)
+	return err
+}
+
+const revokeFeedToken = `-- name: RevokeFeedToken :execrows
+UPDATE feed_tokens t SET revoked_at = coalesce(t.revoked_at, now())
+FROM reads r
+WHERE t.id = $1 AND r.id = t.read_id AND ($2::boolean OR r.user_id = $3)
+`
+
+type RevokeFeedTokenParams struct {
+	ID     int64
+	Anyone bool
+	UserID int64
+}
+
+func (q *Queries) RevokeFeedToken(ctx context.Context, arg RevokeFeedTokenParams) (int64, error) {
+	result, err := q.db.Exec(ctx, revokeFeedToken, arg.ID, arg.Anyone, arg.UserID)
 	if err != nil {
 		return 0, err
 	}

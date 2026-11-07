@@ -19,6 +19,7 @@ import (
 	"github.com/gerrowadat/andante/internal/discovery/sitetest"
 	"github.com/gerrowadat/andante/internal/stacktest"
 	"github.com/gerrowadat/andante/internal/store"
+	"github.com/gerrowadat/andante/internal/store/storetest"
 	"github.com/gerrowadat/andante/pkg/client"
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/oapi-codegen/nullable"
@@ -29,6 +30,7 @@ import (
 const problemJSON = "application/problem+json"
 
 type fixture struct {
+	actor    store.Actor
 	stack    *stacktest.Stack
 	url      string
 	token    string
@@ -43,15 +45,12 @@ func newFixture(t *testing.T) *fixture {
 	stack := stacktest.New(t)
 	st, reg := stack.Store, stack.Registry
 
-	_, token, err := st.CreateAPIToken(t.Context(), "test")
-	if err != nil {
-		t.Fatal(err)
-	}
+	actor, token := storetest.User(t, st, "admin", true)
 	c, err := client.NewClientWithResponses(stack.URL+api.BasePath, client.WithRequestEditorFn(bearer(token)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &fixture{url: stack.URL, token: token, store: st, client: c, registry: reg, stack: stack}
+	return &fixture{actor: actor, url: stack.URL, token: token, store: st, client: c, registry: reg, stack: stack}
 }
 
 func bearer(token string) client.RequestEditorFn {
@@ -183,7 +182,7 @@ func TestSourceConflicts(t *testing.T) {
 		t.Errorf("duplicate slug: %d %s", dup.StatusCode(), dup.Body)
 	}
 
-	_, err = f.store.Pool().Exec(ctx, "INSERT INTO reads (source_id, name) VALUES ($1, 'r')", created.ID)
+	_, err = f.store.Pool().Exec(ctx, "INSERT INTO reads (user_id, source_id, name) VALUES ($1, $2, 'r')", f.actor.UserID, created.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -745,8 +744,11 @@ func TestFeedTokens(t *testing.T) {
 	if list.JSON200 == nil || len(list.JSON200.Items) != 1 {
 		t.Fatalf("list: %d %s", list.StatusCode(), list.Body)
 	}
-	if strings.Contains(string(list.Body), issued.Token) || strings.Contains(string(list.Body), `"token"`) {
-		t.Errorf("list exposes a raw token: %s", list.Body)
+	if strings.Contains(string(list.Body), `"token"`) {
+		t.Errorf("list has a token field: %s", list.Body)
+	}
+	if urls := list.JSON200.Items[0].Urls; urls == nil || *urls != issued.Urls {
+		t.Errorf("list URLs = %+v, want %+v", urls, issued.Urls)
 	}
 
 	revoked, err := f.client.RevokeFeedTokenWithResponse(ctx, issued.ID)
@@ -978,7 +980,7 @@ func TestLastUsedAtIsThrottled(t *testing.T) {
 	read := func() string {
 		t.Helper()
 		var v string
-		err := f.store.Pool().QueryRow(ctx, "SELECT last_used_at::text FROM api_tokens WHERE label = 'test'").Scan(&v)
+		err := f.store.Pool().QueryRow(ctx, "SELECT last_used_at::text FROM api_tokens WHERE label = 'first token'").Scan(&v)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1335,5 +1337,265 @@ func TestReadsAndFeedsDoNotNeedTheCatalogue(t *testing.T) {
 	if down.StatusCode() != http.StatusServiceUnavailable || down.ApplicationProblemJSONDefault == nil ||
 		!strings.HasSuffix(down.ApplicationProblemJSONDefault.Type, "#catalogue-unavailable") {
 		t.Errorf("create with the catalogue down: %d %s", down.StatusCode(), down.Body)
+	}
+}
+
+type other struct {
+	actor  store.Actor
+	client *client.ClientWithResponses
+	token  string
+}
+
+func (f *fixture) user(t *testing.T, name string, admin bool) other {
+	t.Helper()
+	actor, token := storetest.User(t, f.store, name, admin)
+	c, err := client.NewClientWithResponses(f.url+api.BasePath, client.WithRequestEditorFn(bearer(token)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return other{actor: actor, client: c, token: token}
+}
+
+// A list of everything that takes an ID belonging to someone. The test walks the spec,
+// so a new operation fails here until it says what it does.
+var scoped = map[string]struct {
+	body, contentType string
+}{
+	"getRead":          {},
+	"deleteRead":       {},
+	"updateRead":       {`{"name":"mine now"}`, "application/merge-patch+json"},
+	"createAdjustment": {`{"type":"skip"}`, "application/json"},
+	"listSegments":     {},
+	"listFeedTokens":   {},
+	"createFeedToken":  {`{"role":"viewer","label":"me"}`, "application/json"},
+	"revokeFeedToken":  {},
+	"revokeAPIToken":   {},
+}
+
+func TestUsersCantReachEachOthersThings(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	s := f.createSource(t, "s").ID
+	f.addEntries(t, s, 3, true)
+	alice, mallory := f.user(t, "alice", false), f.user(t, "mallory", false)
+	read, err := alice.client.CreateReadWithResponse(ctx, client.ReadCreate{SourceID: s, Name: "alice's", Pacing: rrulePacing(t)})
+	if err != nil || read.JSON201 == nil {
+		t.Fatalf("create read: %v %s", err, read.Body)
+	}
+	readID := read.JSON201.ID
+	token, err := alice.client.CreateFeedTokenWithResponse(ctx, readID, client.FeedTokenCreate{Role: client.Owner, Label: "me"})
+	if err != nil || token.JSON201 == nil {
+		t.Fatalf("create token: %v %s", err, token.Body)
+	}
+	second, err := alice.client.CreateAPITokenWithResponse(ctx, client.APITokenCreate{Label: "laptop"})
+	if err != nil || second.JSON201 == nil {
+		t.Fatalf("create API token: %v %s", err, second.Body)
+	}
+
+	spec, err := openapi3.NewLoader().LoadFromData(specfile.OpenAPI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for path, item := range spec.Paths.Map() {
+		var id int64
+		switch {
+		case strings.HasPrefix(path, "/reads/{id}"):
+			id = readID
+		case strings.HasPrefix(path, "/tokens/{id}"):
+			id = token.JSON201.ID
+		case strings.HasPrefix(path, "/api-tokens/{id}"):
+			id = second.JSON201.ID
+		default:
+			continue
+		}
+		for method, op := range item.Operations() {
+			want, ok := scoped[op.OperationID]
+			if !ok {
+				t.Errorf("%s isn't in the table of what's scoped to a user", op.OperationID)
+				continue
+			}
+			seen[op.OperationID] = true
+			t.Run(op.OperationID, func(t *testing.T) {
+				url := strings.ReplaceAll(path, "{id}", strconv.FormatInt(id, 10))
+				resp, body := f.do(t, method, api.BasePath+url, want.contentType, want.body, mallory.token)
+				if resp.StatusCode != http.StatusNotFound {
+					t.Errorf("status = %d, want 404: %s", resp.StatusCode, body)
+				}
+			})
+		}
+	}
+	for id := range scoped {
+		if !seen[id] {
+			t.Errorf("%s is in the table, but not under an owned path", id)
+		}
+	}
+
+	// Nothing changed underneath alice.
+	got, err := alice.client.GetReadWithResponse(ctx, readID)
+	if err != nil || got.JSON200 == nil || got.JSON200.Name != "alice's" || got.JSON200.Position != 0 {
+		t.Errorf("alice's read after all that: %v %s", err, got.Body)
+	}
+	listed, err := alice.client.ListFeedTokensWithResponse(ctx, readID, nil)
+	if err != nil || listed.JSON200 == nil || listed.JSON200.Items[0].RevokedAt.IsSpecified() && !listed.JSON200.Items[0].RevokedAt.IsNull() {
+		t.Errorf("alice's feed token after all that: %v %s", err, listed.Body)
+	}
+
+	all := true
+	for name, params := range map[string]*client.ListReadsParams{"own": nil, "all": {All: &all}} {
+		reads, err := mallory.client.ListReadsWithResponse(ctx, params)
+		if err != nil || reads.JSON200 == nil || len(reads.JSON200.Items) != 0 {
+			t.Errorf("%s: mallory's reads = %s, %v", name, reads.Body, err)
+		}
+	}
+	tokens, err := mallory.client.ListAPITokensWithResponse(ctx, nil)
+	if err != nil || tokens.JSON200 == nil || len(tokens.JSON200.Items) != 1 {
+		t.Errorf("mallory's API tokens = %s, %v", tokens.Body, err)
+	}
+	opml, err := mallory.client.ExportOPMLWithResponse(ctx, client.OPMLExportRequest{Issue: client.Viewer, Label: "x"})
+	if err != nil || strings.Contains(string(opml.Body), "alice") {
+		t.Errorf("mallory's export = %s, %v", opml.Body, err)
+	}
+}
+
+func TestAdminsCanSeeEveryRead(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	s := f.createSource(t, "s").ID
+	f.addEntries(t, s, 3, true)
+	alice := f.user(t, "alice", false)
+	read, err := alice.client.CreateReadWithResponse(ctx, client.ReadCreate{SourceID: s, Name: "r", Pacing: rrulePacing(t)})
+	if err != nil || read.JSON201 == nil {
+		t.Fatalf("create read: %v %s", err, read.Body)
+	}
+	if read.JSON201.UserID != alice.actor.UserID {
+		t.Errorf("user_id = %d, want %d", read.JSON201.UserID, alice.actor.UserID)
+	}
+
+	own, err := f.client.ListReadsWithResponse(ctx, nil)
+	if err != nil || len(own.JSON200.Items) != 0 {
+		t.Errorf("an admin's own reads = %s, %v", own.Body, err)
+	}
+	everyone := true
+	all, err := f.client.ListReadsWithResponse(ctx, &client.ListReadsParams{All: &everyone})
+	if err != nil || len(all.JSON200.Items) != 1 {
+		t.Errorf("all reads = %s, %v", all.Body, err)
+	}
+	got, err := f.client.GetReadWithResponse(ctx, read.JSON201.ID)
+	if err != nil || got.JSON200 == nil {
+		t.Errorf("an admin reading alice's read: %v %s", err, got.Body)
+	}
+}
+
+func TestSourcesAreSharedButOnlyAdminsChangeThem(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	bob := f.user(t, "bob", false)
+
+	created, err := bob.client.CreateSourceWithResponse(ctx, client.SourceCreate{
+		Slug: "bobs", Title: "Bob's Comic", HomeURL: "https://comic.example/", DefaultKind: client.Page, Config: crawlConfig(t, "https://comic.example/1"),
+	})
+	if err != nil || created.JSON201 == nil {
+		t.Fatalf("a user adding a source: %v %s", err, created.Body)
+	}
+	id := created.JSON201.ID
+
+	seen, err := f.client.GetSourceWithResponse(ctx, id)
+	if err != nil || seen.JSON200 == nil {
+		t.Errorf("another user seeing it: %v", err)
+	}
+	title := "Mine"
+	patched, err := bob.client.UpdateSourceWithApplicationMergePatchPlusJSONBodyWithResponse(ctx, id, client.SourcePatch{Title: &title})
+	if err != nil || patched.StatusCode() != http.StatusForbidden {
+		t.Errorf("a user changing a source: %v %d", err, patched.StatusCode())
+	}
+	if patched.ApplicationProblemJSONDefault == nil || !strings.HasSuffix(patched.ApplicationProblemJSONDefault.Type, "#forbidden") {
+		t.Errorf("problem = %s", patched.Body)
+	}
+	deleted, err := bob.client.DeleteSourceWithResponse(ctx, id)
+	if err != nil || deleted.StatusCode() != http.StatusForbidden {
+		t.Errorf("a user deleting a source: %v %d", err, deleted.StatusCode())
+	}
+	asAdmin, err := f.client.UpdateSourceWithApplicationMergePatchPlusJSONBodyWithResponse(ctx, id, client.SourcePatch{Title: &title})
+	if err != nil || asAdmin.StatusCode() != http.StatusOK {
+		t.Errorf("an admin changing a source: %v %d", err, asAdmin.StatusCode())
+	}
+}
+
+func TestSourceSearch(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	f.createSource(t, "harbour-lights")
+	created, err := f.client.CreateSourceWithResponse(ctx, client.SourceCreate{
+		Slug: "pod", Title: "A Podcast", HomeURL: "https://pod.example/", DefaultKind: client.Episode, Config: crawlConfig(t, "https://pod.example/1"),
+	})
+	if err != nil || created.JSON201 == nil {
+		t.Fatalf("create: %v %s", err, created.Body)
+	}
+	slugs := func(params *client.ListSourcesParams) string {
+		t.Helper()
+		resp, err := f.client.ListSourcesWithResponse(ctx, params)
+		if err != nil || resp.JSON200 == nil {
+			t.Fatalf("list: %v", err)
+		}
+		var out []string
+		for _, s := range resp.JSON200.Items {
+			out = append(out, s.Slug)
+		}
+		return strings.Join(out, ",")
+	}
+	q := "HARBOUR"
+	if got := slugs(&client.ListSourcesParams{Q: &q}); got != "harbour-lights" {
+		t.Errorf("search = %q", got)
+	}
+	podcast := "podcast"
+	if got := slugs(&client.ListSourcesParams{Q: &podcast}); got != "pod" {
+		t.Errorf("search by title = %q", got)
+	}
+	episode := client.Episode
+	if got := slugs(&client.ListSourcesParams{Kind: &episode}); got != "pod" {
+		t.Errorf("kind = %q", got)
+	}
+	if got := slugs(nil); got != "harbour-lights,pod" {
+		t.Errorf("no filter = %q", got)
+	}
+}
+
+func TestMe(t *testing.T) {
+	f := newFixture(t)
+	bob := f.user(t, "bob", false)
+	me, err := bob.client.GetMeWithResponse(t.Context())
+	if err != nil || me.JSON200 == nil || me.JSON200.Name != "bob" || me.JSON200.Role != client.UserRoleUser {
+		t.Errorf("me = %s, %v", me.Body, err)
+	}
+	admin, err := f.client.GetMeWithResponse(t.Context())
+	if err != nil || admin.JSON200 == nil || admin.JSON200.Role != client.UserRoleAdmin {
+		t.Errorf("admin = %s, %v", admin.Body, err)
+	}
+}
+
+func TestADisabledUserCantUseTheirToken(t *testing.T) {
+	f := newFixture(t)
+	bob := f.user(t, "bob", false)
+	if _, err := f.store.Pool().Exec(t.Context(), "UPDATE users SET disabled_at = now() WHERE id = $1", bob.actor.UserID); err != nil {
+		t.Fatal(err)
+	}
+	me, err := bob.client.GetMeWithResponse(t.Context())
+	if err != nil || me.StatusCode() != http.StatusUnauthorized {
+		t.Errorf("disabled user: %v %d", err, me.StatusCode())
+	}
+}
+
+func TestEachUserKeepsTheirLastToken(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	bob := f.user(t, "bob", false)
+	tokens, err := bob.client.ListAPITokensWithResponse(ctx, nil)
+	if err != nil || tokens.JSON200 == nil {
+		t.Fatalf("list: %v", err)
+	}
+	last, err := bob.client.RevokeAPITokenWithResponse(ctx, tokens.JSON200.Items[0].ID)
+	if err != nil || last.StatusCode() != http.StatusConflict {
+		t.Errorf("revoking bob's last token: %v %d, though the admin has one too", err, last.StatusCode())
 	}
 }

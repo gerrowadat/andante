@@ -6,8 +6,18 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Users. Sources are shared, and reads and tokens are private. `andante-server user add` and
+  `user reset` manage them, and `GET /me` and `andante whoami` say who you are.
+- `GET /sources` takes `q` and `kind`, and an admin's `GET /reads` takes `all`.
+- Feed URLs can be shown again, through `GET /reads/{id}/tokens` and `andante token list`.
+  `andante-server rotate-secret` changes the key.
+
 ### Changed
 
+- The API moved to the public listener, and the CLI's default URL with it. `--admin-listen` is now
+  `--ops-listen`, and only has health and metrics. `--secret` is required, and `--admin-token` is gone.
 - andante is now two services. `andante-catalogue` holds sources and entries and does the crawling,
   and `andante-server` keeps a copy and owns reads, tokens and feeds. Each needs its own database,
   and there's no migration from v0.0.1. Crawl flags moved to `andante-catalogue`, and the server

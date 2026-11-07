@@ -18,6 +18,7 @@ import (
 	"github.com/gerrowadat/andante/internal/stacktest"
 	"github.com/gerrowadat/andante/internal/store"
 	"github.com/gerrowadat/andante/internal/store/db"
+	"github.com/gerrowadat/andante/internal/store/storetest"
 	"github.com/gerrowadat/andante/pkg/client"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
@@ -191,8 +192,9 @@ func TestADeletedSourceWithAReadStays(t *testing.T) {
 	source := addSource(t, s, "a")
 	index(t, s, source.ID, "https://a.example/1")
 	catchUp(t, s)
+	actor, _ := storetest.User(t, s.Store, "reader", false)
 	if _, err := s.Reads.Create(ctx, reads.CreateParams{
-		SourceID: source.ID, Name: "r", Initial: 1, Pacing: schedule.RRulePacing{RRule: "FREQ=DAILY", TimeZone: "UTC", PerRelease: 1},
+		UserID: actor.UserID, SourceID: source.ID, Name: "r", Initial: 1, Pacing: schedule.RRulePacing{RRule: "FREQ=DAILY", TimeZone: "UTC", PerRelease: 1},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -223,8 +225,9 @@ func TestDemandFollowsReads(t *testing.T) {
 		t.Errorf("demand with no reads = %v, %v", demand, err)
 	}
 
+	actor, _ := storetest.User(t, s.Store, "reader", false)
 	read, err := s.Reads.Create(ctx, reads.CreateParams{
-		SourceID: source.ID, Name: "r", Initial: 1, Pacing: schedule.RRulePacing{RRule: "FREQ=DAILY", TimeZone: "UTC", PerRelease: 1},
+		UserID: actor.UserID, SourceID: source.ID, Name: "r", Initial: 1, Pacing: schedule.RRulePacing{RRule: "FREQ=DAILY", TimeZone: "UTC", PerRelease: 1},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -236,7 +239,7 @@ func TestDemandFollowsReads(t *testing.T) {
 		t.Errorf("demand with a read = %v, %v", demand, err)
 	}
 
-	if err := s.Reads.Delete(ctx, read.Read.ID); err != nil {
+	if err := s.Reads.Delete(ctx, actor, read.Read.ID); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Sync.PushDemand(ctx, source.ID); err != nil {

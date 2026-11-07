@@ -1,6 +1,6 @@
 # Design: API Contract
 
-Why the admin API's contract is the way it is. How to use it is in
+Why the API's contract is the way it is. How to use it is in
 [`api.md`](../api.md). The rest of the API's design is in
 [architecture](architecture.md).
 
@@ -26,8 +26,10 @@ not from the message.
 - **The validator runs before routing.** It knows the whole contract, so it answers 404 and 405 itself and the mux never has to.
 - **`PATCH` is RFC 7396 merge patch.** It is the open standard, and it can tell a
   field left out from a field set to `null`.
-- **The last active API token cannot be revoked.** Bootstrap only runs on an empty
-  table, and revoked rows stay, so revoking it would lock the API out for good.
+- **Your last active API token cannot be revoked,** because you'd be locked out until an operator
+  ran `andante-server user reset`.
+- **Someone else's read is a 404, not a 403,** so that an ID tells you nothing. A 403 is for what you
+  can see but can't change, which means sources.
 - **Request validation is 400, config validation is 422.** A 400 means the request
   does not match the contract. A 422 means it does, but the strategy refuses it.
 - **Models live in `pkg/client`.** The server's generated code imports them, so

@@ -37,6 +37,7 @@ import (
 const dailyAt7 = "FREQ=DAILY;BYHOUR=7;BYMINUTE=0;BYSECOND=0"
 
 type feedFixture struct {
+	actor    store.Actor
 	store    *store.Store
 	reads    *reads.Service
 	server   *httptest.Server
@@ -69,6 +70,7 @@ func newFeedFixture(t *testing.T, ratePerHour int) *feedFixture {
 		Registry: f.registry, Logger: slog.New(slog.NewTextHandler(&f.logs, nil)), Now: f.clock,
 	}))
 	t.Cleanup(f.server.Close)
+	f.actor, _ = storetest.User(t, st, "reader", false)
 	return f
 }
 
@@ -99,7 +101,7 @@ func (f *feedFixture) entries(t *testing.T, source db.Source, n int, extra strin
 func (f *feedFixture) read(t *testing.T, source db.Source) reads.View {
 	t.Helper()
 	v, err := f.reads.Create(t.Context(), reads.CreateParams{
-		SourceID: source.ID, Name: "Mornings", Initial: 3,
+		UserID: f.actor.UserID, SourceID: source.ID, Name: "Mornings", Initial: 3,
 		Pacing: schedule.RRulePacing{RRule: dailyAt7, TimeZone: "UTC", PerRelease: 1},
 	})
 	if err != nil {
@@ -110,7 +112,7 @@ func (f *feedFixture) read(t *testing.T, source db.Source) reads.View {
 
 func (f *feedFixture) token(t *testing.T, read int64, role string) string {
 	t.Helper()
-	_, raw, err := f.store.CreateFeedToken(t.Context(), read, role, "label")
+	_, raw, err := f.store.CreateFeedToken(t.Context(), store.Holder, read, role, "label")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +225,7 @@ func TestItemsNeverChange(t *testing.T) {
 
 	adjust := func(a schedule.Adjustment) {
 		t.Helper()
-		if _, err := f.reads.Adjust(t.Context(), view.Read.ID, a); err != nil {
+		if _, err := f.reads.Adjust(t.Context(), store.Holder, view.Read.ID, a); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -273,7 +275,7 @@ func TestNotModified(t *testing.T) {
 		t.Errorf("a list with a weak match: %d", weak.StatusCode)
 	}
 
-	if _, err := f.reads.Adjust(t.Context(), view.Read.ID, schedule.Skip{Count: 1}); err != nil {
+	if _, err := f.reads.Adjust(t.Context(), store.Holder, view.Read.ID, schedule.Skip{Count: 1}); err != nil {
 		t.Fatal(err)
 	}
 	third, _ := f.get(t, path, "If-None-Match", etag)
@@ -328,11 +330,11 @@ func TestNotFound(t *testing.T) {
 	f.entries(t, s, 5, "")
 	read := f.read(t, s).Read.ID
 	viewer, revoked := f.token(t, read, feed.RoleViewer), f.token(t, read, feed.RoleOwner)
-	tokens, err := f.store.ListFeedTokens(t.Context(), read, 0, 10)
+	tokens, err := f.store.ListFeedTokens(t.Context(), store.Holder, read, 0, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := f.store.RevokeFeedToken(t.Context(), tokens[1].ID); err != nil {
+	if err := f.store.RevokeFeedToken(t.Context(), store.Holder, tokens[1].ID); err != nil {
 		t.Fatal(err)
 	}
 	if resp, _ := f.get(t, "/f/"+revoked+".atom"); resp.StatusCode != http.StatusNotFound {
@@ -446,7 +448,7 @@ func TestNextOneNow(t *testing.T) {
 	path := "/f/" + f.token(t, view.Read.ID, feed.RoleOwner) + "/next"
 	position := func() int {
 		t.Helper()
-		v, err := f.reads.Get(t.Context(), view.Read.ID)
+		v, err := f.reads.Get(t.Context(), store.Holder, view.Read.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -536,12 +538,12 @@ func TestNextWithNoPageGoesHome(t *testing.T) {
 		t.Fatal(err)
 	}
 	v, err := f.reads.Create(t.Context(), reads.CreateParams{
-		SourceID: s.ID, Name: "r", Initial: 1, Pacing: schedule.RRulePacing{RRule: dailyAt7, TimeZone: "UTC", PerRelease: 1},
+		UserID: f.actor.UserID, SourceID: s.ID, Name: "r", Initial: 1, Pacing: schedule.RRulePacing{RRule: dailyAt7, TimeZone: "UTC", PerRelease: 1},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.reads.Adjust(t.Context(), v.Read.ID, schedule.Skip{Count: 1}); err != nil {
+	if _, err := f.reads.Adjust(t.Context(), store.Holder, v.Read.ID, schedule.Skip{Count: 1}); err != nil {
 		t.Fatal(err)
 	}
 	path := "/f/" + f.token(t, v.Read.ID, feed.RoleOwner) + "/next"
@@ -593,7 +595,7 @@ func TestReadConfigSetsTheWindow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.reads.Update(t.Context(), view.Read.ID, reads.PatchParams{Config: config}); err != nil {
+	if _, err := f.reads.Update(t.Context(), store.Holder, view.Read.ID, reads.PatchParams{Config: config}); err != nil {
 		t.Fatal(err)
 	}
 	_, body := f.get(t, "/f/"+f.token(t, view.Read.ID, feed.RoleViewer)+".atom")
@@ -608,7 +610,7 @@ func TestStartSeqBoundsTheFeed(t *testing.T) {
 	f.entries(t, s, 10, "")
 	start := 5
 	v, err := f.reads.Create(t.Context(), reads.CreateParams{
-		SourceID: s.ID, Name: "r", Initial: 2, StartSeq: &start,
+		UserID: f.actor.UserID, SourceID: s.ID, Name: "r", Initial: 2, StartSeq: &start,
 		Pacing: schedule.RRulePacing{RRule: dailyAt7, TimeZone: "UTC", PerRelease: 1},
 	})
 	if err != nil {
@@ -716,7 +718,7 @@ func TestPodcastFromFeedToFeed(t *testing.T) {
 
 	f.advance(time.Minute) // Nothing releases before it was discovered.
 	view, err := f.reads.Create(t.Context(), reads.CreateParams{
-		SourceID: source.ID, Name: "Quick", Initial: 1,
+		UserID: f.actor.UserID, SourceID: source.ID, Name: "Quick", Initial: 1,
 		Pacing: schedule.ReplayPacing{Speed: 7, MinGap: time.Hour, MaxGap: 48 * time.Hour, DefaultGap: 24 * time.Hour},
 	})
 	if err != nil {

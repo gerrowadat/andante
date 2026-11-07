@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/gerrowadat/andante/internal/seal"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -16,11 +17,11 @@ import (
 // ANDANTE_* environment variable counterpart. See docs/configuration.md.
 type Config struct {
 	DatabaseURL     string `name:"database-url" env:"ANDANTE_DATABASE_URL" required:"" help:"Postgres DSN."`
-	Listen          string `name:"listen" env:"ANDANTE_LISTEN" default:":8080" help:"Public listener (feeds)."`
-	AdminListen     string `name:"admin-listen" env:"ANDANTE_ADMIN_LISTEN" default:"127.0.0.1:8081" help:"Admin listener (API, health, metrics)."`
+	Listen          string `name:"listen" env:"ANDANTE_LISTEN" default:":8080" help:"Public listener (feeds and the API)."`
+	OpsListen       string `name:"ops-listen" env:"ANDANTE_OPS_LISTEN" default:"127.0.0.1:8081" help:"Ops listener (health, metrics)."`
 	BaseURL         string `name:"base-url" env:"ANDANTE_BASE_URL" required:"" help:"Public URL used in feed links."`
 	DefaultTimezone string `name:"default-timezone" env:"ANDANTE_DEFAULT_TIMEZONE" default:"UTC" help:"IANA time zone for new reads."`
-	AdminToken      string `name:"admin-token" env:"ANDANTE_ADMIN_TOKEN" help:"Bootstrap API token. Generated and logged once if unset and no API tokens exist."`
+	Secret          string `name:"secret" env:"ANDANTE_SECRET" required:"" help:"Key for encrypted fields, at least 32 characters. Keep it safe, and don't change it without rotate-secret."`
 	LogFormat       string `name:"log-format" env:"ANDANTE_LOG_FORMAT" default:"json" enum:"json,text" help:"Log format: json or text."`
 	LogLevel        string `name:"log-level" env:"ANDANTE_LOG_LEVEL" default:"info" enum:"debug,info,warn,error" help:"Log level."`
 
@@ -77,6 +78,11 @@ func (c *Config) Validate() error {
 		if d.value <= 0 {
 			errs = append(errs, fmt.Errorf("%s must be positive, got %s", d.flag, d.value))
 		}
+	}
+	if c.Secret == "" {
+		errs = append(errs, errors.New("--secret is required"))
+	} else if len(c.Secret) < seal.MinSecretLength {
+		errs = append(errs, fmt.Errorf("--secret must be at least %d characters", seal.MinSecretLength))
 	}
 	if c.CatalogueURL == "" {
 		errs = append(errs, errors.New("--catalogue-url is required"))

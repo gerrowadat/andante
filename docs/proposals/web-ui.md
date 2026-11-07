@@ -1,8 +1,7 @@
 # Proposal: Users and a Web UI
 
-Status: accepted, being built. Phase 11, the split into two services, has shipped and is in
-[`design/architecture.md`](../design/architecture.md). The rest of this is still to come. Open
-questions are in issues #28 to #31.
+Status: accepted, being built. Phases 11 and 12, the split into two services and users, have shipped
+and are in [`design/architecture.md`](../design/architecture.md). The rest of this is still to come.
 
 This adds people and a website to `andante-server`. A user logs in, pastes a site's address or picks from what's already
 indexed, chooses a pace, and gets a feed.
@@ -71,14 +70,6 @@ the UI asks before adding one that looks close.
 
 `DELETE /sources/{id}` answers 409 while a source has demand, so a source with reads can't be
 deleted.
-
-## The User API
-
-`andante-server` serves `/api/v1`, and the CLI uses it with a personal API token. Each token belongs
-to a user, so `GET /reads` means your reads, and another user's read is a 404. Admins can see all of
-them. Source calls are checked and passed on to the catalogue, and reads come from the local copy.
-
-`GET /sources` gains `?q=` for search and `?kind=` for filtering.
 
 ## Stack
 
@@ -152,54 +143,21 @@ on forms. A strict Content-Security-Policy with no inline scripts, HSTS, and
 stranger can't lock someone out by guessing. `--trusted-proxies` says whose `X-Forwarded-For` to
 believe. Login, invites, role changes and token actions go to an audit log.
 
-## Authorisation
-
-Every read and token row has a `user_id` with a foreign key, and every query goes through a store
-that takes the user, so there's no way to fetch a read without saying whose it is. This is
-application code, so a bug can still expose another user's reads, and the tests have to cover every
-route.
-
-## Feed Tokens
-
-Tokens stay high-entropy and are looked up by hash. Each row also holds the token encrypted with
-AES-256-GCM under `--secret`, so that the UI and CLI can always show a URL again, however it was
-issued.
-
-If someone gets the database and that key, they get every feed URL. A feed URL only lets you read a
-feed and, for an owner token, release the next entry. I think that's a fair trade for not making
-people re-subscribe. TOTP secrets use the same key, and rotating it needs a re-encryption command.
-
 ## Configuration
 
-Flags with `ANDANTE_*` variables, and no config files.
-
-**`andante-catalogue`** keeps today's crawl settings, and adds `--api-token` for its service token.
-
-**`andante-server`** drops them, and has:
+`andante-server` gains these, with `ANDANTE_*` variables:
 
 | Flag | Purpose |
 |---|---|
-| `--listen` | UI, API and feeds, default `:8080` |
-| `--ops-listen` | `/healthz`, `/readyz` and `/metrics`, default `127.0.0.1:8081` |
-| `--base-url` | Public address, for feed links, cookies and OIDC redirects |
-| `--database-url` | Its own Postgres database |
-| `--catalogue-url`, `--catalogue-token` | The catalogue |
-| `--secret` | Key for encrypted fields |
 | `--trusted-proxies` | CIDRs to trust for client addresses |
 | `--password-login` | On by default |
 | `--oidc-issuer`, `--oidc-client-id`, `--oidc-client-secret` | OIDC, off when unset |
 | `--oidc-allowed-domain`, `--oidc-allowed-group` | Who can sign in without an invite |
 
-The API moves onto the main listener, because users now hold their own tokens and it needs a login
-like everything else. The ops listener keeps the things that have no auth.
-
 ## Delivery
 
 Tests use `httptest`, and a small fake OIDC provider, so CI needs no real one. The tests that matter
 most check that one user can't reach another's reads or tokens, on every route. 
-`make spec-diff` fails on the rewrite, and `contracts` is a required check, so the PR that replaces
-the contract needs a one-off exception in `scripts/spec-diff.sh`, removed straight after. The
-additive-only rule applies from then on.
 
 ## Phases
 
@@ -208,7 +166,7 @@ Each phase leaves a working system, and each is one PR.
 | # | Delivers |
 |---|---|
 | 11 | Done: `andante-catalogue` with its database, API, revisions, `/changes` and demand. `andante-server` syncs and serves feeds from its copy |
-| 12 | Users, personal API tokens and `user_id` everywhere. Rewritten `/api/v1`, CLI and end-to-end suite. Encrypted feed tokens |
+| 12 | Done: users, personal API tokens, `user_id` on reads, the API on the main listener, encrypted feed tokens |
 | 13 | Password login, sessions, invites, CSRF, headers, rate limits, audit log |
 | 14 | Pages: Home, Browse, reads, feed links, sources, users, with per-user tests on every route |
 | 15 | Discovery, canonical keys and the add flow |

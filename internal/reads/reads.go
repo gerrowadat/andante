@@ -72,6 +72,7 @@ type View struct {
 
 // CreateParams describe a new read.
 type CreateParams struct {
+	UserID   int64
 	SourceID int64
 	Name     string
 	Pacing   schedule.Pacing
@@ -199,6 +200,7 @@ func (s *Service) Create(ctx context.Context, params CreateParams) (View, error)
 		return View{}, err
 	}
 	read, err := s.opts.Store.CreateRead(ctx, db.InsertReadParams{
+		UserID:   params.UserID,
 		SourceID: params.SourceID,
 		Name:     params.Name,
 		CatchUp:  catchUp,
@@ -213,8 +215,8 @@ func (s *Service) Create(ctx context.Context, params CreateParams) (View, error)
 }
 
 // Get returns a read with its position.
-func (s *Service) Get(ctx context.Context, id int64) (View, error) {
-	read, err := s.opts.Store.GetRead(ctx, id)
+func (s *Service) Get(ctx context.Context, actor store.Actor, id int64) (View, error) {
+	read, err := s.opts.Store.GetRead(ctx, actor, id)
 	if err != nil {
 		return View{}, err
 	}
@@ -222,8 +224,8 @@ func (s *Service) Get(ctx context.Context, id int64) (View, error) {
 }
 
 // List returns reads with their positions.
-func (s *Service) List(ctx context.Context, after int64, limit int32) ([]View, error) {
-	reads, err := s.opts.Store.ListReads(ctx, after, limit)
+func (s *Service) List(ctx context.Context, actor store.Actor, all bool, after int64, limit int32) ([]View, error) {
+	reads, err := s.opts.Store.ListReads(ctx, actor, all, after, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -239,8 +241,8 @@ func (s *Service) List(ctx context.Context, after int64, limit int32) ([]View, e
 }
 
 // Update changes a read's name and config.
-func (s *Service) Update(ctx context.Context, id int64, patch PatchParams) (View, error) {
-	read, err := s.opts.Store.GetRead(ctx, id)
+func (s *Service) Update(ctx context.Context, actor store.Actor, id int64, patch PatchParams) (View, error) {
+	read, err := s.opts.Store.GetRead(ctx, actor, id)
 	if err != nil {
 		return View{}, err
 	}
@@ -255,7 +257,7 @@ func (s *Service) Update(ctx context.Context, id int64, patch PatchParams) (View
 	if patch.Config != nil {
 		params.Config = patch.Config
 	}
-	updated, err := s.opts.Store.UpdateRead(ctx, params)
+	updated, err := s.opts.Store.UpdateRead(ctx, actor, params)
 	if err != nil {
 		return View{}, err
 	}
@@ -263,14 +265,14 @@ func (s *Service) Update(ctx context.Context, id int64, patch PatchParams) (View
 }
 
 // Delete removes a read.
-func (s *Service) Delete(ctx context.Context, id int64) error {
-	return s.opts.Store.DeleteRead(ctx, id)
+func (s *Service) Delete(ctx context.Context, actor store.Actor, id int64) error {
+	return s.opts.Store.DeleteRead(ctx, actor, id)
 }
 
 // Adjust appends the segment an adjustment makes. Two adjustments to one read
 // happen one after the other.
-func (s *Service) Adjust(ctx context.Context, id int64, adjustment schedule.Adjustment) (View, error) {
-	err := s.opts.Store.AppendSegment(ctx, id, func(read db.Read, rows []db.ReadSegment, times []db.ListEntryTimesRow) (db.InsertSegmentParams, error) {
+func (s *Service) Adjust(ctx context.Context, actor store.Actor, id int64, adjustment schedule.Adjustment) (View, error) {
+	err := s.opts.Store.AppendSegment(ctx, actor, id, func(read db.Read, rows []db.ReadSegment, times []db.ListEntryTimesRow) (db.InsertSegmentParams, error) {
 		segments, err := fromRows(rows)
 		if err != nil {
 			return db.InsertSegmentParams{}, err
@@ -289,7 +291,7 @@ func (s *Service) Adjust(ctx context.Context, id int64, adjustment schedule.Adju
 	if err != nil {
 		return View{}, err
 	}
-	return s.Get(ctx, id)
+	return s.Get(ctx, actor, id)
 }
 
 // ReleasedEntry is an entry with the time it was released.
@@ -410,8 +412,8 @@ func (s *Service) Furthest(ctx context.Context, sourceID int64) (int32, bool, er
 }
 
 // Segments returns a page of a read's history.
-func (s *Service) Segments(ctx context.Context, id, after int64, limit int32) ([]db.ReadSegment, error) {
-	return s.opts.Store.SegmentsPage(ctx, id, after, limit)
+func (s *Service) Segments(ctx context.Context, actor store.Actor, id, after int64, limit int32) ([]db.ReadSegment, error) {
+	return s.opts.Store.SegmentsPage(ctx, actor, id, after, limit)
 }
 
 func interval(d time.Duration) pgtype.Interval {

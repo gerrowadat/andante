@@ -15,15 +15,15 @@ has its own.
 |---|---|---|---|
 | `--database-url` | `ANDANTE_DATABASE_URL` | required | Postgres DSN |
 | `--base-url` | `ANDANTE_BASE_URL` | required | Public URL used in feed links; absolute http(s) |
-| `--listen` | `ANDANTE_LISTEN` | `:8080` | Public listener (feeds) |
-| `--admin-listen` | `ANDANTE_ADMIN_LISTEN` | `127.0.0.1:8081` | Admin listener (API, health, metrics) |
+| `--listen` | `ANDANTE_LISTEN` | `:8080` | Public listener (feeds and the API) |
+| `--ops-listen` | `ANDANTE_OPS_LISTEN` | `127.0.0.1:8081` | Ops listener (health, metrics) |
 | `--catalogue-url` | `ANDANTE_CATALOGUE_URL` | required | Address of `andante-catalogue`, including `/v1` |
 | `--catalogue-token` | `ANDANTE_CATALOGUE_TOKEN` | required | The catalogue's API token |
 | `--demand-interval` | `ANDANTE_DEMAND_INTERVAL` | `30s` | How often to tell the catalogue how far readers have got |
 | `--default-timezone` | `ANDANTE_DEFAULT_TIMEZONE` | `UTC` | IANA time zone for new reads |
 | `--user-agent` | `ANDANTE_USER_AGENT` | `andante/<version> (+<base-url>)` | Crawler identity |
 | `--crawl-interval` | `ANDANTE_CRAWL_INTERVAL` | `5s` | Minimum gap between requests to one host |
-| `--admin-token` | `ANDANTE_ADMIN_TOKEN` | generated on first run | Bootstrap API token |
+| `--secret` | `ANDANTE_SECRET` | required | Key for encrypted fields, at least 32 characters. See [the secret](#the-secret) |
 | `--log-format` | `ANDANTE_LOG_FORMAT` | `json` | `json` or `text` |
 | `--log-level` | `ANDANTE_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
 | `--read-header-timeout` | `ANDANTE_READ_HEADER_TIMEOUT` | `5s` | Time allowed to read request headers |
@@ -63,11 +63,37 @@ It also takes `--log-format`, `--log-level`, `--read-header-timeout`, `--read-ti
 `--idle-timeout`, `--shutdown-timeout` and `--readiness-timeout`, as above. How the crawl settings
 fit together is in [sources](sources.md).
 
-## The Bootstrap API Token
+## Users
 
-If `api_tokens` is empty when the server starts, it stores `--admin-token`, or generates a token
-and logs it once at WARN. Save a generated token when it appears. Only its SHA-256 hash is
-stored, so it can't be shown again. Once any token exists, `--admin-token` is ignored.
+There are no users on a new database, and the server logs a warning until there's one. Add the first
+from the command line, with the same `--database-url` or `ANDANTE_DATABASE_URL` as the server. It
+prints that user's API token:
+
+```sh
+andante-server user add dave --admin
+```
+
+An admin can change sources and reach everyone's reads. Without `--admin`, a user only has their own
+reads and tokens. If someone loses their token, this revokes all of theirs and prints a new one:
+
+```sh
+andante-server user reset dave
+```
+
+## The Secret
+
+`--secret` is the key for the encrypted copy of each feed token, which is what lets a URL be shown
+again. Use `openssl rand -hex 32`. The server refuses to start with a different secret to the one
+the database was set up with, so a typo can't quietly break anything.
+
+To change it:
+
+```sh
+ANDANTE_NEW_SECRET=... andante-server rotate-secret
+```
+
+If it's lost, `--forget-urls` starts again with a new one. Feed tokens carry on working, because
+they're looked up by hash, but their URLs can't be shown again and `token list` shows a dash.
 
 ## Startup
 
@@ -75,8 +101,8 @@ The server migrates the database before it starts listening. Migrations are embe
 binary and run under a Postgres advisory lock, so several servers starting together apply them
 once. `/readyz` returns 200 once the database is reachable with every migration applied.
 
-The admin listener carries `/healthz`, `/readyz` and `/metrics`. Don't expose it publicly. The
-public listener only serves feeds, so that one can be. Don't expose the catalogue's listener either.
+The ops listener carries `/healthz`, `/readyz` and `/metrics`, which have no auth, so don't expose it
+publicly. The public listener has the feeds and the API. Don't expose the catalogue's listener either.
 
 The server doesn't need the catalogue to start, and `/readyz` doesn't depend on it, because feeds
 work without it.

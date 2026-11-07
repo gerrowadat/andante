@@ -24,8 +24,6 @@ import (
 	"github.com/mmcdole/gofeed"
 )
 
-const adminToken = "e2e-admin-token"
-
 var csrfField = regexp.MustCompile(`name="csrf" value="([0-9a-f]+)"`)
 
 // rig is one real server and the database that outlives its restarts. Time moves
@@ -37,6 +35,7 @@ type rig struct {
 	catalogueProcess *process
 	process          *process
 	api              *client.ClientWithResponses
+	adminToken       string
 }
 
 func newRig(t *testing.T) *rig {
@@ -78,14 +77,17 @@ func stop(t *testing.T, p *process) {
 func (r *rig) start(t *testing.T, ahead time.Duration) {
 	t.Helper()
 	flags := []string{
-		"--admin-token=" + adminToken, "--feed-rate-limit=100000", "--test-clock-offset=" + ahead.String(),
+		"--feed-rate-limit=100000", "--test-clock-offset=" + ahead.String(),
 		r.catalogueProcess.flag(), "--demand-interval=50ms",
 	}
 	r.process = startServer(t, r.bin, r.dsn, flags...)
 	r.process.waitReady(t)
-	api, err := client.NewClientWithResponses("http://"+r.process.admin+"/api/v1",
+	if r.adminToken == "" {
+		r.adminToken = r.process.addUser(t, "admin")
+	}
+	api, err := client.NewClientWithResponses("http://"+r.process.public+"/api/v1",
 		client.WithRequestEditorFn(func(_ context.Context, req *http.Request) error {
-			req.Header.Set("Authorization", "Bearer "+adminToken)
+			req.Header.Set("Authorization", "Bearer "+r.adminToken)
 			return nil
 		}))
 	if err != nil {

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io/fs"
 
+	"github.com/gerrowadat/andante/internal/seal"
 	"github.com/gerrowadat/andante/internal/store/db"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
@@ -34,6 +35,7 @@ type Store struct {
 	sqlDB    *sql.DB
 	queries  *db.Queries
 	migrator *goose.Provider
+	box      *seal.Box
 }
 
 // Open connects to the database at dsn. It does not migrate; call Migrate.

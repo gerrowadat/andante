@@ -9,12 +9,12 @@ Issue a token:
 
 ```sh
 curl -X POST -H "Authorization: Bearer $ANDANTE_TOKEN" -H 'Content-Type: application/json' \
-  http://127.0.0.1:8081/api/v1/reads/1/tokens -d '{"role": "owner", "label": "me"}'
+  http://127.0.0.1:8080/api/v1/reads/1/tokens -d '{"role": "owner", "label": "me"}'
 ```
 
 The response has the feed URLs and a `suggested` format: RSS for podcasts, which is what
 podcast apps expect, and Atom otherwise. Paste a URL into your feed reader or podcast app.
-**The token is shown only once.** Only its hash is stored, so it can't be looked up later.
+`GET /reads/{id}/tokens` shows a token's URLs again.
 
 A feed holds the last 30 released entries. Set `{"window": 50}` in a read's `config` to change
 that.
@@ -29,7 +29,7 @@ Give each person their own `viewer` token, with a label:
 
 ```sh
 curl -X POST -H "Authorization: Bearer $ANDANTE_TOKEN" -H 'Content-Type: application/json' \
-  http://127.0.0.1:8081/api/v1/reads/1/tokens -d '{"role": "viewer", "label": "Alex"}'
+  http://127.0.0.1:8080/api/v1/reads/1/tokens -d '{"role": "viewer", "label": "Alex"}'
 ```
 
 A group read is just one read with several viewer tokens. Everyone sees the same entries at
@@ -42,18 +42,18 @@ who's still reading.
 | `viewer` | The feed only |
 
 To subscribe to everything at once, or hand someone a whole list, export OPML. Each export
-issues a new token per read with the role and label you give, because existing tokens can't be
-read back:
+issues a new token per read of yours, with the role and label you give, so that you can revoke a
+whole file at once:
 
 ```sh
 curl -X POST -H "Authorization: Bearer $ANDANTE_TOKEN" -H 'Content-Type: application/json' \
-  http://127.0.0.1:8081/api/v1/exports/opml -d '{"issue": "viewer", "label": "For Alex"}' > feeds.opml
+  http://127.0.0.1:8080/api/v1/exports/opml -d '{"issue": "viewer", "label": "For Alex"}' > feeds.opml
 ```
 
 ## Revoking
 
 ```sh
-curl -X DELETE -H "Authorization: Bearer $ANDANTE_TOKEN" http://127.0.0.1:8081/api/v1/tokens/3
+curl -X DELETE -H "Authorization: Bearer $ANDANTE_TOKEN" http://127.0.0.1:8080/api/v1/tokens/3
 ```
 
 That URL stops working at once, and it answers 404, the same as a URL that never existed.
