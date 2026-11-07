@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	specfile "github.com/gerrowadat/andante/api"
 	"github.com/gerrowadat/andante/internal/buildinfo"
@@ -639,5 +640,36 @@ func TestWhoAmI(t *testing.T) {
 	got := h.ok(t, "whoami")
 	if !strings.Contains(got, "admin") {
 		t.Errorf("whoami = %s", got)
+	}
+}
+
+func TestLoginCommands(t *testing.T) {
+	h := newHarness(t)
+	got := h.ok(t, "invite", "add", "alex")
+	if !strings.Contains(got, "https://andante.example/invite/") {
+		t.Errorf("invite = %s", got)
+	}
+	h.ok(t, "invite", "add", "pat", "--admin")
+	if r := h.run("invite", "add", "admin"); r.err == nil {
+		t.Error("invited a taken name")
+	}
+	h.ok(t, "invite", "add", "admin", "--reset")
+
+	user, err := h.store.GetUserByName(t.Context(), "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.store.CreateSession(t.Context(), user.ID, store.Client{IP: "203.0.113.1", UserAgent: "a browser"}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.ok(t, "session", "list"); !strings.Contains(got, "203.0.113.1") || !strings.Contains(got, "a browser") {
+		t.Errorf("sessions = %s", got)
+	}
+	h.ok(t, "session", "rm", "1")
+	if got := h.ok(t, "session", "list"); strings.Contains(got, "203.0.113.1") {
+		t.Errorf("sessions after rm = %s", got)
+	}
+	if got := h.ok(t, "audit"); !strings.Contains(got, "invite.created") || !strings.Contains(got, "session.revoked") {
+		t.Errorf("audit = %s", got)
 	}
 }

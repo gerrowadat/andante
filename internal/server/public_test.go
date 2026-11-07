@@ -498,6 +498,25 @@ func TestTheTokenDoesNotLeakToThePublisher(t *testing.T) {
 	}
 }
 
+func TestNextPageHeaders(t *testing.T) {
+	f := newFeedFixture(t, 1000)
+	s := f.source(t, "page")
+	f.entries(t, s, 3, "")
+	path := "/f/" + f.token(t, f.read(t, s).Read.ID, feed.RoleOwner) + "/next"
+	resp, _ := f.get(t, path)
+	policy := resp.Header.Get("Content-Security-Policy")
+	if !strings.Contains(policy, "frame-ancestors 'none'") {
+		t.Errorf("policy = %q", policy)
+	}
+	// form-action would stop the redirect to the publisher's site.
+	if strings.Contains(policy, "form-action") {
+		t.Errorf("policy = %q", policy)
+	}
+	if got := resp.Header.Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Errorf("X-Content-Type-Options = %q", got)
+	}
+}
+
 func TestNextRefusals(t *testing.T) {
 	f := newFeedFixture(t, 1000)
 	s := f.source(t, "page")

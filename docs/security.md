@@ -27,6 +27,11 @@ The licence allow-list is permissive on purpose. Anything that doesn't restrict 
 distributed is fine, so it holds permissive licences and leaves out copyleft ones. Add one if a
 dependency needs it.
 
+## Logins
+
+How logins work, and why, is in [the design record](design/login.md). `andante audit` shows who did what.
+If an account is compromised, run `andante-server user reset`.
+
 ## Where Results Appear
 
 SARIF from govulncheck, Trivy, CodeQL and Scorecard appears under **Security → Code scanning**,

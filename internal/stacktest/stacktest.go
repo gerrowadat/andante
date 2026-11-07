@@ -16,6 +16,7 @@ import (
 	"github.com/gerrowadat/andante/internal/api"
 	catalogueapi "github.com/gerrowadat/andante/internal/catalogue/api"
 	catalogue "github.com/gerrowadat/andante/internal/catalogue/store"
+	"github.com/gerrowadat/andante/internal/clientip"
 	"github.com/gerrowadat/andante/internal/discovery"
 	"github.com/gerrowadat/andante/internal/discovery/sitetest"
 	"github.com/gerrowadat/andante/internal/discovery/strategies"
@@ -95,8 +96,12 @@ func NewWith(t *testing.T, opts Options) *Stack {
 		Store: s.Store, Client: client, Logger: slog.New(slog.DiscardHandler), Registry: s.Registry,
 		Furthest: s.Reads.Furthest, DemandInterval: time.Hour,
 	})
+	clients, err := clientip.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	handler, err := api.New(api.Options{
-		Store: s.Store, Catalogue: client, Sync: s.Sync, Reads: s.Reads, BaseURL: "https://andante.example/",
+		Store: s.Store, Catalogue: client, Sync: s.Sync, Reads: s.Reads, Clients: clients, BaseURL: "https://andante.example/",
 		Registry: s.Registry, Logger: slog.New(slog.DiscardHandler), ProbeTimeout: time.Minute,
 	})
 	if err != nil {

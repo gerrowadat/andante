@@ -101,7 +101,7 @@ func (s *Store) AuthenticateAPIToken(ctx context.Context, raw string) (Actor, bo
 	if err := s.queries.TouchAPIToken(ctx, token.ID); err != nil {
 		return Actor{}, false, fmt.Errorf("record API token use: %w", err)
 	}
-	return Actor{UserID: token.UserID, Admin: token.Role == RoleAdmin}, true, nil
+	return Actor{UserID: token.UserID, Admin: token.Role == RoleAdmin, Name: token.Name}, true, nil
 }
 
 func newToken() (string, error) {

@@ -20,6 +20,15 @@ type ApiToken struct {
 	LastUsedAt *time.Time
 }
 
+type AuditLog struct {
+	ID     int64
+	At     time.Time
+	Who    string
+	Action string
+	Target string
+	Ip     string
+}
+
 type Entry struct {
 	ID           int64
 	SourceID     int64
@@ -50,6 +59,17 @@ type FeedToken struct {
 	CreatedAt   time.Time
 	RevokedAt   *time.Time
 	LastSeenAt  *time.Time
+}
+
+type Invite struct {
+	ID        int64
+	TokenHash []byte
+	Name      string
+	Role      string
+	UserID    *int64
+	CreatedAt time.Time
+	ExpiresAt time.Time
+	UsedAt    *time.Time
 }
 
 type Read struct {
@@ -86,6 +106,17 @@ type SecretCheck struct {
 	Sealed  []byte
 }
 
+type Session struct {
+	ID         int64
+	UserID     int64
+	TokenHash  []byte
+	Ip         string
+	UserAgent  string
+	CreatedAt  time.Time
+	LastSeenAt time.Time
+	RevokedAt  *time.Time
+}
+
 type Source struct {
 	ID            int64
 	Slug          string
@@ -109,9 +140,10 @@ type SyncState struct {
 }
 
 type User struct {
-	ID         int64
-	Name       string
-	Role       string
-	CreatedAt  time.Time
-	DisabledAt *time.Time
+	ID           int64
+	Name         string
+	Role         string
+	CreatedAt    time.Time
+	DisabledAt   *time.Time
+	PasswordHash *string
 }

@@ -57,6 +57,7 @@ func (h *handler) CreateAPIToken(ctx context.Context, r gen.CreateAPITokenReques
 	if err != nil {
 		return nil, err
 	}
+	h.audit(ctx, "api-token.created", token.Label)
 	return gen.CreateAPIToken201JSONResponse{
 		ID:        token.ID,
 		Label:     token.Label,
@@ -75,5 +76,6 @@ func (h *handler) RevokeAPIToken(ctx context.Context, r gen.RevokeAPITokenReques
 	case err != nil:
 		return nil, err
 	}
+	h.audit(ctx, "api-token.revoked", "")
 	return gen.RevokeAPIToken204Response{}, nil
 }

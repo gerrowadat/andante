@@ -10,6 +10,9 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Users. Sources are shared, and reads and tokens are private. `andante-server user add` and
   `user reset` manage them, and `GET /me` and `andante whoami` say who you are.
+- Password login, with sessions, single-use invite links, throttling and an audit log.
+  `andante invite`, `andante session` and `andante audit`, and `andante-server user link` for the
+  first password. `andante-server user reset` now also ends sessions and clears the password.
 - `GET /sources` takes `q` and `kind`, and an admin's `GET /reads` takes `all`.
 - Feed URLs can be shown again, through `GET /reads/{id}/tokens` and `andante token list`.
   `andante-server rotate-secret` changes the key.

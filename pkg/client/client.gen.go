@@ -83,6 +83,42 @@ func (e FeedPagedConfigStrategy) Valid() bool {
 	}
 }
 
+// Defines values for InviteRole.
+const (
+	InviteRoleAdmin InviteRole = "admin"
+	InviteRoleUser  InviteRole = "user"
+)
+
+// Valid indicates whether the value is a known member of the InviteRole enum.
+func (e InviteRole) Valid() bool {
+	switch e {
+	case InviteRoleAdmin:
+		return true
+	case InviteRoleUser:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for InviteCreateRole.
+const (
+	InviteCreateRoleAdmin InviteCreateRole = "admin"
+	InviteCreateRoleUser  InviteCreateRole = "user"
+)
+
+// Valid indicates whether the value is a known member of the InviteCreateRole enum.
+func (e InviteCreateRole) Valid() bool {
+	switch e {
+	case InviteCreateRoleAdmin:
+		return true
+	case InviteCreateRoleUser:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for IssuedFeedTokenSuggested.
 const (
 	IssuedFeedTokenSuggestedAtom IssuedFeedTokenSuggested = "atom"
@@ -455,6 +491,24 @@ type Adjustment struct {
 	union json.RawMessage
 }
 
+// AuditEntry defines model for AuditEntry.
+type AuditEntry struct {
+	Action string    `json:"action"`
+	At     time.Time `json:"at"`
+	ID     int64     `json:"id"`
+	IP     string    `json:"ip"`
+	Target string    `json:"target"`
+	Who    string    `json:"who"`
+}
+
+// AuditList defines model for AuditList.
+type AuditList struct {
+	Items []AuditEntry `json:"items"`
+
+	// Next The next page, or null on the last one.
+	Next nullable.Nullable[NextLink] `json:"next"`
+}
+
 // CatchUp defines model for CatchUp.
 type CatchUp string
 
@@ -582,6 +636,32 @@ type FieldError struct {
 	// Pointer A JSON pointer to the field in the request body.
 	Pointer *string `json:"pointer,omitempty"`
 }
+
+// Invite defines model for Invite.
+type Invite struct {
+	ExpiresAt time.Time  `json:"expires_at"`
+	ID        int64      `json:"id"`
+	Name      string     `json:"name"`
+	Role      InviteRole `json:"role"`
+
+	// URL The link, shown only here.
+	URL string `json:"url"`
+}
+
+// InviteRole defines model for Invite.Role.
+type InviteRole string
+
+// InviteCreate defines model for InviteCreate.
+type InviteCreate struct {
+	Name string `json:"name"`
+
+	// Reset This is for an existing user, to set a new password.
+	Reset *bool             `json:"reset,omitempty"`
+	Role  *InviteCreateRole `json:"role,omitempty"`
+}
+
+// InviteCreateRole defines model for InviteCreate.Role.
+type InviteCreateRole string
 
 // IssuedAPIToken defines model for IssuedAPIToken.
 type IssuedAPIToken struct {
@@ -873,6 +953,23 @@ type Selectors struct {
 	Title   *string `json:"title,omitempty"`
 }
 
+// Session defines model for Session.
+type Session struct {
+	CreatedAt  time.Time `json:"created_at"`
+	ID         int64     `json:"id"`
+	IP         string    `json:"ip"`
+	LastSeenAt time.Time `json:"last_seen_at"`
+	UserAgent  string    `json:"user_agent"`
+}
+
+// SessionList defines model for SessionList.
+type SessionList struct {
+	Items []Session `json:"items"`
+
+	// Next The next page, or null on the last one.
+	Next nullable.Nullable[NextLink] `json:"next"`
+}
+
 // SkipAdjustment defines model for SkipAdjustment.
 type SkipAdjustment struct {
 	Count *int32             `json:"count,omitempty"`
@@ -979,6 +1076,15 @@ type ListAPITokensParams struct {
 	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
+// ListAuditParams defines parameters for ListAudit.
+type ListAuditParams struct {
+	// Cursor An opaque cursor from a previous page's next link.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+
+	// Limit The most items to return.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
 // ListReadsParams defines parameters for ListReads.
 type ListReadsParams struct {
 	// Cursor An opaque cursor from a previous page's next link.
@@ -1002,6 +1108,15 @@ type ListSegmentsParams struct {
 
 // ListFeedTokensParams defines parameters for ListFeedTokens.
 type ListFeedTokensParams struct {
+	// Cursor An opaque cursor from a previous page's next link.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+
+	// Limit The most items to return.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// ListSessionsParams defines parameters for ListSessions.
+type ListSessionsParams struct {
 	// Cursor An opaque cursor from a previous page's next link.
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 
@@ -1038,6 +1153,9 @@ type CreateAPITokenJSONRequestBody = APITokenCreate
 
 // ExportOPMLJSONRequestBody defines body for ExportOPML for application/json ContentType.
 type ExportOPMLJSONRequestBody = OPMLExportRequest
+
+// CreateInviteJSONRequestBody defines body for CreateInvite for application/json ContentType.
+type CreateInviteJSONRequestBody = InviteCreate
 
 // CreateProbeJSONRequestBody defines body for CreateProbe for application/json ContentType.
 type CreateProbeJSONRequestBody = ProbeRequest
@@ -1685,6 +1803,13 @@ type ClientInterface interface {
 	// Corresponds with DELETE /api-tokens/{id} (the `RevokeAPIToken` operationId).
 	RevokeAPIToken(ctx context.Context, id ID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ListAudit Read the audit log
+	//
+	// Admins only. Oldest first.
+	//
+	// Corresponds with GET /audit (the `ListAudit` operationId).
+	ListAudit(ctx context.Context, params *ListAuditParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ExportOPMLWithBody Export reads as OPML
 	//
 	// Issues a fresh feed token per read with the given role and label, and returns OPML 2.0 of their feed URLs. Raw tokens are never stored, so an export can only contain tokens created for it.
@@ -1711,6 +1836,24 @@ type ClientInterface interface {
 	//
 	// Corresponds with POST /imports/opml (the `ImportOPML` operationId).
 	ImportOPMLWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateInviteWithBody Invite someone, or reset a password
+	//
+	// Admins only. Returns a single-use link, good for a week, where someone sets a password. With reset it's for an existing user, and ends their sessions when it's used.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /invites (the `CreateInvite` operationId).
+	CreateInviteWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateInvite Invite someone, or reset a password
+	//
+	// Admins only. Returns a single-use link, good for a week, where someone sets a password. With reset it's for an existing user, and ends their sessions when it's used.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /invites (the `CreateInvite` operationId).
+	CreateInvite(ctx context.Context, body CreateInviteJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetMe Who this token belongs to
 	//
@@ -1850,6 +1993,20 @@ type ClientInterface interface {
 	//
 	// Corresponds with POST /reads/{id}/tokens (the `CreateFeedToken` operationId).
 	CreateFeedToken(ctx context.Context, id ID, body CreateFeedTokenJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListSessions List your logged-in sessions
+	//
+	// Lists your live sessions. Revoke one to log that browser out.
+	//
+	// Corresponds with GET /sessions (the `ListSessions` operationId).
+	ListSessions(ctx context.Context, params *ListSessionsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RevokeSession End a session
+	//
+	// Ends one of your own sessions. Someone else's is a 404, even for an admin.
+	//
+	// Corresponds with DELETE /sessions/{id} (the `RevokeSession` operationId).
+	RevokeSession(ctx context.Context, id ID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListSources List sources
 	//
@@ -2009,6 +2166,23 @@ func (c *Client) RevokeAPIToken(ctx context.Context, id ID, reqEditors ...Reques
 	return c.Client.Do(req)
 }
 
+// ListAudit Read the audit log
+//
+// Admins only. Oldest first.
+//
+// Corresponds with GET /audit (the `ListAudit` operationId).
+func (c *Client) ListAudit(ctx context.Context, params *ListAuditParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListAuditRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // ExportOPMLWithBody Export reads as OPML
 //
 // Issues a fresh feed token per read with the given role and label, and returns OPML 2.0 of their feed URLs. Raw tokens are never stored, so an export can only contain tokens created for it.
@@ -2056,6 +2230,44 @@ func (c *Client) ExportOPML(ctx context.Context, body ExportOPMLJSONRequestBody,
 // Corresponds with POST /imports/opml (the `ImportOPML` operationId).
 func (c *Client) ImportOPMLWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewImportOPMLRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateInviteWithBody Invite someone, or reset a password
+//
+// Admins only. Returns a single-use link, good for a week, where someone sets a password. With reset it's for an existing user, and ends their sessions when it's used.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /invites (the `CreateInvite` operationId).
+func (c *Client) CreateInviteWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateInviteRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateInvite Invite someone, or reset a password
+//
+// Admins only. Returns a single-use link, good for a week, where someone sets a password. With reset it's for an existing user, and ends their sessions when it's used.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /invites (the `CreateInvite` operationId).
+func (c *Client) CreateInvite(ctx context.Context, body CreateInviteJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateInviteRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -2365,6 +2577,40 @@ func (c *Client) CreateFeedTokenWithBody(ctx context.Context, id ID, contentType
 // Corresponds with POST /reads/{id}/tokens (the `CreateFeedToken` operationId).
 func (c *Client) CreateFeedToken(ctx context.Context, id ID, body CreateFeedTokenJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCreateFeedTokenRequest(c.Server, id, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListSessions List your logged-in sessions
+//
+// Lists your live sessions. Revoke one to log that browser out.
+//
+// Corresponds with GET /sessions (the `ListSessions` operationId).
+func (c *Client) ListSessions(ctx context.Context, params *ListSessionsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListSessionsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RevokeSession End a session
+//
+// Ends one of your own sessions. Someone else's is a 404, even for an admin.
+//
+// Corresponds with DELETE /sessions/{id} (the `RevokeSession` operationId).
+func (c *Client) RevokeSession(ctx context.Context, id ID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRevokeSessionRequest(c.Server, id)
 	if err != nil {
 		return nil, err
 	}
@@ -2710,6 +2956,72 @@ func NewRevokeAPITokenRequest(server string, id ID) (*http.Request, error) {
 	return req, nil
 }
 
+// NewListAuditRequest constructs an http.Request for the ListAudit method
+func NewListAuditRequest(server string, params *ListAuditParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/audit")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewExportOPMLRequest calls the generic ExportOPML builder with application/json body
 func NewExportOPMLRequest(server string, body ExportOPMLJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -2760,6 +3072,46 @@ func NewImportOPMLRequestWithBody(server string, contentType string, body io.Rea
 	}
 
 	operationPath := fmt.Sprintf("/imports/opml")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewCreateInviteRequest calls the generic CreateInvite builder with application/json body
+func NewCreateInviteRequest(server string, body CreateInviteJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateInviteRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateInviteRequestWithBody constructs an http.Request for the CreateInvite method, with any body, and a specified content type
+func NewCreateInviteRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/invites")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -3346,6 +3698,106 @@ func NewCreateFeedTokenRequestWithBody(server string, id ID, contentType string,
 	return req, nil
 }
 
+// NewListSessionsRequest constructs an http.Request for the ListSessions method
+func NewListSessionsRequest(server string, params *ListSessionsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/sessions")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRevokeSessionRequest constructs an http.Request for the RevokeSession method
+func NewRevokeSessionRequest(server string, id ID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/sessions/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewListSourcesRequest constructs an http.Request for the ListSources method
 func NewListSourcesRequest(server string, params *ListSourcesParams) (*http.Request, error) {
 	var err error
@@ -3839,6 +4291,15 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with DELETE /api-tokens/{id} (the `RevokeAPIToken` operationId).
 	RevokeAPITokenWithResponse(ctx context.Context, id ID, reqEditors ...RequestEditorFn) (*RevokeAPITokenResponse, error)
 
+	// ListAuditWithResponse Read the audit log
+	//
+	// Admins only. Oldest first.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /audit (the `ListAudit` operationId).
+	ListAuditWithResponse(ctx context.Context, params *ListAuditParams, reqEditors ...RequestEditorFn) (*ListAuditResponse, error)
+
 	// ExportOPMLWithBodyWithResponse Export reads as OPML
 	//
 	// Issues a fresh feed token per read with the given role and label, and returns OPML 2.0 of their feed URLs. Raw tokens are never stored, so an export can only contain tokens created for it.
@@ -3865,6 +4326,24 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with POST /imports/opml (the `ImportOPML` operationId).
 	ImportOPMLWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ImportOPMLResponse, error)
+
+	// CreateInviteWithBodyWithResponse Invite someone, or reset a password
+	//
+	// Admins only. Returns a single-use link, good for a week, where someone sets a password. With reset it's for an existing user, and ends their sessions when it's used.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /invites (the `CreateInvite` operationId).
+	CreateInviteWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateInviteResponse, error)
+
+	// CreateInviteWithResponse Invite someone, or reset a password
+	//
+	// Admins only. Returns a single-use link, good for a week, where someone sets a password. With reset it's for an existing user, and ends their sessions when it's used.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /invites (the `CreateInvite` operationId).
+	CreateInviteWithResponse(ctx context.Context, body CreateInviteJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateInviteResponse, error)
 
 	// GetMeWithResponse Who this token belongs to
 	//
@@ -4018,6 +4497,24 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with POST /reads/{id}/tokens (the `CreateFeedToken` operationId).
 	CreateFeedTokenWithResponse(ctx context.Context, id ID, body CreateFeedTokenJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateFeedTokenResponse, error)
+
+	// ListSessionsWithResponse List your logged-in sessions
+	//
+	// Lists your live sessions. Revoke one to log that browser out.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /sessions (the `ListSessions` operationId).
+	ListSessionsWithResponse(ctx context.Context, params *ListSessionsParams, reqEditors ...RequestEditorFn) (*ListSessionsResponse, error)
+
+	// RevokeSessionWithResponse End a session
+	//
+	// Ends one of your own sessions. Someone else's is a 404, even for an admin.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /sessions/{id} (the `RevokeSession` operationId).
+	RevokeSessionWithResponse(ctx context.Context, id ID, reqEditors ...RequestEditorFn) (*RevokeSessionResponse, error)
 
 	// ListSourcesWithResponse List sources
 	//
@@ -4263,6 +4760,61 @@ func (r RevokeAPITokenResponse) ContentType() string {
 	return ""
 }
 
+// ListAuditResponse200Headers the declared response headers of an HTTP 200 response for ListAudit
+type ListAuditResponse200Headers struct {
+	Link *string
+}
+
+type ListAuditResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *AuditList
+	// ApplicationProblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationProblemJSONDefault *Problem
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *ListAuditResponse200Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListAuditResponse) GetJSON200() *AuditList {
+	return r.JSON200
+}
+
+// GetApplicationProblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ListAuditResponse) GetApplicationProblemJSONDefault() *Problem {
+	return r.ApplicationProblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListAuditResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListAuditResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListAuditResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListAuditResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type ExportOPMLResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -4346,6 +4898,54 @@ func (r ImportOPMLResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r ImportOPMLResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateInviteResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *Invite
+	// ApplicationProblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationProblemJSONDefault *Problem
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r CreateInviteResponse) GetJSON201() *Invite {
+	return r.JSON201
+}
+
+// GetApplicationProblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r CreateInviteResponse) GetApplicationProblemJSONDefault() *Problem {
+	return r.ApplicationProblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateInviteResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateInviteResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateInviteResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateInviteResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -4942,6 +5542,102 @@ func (r CreateFeedTokenResponse) ContentType() string {
 	return ""
 }
 
+// ListSessionsResponse200Headers the declared response headers of an HTTP 200 response for ListSessions
+type ListSessionsResponse200Headers struct {
+	Link *string
+}
+
+type ListSessionsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *SessionList
+	// ApplicationProblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationProblemJSONDefault *Problem
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *ListSessionsResponse200Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListSessionsResponse) GetJSON200() *SessionList {
+	return r.JSON200
+}
+
+// GetApplicationProblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ListSessionsResponse) GetApplicationProblemJSONDefault() *Problem {
+	return r.ApplicationProblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListSessionsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListSessionsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListSessionsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListSessionsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RevokeSessionResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// ApplicationProblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationProblemJSONDefault *Problem
+}
+
+// GetApplicationProblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r RevokeSessionResponse) GetApplicationProblemJSONDefault() *Problem {
+	return r.ApplicationProblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r RevokeSessionResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RevokeSessionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RevokeSessionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RevokeSessionResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // ListSourcesResponse200Headers the declared response headers of an HTTP 200 response for ListSources
 type ListSourcesResponse200Headers struct {
 	Link *string
@@ -5427,6 +6123,21 @@ func (c *ClientWithResponses) RevokeAPITokenWithResponse(ctx context.Context, id
 	return ParseRevokeAPITokenResponse(rsp)
 }
 
+// ListAuditWithResponse Read the audit log
+//
+// Admins only. Oldest first.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /audit (the `ListAudit` operationId).
+func (c *ClientWithResponses) ListAuditWithResponse(ctx context.Context, params *ListAuditParams, reqEditors ...RequestEditorFn) (*ListAuditResponse, error) {
+	rsp, err := c.ListAudit(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListAuditResponse(rsp)
+}
+
 // ExportOPMLWithBodyWithResponse Export reads as OPML
 //
 // Issues a fresh feed token per read with the given role and label, and returns OPML 2.0 of their feed URLs. Raw tokens are never stored, so an export can only contain tokens created for it.
@@ -5470,6 +6181,36 @@ func (c *ClientWithResponses) ImportOPMLWithBodyWithResponse(ctx context.Context
 		return nil, err
 	}
 	return ParseImportOPMLResponse(rsp)
+}
+
+// CreateInviteWithBodyWithResponse Invite someone, or reset a password
+//
+// Admins only. Returns a single-use link, good for a week, where someone sets a password. With reset it's for an existing user, and ends their sessions when it's used.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /invites (the `CreateInvite` operationId).
+func (c *ClientWithResponses) CreateInviteWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateInviteResponse, error) {
+	rsp, err := c.CreateInviteWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateInviteResponse(rsp)
+}
+
+// CreateInviteWithResponse Invite someone, or reset a password
+//
+// Admins only. Returns a single-use link, good for a week, where someone sets a password. With reset it's for an existing user, and ends their sessions when it's used.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /invites (the `CreateInvite` operationId).
+func (c *ClientWithResponses) CreateInviteWithResponse(ctx context.Context, body CreateInviteJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateInviteResponse, error) {
+	rsp, err := c.CreateInvite(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateInviteResponse(rsp)
 }
 
 // GetMeWithResponse Who this token belongs to
@@ -5725,6 +6466,36 @@ func (c *ClientWithResponses) CreateFeedTokenWithResponse(ctx context.Context, i
 		return nil, err
 	}
 	return ParseCreateFeedTokenResponse(rsp)
+}
+
+// ListSessionsWithResponse List your logged-in sessions
+//
+// Lists your live sessions. Revoke one to log that browser out.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /sessions (the `ListSessions` operationId).
+func (c *ClientWithResponses) ListSessionsWithResponse(ctx context.Context, params *ListSessionsParams, reqEditors ...RequestEditorFn) (*ListSessionsResponse, error) {
+	rsp, err := c.ListSessions(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListSessionsResponse(rsp)
+}
+
+// RevokeSessionWithResponse End a session
+//
+// Ends one of your own sessions. Someone else's is a 404, even for an admin.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /sessions/{id} (the `RevokeSession` operationId).
+func (c *ClientWithResponses) RevokeSessionWithResponse(ctx context.Context, id ID, reqEditors ...RequestEditorFn) (*RevokeSessionResponse, error) {
+	rsp, err := c.RevokeSession(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRevokeSessionResponse(rsp)
 }
 
 // ListSourcesWithResponse List sources
@@ -6000,6 +6771,52 @@ func ParseRevokeAPITokenResponse(rsp *http.Response) (*RevokeAPITokenResponse, e
 	return response, nil
 }
 
+// ParseListAuditResponse parses an HTTP response from a ListAuditWithResponse call
+func ParseListAuditResponse(rsp *http.Response) (*ListAuditResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListAuditResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AuditList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationProblemJSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers ListAuditResponse200Headers
+		if values := rsp.Header.Values("Link"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Link", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.Link = &value
+		}
+		response.Headers200 = &headers
+	}
+
+	return response, nil
+}
+
 // ParseExportOPMLResponse parses an HTTP response from a ExportOPMLWithResponse call
 func ParseExportOPMLResponse(rsp *http.Response) (*ExportOPMLResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -6046,6 +6863,39 @@ func ParseImportOPMLResponse(rsp *http.Response) (*ImportOPMLResponse, error) {
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationProblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateInviteResponse parses an HTTP response from a CreateInviteWithResponse call
+func ParseCreateInviteResponse(rsp *http.Response) (*CreateInviteResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateInviteResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest Invite
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Problem
@@ -6477,6 +7327,81 @@ func ParseCreateFeedTokenResponse(rsp *http.Response) (*CreateFeedTokenResponse,
 			return nil, err
 		}
 		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationProblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListSessionsResponse parses an HTTP response from a ListSessionsWithResponse call
+func ParseListSessionsResponse(rsp *http.Response) (*ListSessionsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListSessionsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SessionList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationProblemJSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers ListSessionsResponse200Headers
+		if values := rsp.Header.Values("Link"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Link", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.Link = &value
+		}
+		response.Headers200 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseRevokeSessionResponse parses an HTTP response from a RevokeSessionWithResponse call
+func ParseRevokeSessionResponse(rsp *http.Response) (*RevokeSessionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RevokeSessionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Problem

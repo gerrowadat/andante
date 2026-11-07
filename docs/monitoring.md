@@ -29,6 +29,7 @@ you create. Tokens and read IDs are never labels.
 | `andante_probe_runs_total` | `result` | Probes run |
 | `andante_feed_requests_total` | `format`, `role`, `status` | Feed requests |
 | `andante_feed_render_duration_seconds` | | Time to render a feed |
+| `andante_logins_total` | `result` | Login attempts: `ok`, `failed` or `throttled` |
 | `andante_api_requests_total` | `route`, `status` | Admin API requests |
 
 ## Alerts

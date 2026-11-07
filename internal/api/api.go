@@ -13,6 +13,7 @@ import (
 	"github.com/gerrowadat/andante/api"
 	"github.com/gerrowadat/andante/internal/api/gen"
 	"github.com/gerrowadat/andante/internal/buildinfo"
+	"github.com/gerrowadat/andante/internal/clientip"
 	"github.com/gerrowadat/andante/internal/httpapi"
 	"github.com/gerrowadat/andante/internal/reads"
 	"github.com/gerrowadat/andante/internal/replica"
@@ -40,6 +41,7 @@ type Options struct {
 	Catalogue *replica.Client
 	Sync      *replica.Syncer
 	Reads     *reads.Service
+	Clients   *clientip.Resolver
 	BaseURL   string
 	Registry  prometheus.Registerer
 	Logger    *slog.Logger
@@ -52,6 +54,7 @@ type handler struct {
 	catalogue *replica.Client
 	sync      *replica.Syncer
 	reads     *reads.Service
+	clients   *clientip.Resolver
 	baseURL   string
 	logger    *slog.Logger
 	specJSON  []byte
@@ -79,7 +82,7 @@ func New(opts Options) (http.Handler, error) {
 	}
 
 	h := &handler{
-		store: opts.Store, catalogue: opts.Catalogue, sync: opts.Sync, reads: opts.Reads, baseURL: opts.BaseURL, logger: opts.Logger,
+		store: opts.Store, catalogue: opts.Catalogue, sync: opts.Sync, reads: opts.Reads, clients: opts.Clients, baseURL: opts.BaseURL, logger: opts.Logger,
 		specJSON: specJSON,
 	}
 	kit := &httpapi.Kit{
@@ -114,17 +117,29 @@ func New(opts Options) (http.Handler, error) {
 		Help: "Admin API requests, by route pattern and status.",
 	}, []string{"route", "status"})
 
-	return httpapi.WithRequestID(httpapi.CountRequests(requests, kit.RecoverPanics(withActor(validate(routes))))), nil
+	return httpapi.WithRequestID(httpapi.CountRequests(requests, kit.RecoverPanics(h.withActor(validate(routes))))), nil
 }
 
-type actorKey struct{}
+type (
+	actorKey   struct{}
+	addressKey struct{}
+)
 
 // withActor makes room in the context for who the request is for. The validator
 // authenticates, and it can't change the request it passes on, so it fills this in.
-func withActor(next http.Handler) http.Handler {
+func (h *handler) withActor(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), actorKey{}, &store.Actor{})))
+		ctx := context.WithValue(r.Context(), actorKey{}, &store.Actor{})
+		if h.clients != nil {
+			ctx = context.WithValue(ctx, addressKey{}, h.clients.IP(r))
+		}
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func addressOf(ctx context.Context) string {
+	address, _ := ctx.Value(addressKey{}).(string)
+	return address
 }
 
 func (h *handler) authenticate(ctx context.Context, token string) (bool, error) {
