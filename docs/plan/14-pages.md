@@ -11,8 +11,12 @@ A logged-in user can do everything the CLI can.
 - Server-rendered Go with `html/template`, embedded static files and vendored htmx. No Node and no
   build step. Every form works without JavaScript.
 - Home, Browse, Read, Feed links, Source, Source edit, Users and Account.
-- A `/users` API for the Users page: list, disable, enable and change role. Phase 12 only added users
-  from the command line. Changing a role ends that user's sessions, which phase 13 couldn't do yet.
+- A `/users` API for the Users page: list, disable, enable, delete and change role. Disabling a user
+  leaves their feeds running, so that friends on a group read aren't cut off, and an admin can revoke
+  the tokens. Deleting a user removes their reads and tokens, and asks first, because it can't be
+  undone and a read can't be handed on (#40).
+- Browse shows when each source was last checked, because a source nobody reads is parked (#41).
+- Phase 12 only added users from the command line. Changing a role ends that user's sessions, which phase 13 couldn't do yet.
 - Tracking a source from Browse: pick a pace, get a feed link.
 - The Add page, moved here from phase 15, which built what's under it. Paste an address and run
   `POST /discoveries` in the background, showing progress. Go to the source if there's an

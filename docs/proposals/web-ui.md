@@ -8,8 +8,8 @@ The rest of this is still to come.
 This adds people and a website to `andante-server`. A user logs in, pastes a site's address or picks from what's already
 indexed, chooses a pace, and gets a feed.
 
-Nobody uses the API or has data to keep, so this assumes a clean start. There's no migration, and
-`/api/v1` gets a new contract.
+Nobody uses the API or has data to keep, so this assumes a clean start, with no migration. `/api/v1`
+only grew, so it kept its contract.
 
 ## What's Decided
 
@@ -108,10 +108,8 @@ Nothing should go public before phase 16.
 
 ## What Changes in the Docs
 
-- `docs/philosophy.md` says there are no accounts and no UI, that the admin API is the only way in,
-  and that the public listener only serves feeds. All of that needs rewriting.
-- `CLAUDE.md`'s layout, listeners and vocabulary change, and `docs/design/architecture.md` gets
-  a new record.
+- `docs/philosophy.md` still says there's no UI. Phase 17 rewrites it once there is one.
+- This proposal moves to `docs/design/` when the last of it ships.
 
 ## Questions Still Open
 

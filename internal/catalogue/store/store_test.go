@@ -5,6 +5,7 @@ package store_test
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 
@@ -234,5 +235,70 @@ func TestEntryIdentity(t *testing.T) {
 				t.Errorf("insert: %v, want duplicate %v", err, step.wantDup)
 			}
 		})
+	}
+}
+
+func TestDemandWakesAParkedSource(t *testing.T) {
+	s := storetest.Catalogue(t)
+	ctx := t.Context()
+	a := source(t, s, "a")
+	if err := s.RecordOutcome(ctx, store.Outcome{SourceID: a.ID, Cursor: []byte("{}"), State: "tail"}); err != nil {
+		t.Fatal(err)
+	}
+	seq := int32(0)
+	if err := s.SetDemand(ctx, a.ID, &seq); err != nil {
+		t.Fatal(err)
+	}
+	woken, err := s.GetSource(ctx, a.ID)
+	if err != nil || woken.DueAt == nil {
+		t.Fatalf("due_at = %v, %v", woken.DueAt, err)
+	}
+	changes, err := s.ChangesAfter(ctx, 0, 100)
+	if err != nil || changes[len(changes)-1].Revision != woken.Revision {
+		t.Errorf("waking wasn't a change the server would see: %v", err)
+	}
+}
+
+// A requested crawl, a delete or waking a source used to lock the row and then take
+// the revision lock, the other way round to SaveBatch. When they met, Postgres killed
+// one of them. Postgres waits a second before it looks for deadlocks, so this needs a
+// few goes to be sure.
+func TestWritesDontDeadlockWithACrawl(t *testing.T) {
+	s := storetest.Catalogue(t)
+	ctx := t.Context()
+	a := source(t, s, "a")
+	var wg sync.WaitGroup
+	errs := make(chan error, 200)
+	for i := range 40 {
+		url := fmt.Sprintf("https://example.com/%d", i)
+		wg.Go(func() {
+			entry := store.NewEntry{Kind: "page", URL: &url, Images: []string{}, Enclosures: []byte("[]"), Extra: []byte("{}"), ContentHash: []byte(url)}
+			// A batch that touches the source again after its entries, as a crawl does.
+			err := s.SaveBatch(ctx, []store.NewEntry{entry}, nil, store.Outcome{SourceID: a.ID, Cursor: []byte("{}"), State: "tail"})
+			if err != nil && !errors.Is(err, store.ErrConflict) {
+				errs <- err
+			}
+		})
+		wg.Go(func() {
+			if err := s.RequestCrawl(ctx, a.ID); err != nil {
+				errs <- err
+			}
+		})
+		wg.Go(func() {
+			seq := int32(i)
+			if err := s.SetDemand(ctx, a.ID, &seq); err != nil {
+				errs <- err
+			}
+		})
+		wg.Go(func() {
+			if err := s.RecordOutcome(ctx, store.Outcome{SourceID: a.ID, Cursor: []byte("{}"), State: "tail"}); err != nil {
+				errs <- err
+			}
+		})
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Error(err)
 	}
 }

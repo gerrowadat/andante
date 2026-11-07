@@ -3,9 +3,10 @@
 
 -- name: ListDueSources :many
 -- A source with no due_at is not forced: the crawl loop works out whether it
--- needs indexing. One with a due_at waits for it.
+-- needs indexing. One with a due_at waits for it. A tail source with no due_at is
+-- parked, because nobody reads it, and waits for demand.
 SELECT * FROM sources
-WHERE state IN ('indexing', 'tail') AND (due_at IS NULL OR due_at <= $1)
+WHERE (state = 'indexing' AND due_at IS NULL) OR (state IN ('indexing', 'tail') AND due_at <= $1)
 ORDER BY due_at NULLS LAST, id;
 
 -- name: EntryStats :one

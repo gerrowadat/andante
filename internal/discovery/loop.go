@@ -175,9 +175,17 @@ func (l *Loop) save(ctx context.Context, s db.Source, batch Batch) error {
 	outcome := store.Outcome{SourceID: s.ID, Cursor: batch.Cursor, State: stateIndexing, CrawledAt: &now}
 	if batch.LiveEnd {
 		// A source enters tail mode at the live end, and leaves it when new
-		// entries appear, which is when LiveEnd stops being true.
-		due := now.Add(l.opts.TailInterval)
-		outcome.State, outcome.DueAt = stateTail, &due
+		// entries appear, which is when LiveEnd stops being true. With nobody
+		// reading it, it parks: no next check, until someone starts a read.
+		_, hasReads, err := l.opts.Furthest(ctx, s.ID)
+		if err != nil {
+			return err
+		}
+		outcome.State = stateTail
+		if hasReads {
+			due := now.Add(l.opts.TailInterval)
+			outcome.DueAt = &due
+		}
 	}
 
 	entries := make([]store.NewEntry, 0, len(batch.Entries))

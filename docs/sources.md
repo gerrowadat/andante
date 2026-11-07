@@ -149,7 +149,7 @@ of the furthest read on it, and a source with no reads gets its first `--crawl-l
 | State | Meaning |
 |---|---|
 | `indexing` | Working through the archive. |
-| `tail` | At the live end, checking for new pages every `--tail-interval`. Returns to `indexing` when a new page appears. |
+| `tail` | At the live end, checking for new pages every `--tail-interval` while someone reads it. With no reads it's parked: nothing checks it until a read starts, and then it's checked at once. Returns to `indexing` when a new page appears. |
 | `paused` | Left alone. Set it with `PATCH`, and set `indexing` to resume. |
 | `error` | Stopped, with the reason in `last_error`. Fix the cause, then set `indexing` with `PATCH`. |
 
