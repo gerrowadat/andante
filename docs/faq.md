@@ -12,7 +12,7 @@ a link to the original page.
 Feed requests only read the index. They never trigger a crawl, so a popular feed can't end
 up hammering some poor publisher's site. The crawl loop gets on with things by itself: it
 indexes a source as far as your reads need plus `--crawl-lookahead`, then checks for new
-entries every `--tail-interval`. If you can't wait, run `andante source crawl <slug>`. A new
+entries every `--tail-interval` while anyone reads it. If you can't wait, run `andante source crawl <slug>`. A new
 source with no reads only indexes the lookahead.
 
 ## Why Isn't My New Source Crawling?

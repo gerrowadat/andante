@@ -52,8 +52,10 @@ needs every entry's dates on each request, and it would tie every feed to the ca
 
 Every source and entry gets a `revision` when it changes, from one sequence, in a trigger, so no
 write can forget. The trigger takes an advisory lock until commit, which makes revisions commit in
-order, so a reader that has seen a revision has seen everything below it. Transactions that also
-lock a row take the same lock first, so that two writers can't each hold what the other wants.
+order, so a reader that has seen a revision has seen everything below it. Every write that fires
+the trigger takes the same lock first, so that two writers can't each hold what the other wants. A
+single `UPDATE` would otherwise lock its row and then take the revision lock in the trigger, the
+other way round to a crawl's transaction, and Postgres would kill one of them.
 
 There's no log to prune. `GET /v1/changes?after=N&wait=25` reads the tables themselves, holds an
 empty answer for up to `wait` seconds, and returns current rows in revision order, with tombstones

@@ -134,7 +134,10 @@ The crawl loop picks the source most in need of work:
 - A source is **due** when its demand, the furthest read position the server has reported, is
   within `lookahead` (default 50) entries of the end of its index, or when it isn't paused and has
   no demand yet (index the first `lookahead`).
-- A source in **tail mode** is due every `tail_interval` (default 6 h, a flag).
+- A source in **tail mode** is due every `tail_interval` (default 6 h, a flag), as long as someone
+  reads it. With no demand it parks: its next check isn't booked, so it costs the publisher nothing.
+  Demand from a new read books a check at once, and the check picks up whatever was published in
+  the meantime (#41). A requested crawl still checks a parked source.
   It re-fetches the last known page to look for a new next link.
 
 The crawl scheduler records this in `sources.due_at`;

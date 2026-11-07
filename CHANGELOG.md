@@ -6,6 +6,11 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- A requested crawl, a deleted source or a parked source waking up could deadlock with a crawl in
+  the catalogue, which failed one of them with a 500.
+
 ### Added
 
 - Users. Sources are shared, and reads and tokens are private. `andante-server user add` and
@@ -23,6 +28,9 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   OPML can start what they imported.
 
 ### Changed
+
+- A source nobody reads stops being checked at the live end, and is checked again as soon as
+  someone starts a read.
 
 - The API moved to the public listener, and the CLI's default URL with it. `--admin-listen` is now
   `--ops-listen`, and only has health and metrics. `--secret` is required, and `--admin-token` is gone.

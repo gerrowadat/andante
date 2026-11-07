@@ -141,7 +141,12 @@ func (s *Store) DeleteSource(ctx context.Context, id int64) error {
 	if demand != nil {
 		return fmt.Errorf("delete source %d: %w", id, ErrConflict)
 	}
-	rows, err := s.queries.DeleteSource(ctx, id)
+	var rows int64
+	err = s.locked(ctx, func(q *db.Queries) error {
+		var err error
+		rows, err = q.DeleteSource(ctx, id)
+		return err
+	})
 	if err != nil {
 		return fmt.Errorf("delete source %d: %w", id, translate(err))
 	}
@@ -161,6 +166,20 @@ func (s *Store) Demand(ctx context.Context, id int64) (*int32, error) {
 	return demand, nil
 }
 
+// locked runs a write that fires the revision trigger, holding the revision lock from
+// the start. A single UPDATE locks its row first and takes the revision lock in the
+// trigger, which is the other way round to a transaction like SaveBatch. Two of those
+// meeting on one source deadlock, so every such write takes the revision lock first.
+func (s *Store) locked(ctx context.Context, write func(*db.Queries) error) error {
+	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		q := s.queries.WithTx(tx)
+		if err := q.LockRevisions(ctx); err != nil {
+			return err
+		}
+		return write(q)
+	})
+}
+
 // Furthest is Demand in the shape the crawl loop wants.
 func (s *Store) Furthest(ctx context.Context, id int64) (int32, bool, error) {
 	demand, err := s.Demand(ctx, id)
@@ -178,6 +197,11 @@ func (s *Store) SetDemand(ctx context.Context, id int64, seq *int32) error {
 	}
 	if rows == 0 {
 		return fmt.Errorf("set demand of source %d: %w", id, ErrNotFound)
+	}
+	if seq != nil {
+		if err := s.locked(ctx, func(q *db.Queries) error { return q.WakeParked(ctx, id) }); err != nil {
+			return fmt.Errorf("wake source %d: %w", id, err)
+		}
 	}
 	return nil
 }

@@ -106,6 +106,7 @@ func (h *harness) entries(t *testing.T, id int64) []db.Entry {
 
 func TestIndexesToTheLiveEndThenTails(t *testing.T) {
 	h := newHarness(t, 50)
+	h.hasRead.Store(true)
 	site := sitetest.Serve(t, "comiccontrol")
 	s := h.source(t, site.URL+"/1.html")
 
@@ -204,6 +205,7 @@ func TestLookaheadFollowsReadsAndTailPicksUpANewPage(t *testing.T) {
 
 func TestSeqNeverChangesWhenAPageIsUpdated(t *testing.T) {
 	h := newHarness(t, 50)
+	h.hasRead.Store(true)
 	site := sitetest.Serve(t, "wordpress-webcomic")
 	s := h.source(t, site.URL+"/comic/1/")
 	h.settle(t)
@@ -387,6 +389,7 @@ func TestSourcePausedDuringACrawlStaysPaused(t *testing.T) {
 
 func TestCrawlLogAndConditionalRequests(t *testing.T) {
 	h := newHarness(t, 50)
+	h.hasRead.Store(true)
 	site := sitetest.Serve(t, "wordpress-webcomic")
 	s := h.source(t, site.URL+"/comic/1/")
 	h.settle(t)
@@ -525,5 +528,73 @@ func TestRunStopsWithItsContext(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("Run did not stop")
+	}
+}
+
+// Nobody reads it, so at the live end it stops being checked, until somebody starts.
+func TestAnUnreadSourceParksAtTheLiveEnd(t *testing.T) {
+	h := newHarness(t, 50)
+	site := sitetest.Serve(t, "comiccontrol")
+	s := h.source(t, site.URL+"/1.html")
+	h.settle(t)
+
+	got := h.get(t, s.ID)
+	if got.State != "tail" || got.DueAt != nil {
+		t.Fatalf("state = %q, due_at = %v, want parked in tail", got.State, got.DueAt)
+	}
+	requests := len(site.Requests())
+	h.clock.Advance(7 * 24 * time.Hour)
+	if h.tick(t) {
+		t.Error("a parked source was crawled")
+	}
+	if got := len(site.Requests()); got != requests {
+		t.Errorf("requests went from %d to %d while parked", requests, got)
+	}
+
+	// Someone starts a read, and the catalogue hears about it.
+	seq := int32(0)
+	if err := h.store.SetDemand(t.Context(), s.ID, &seq); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.get(t, s.ID); got.DueAt == nil {
+		t.Fatal("demand didn't wake the source")
+	}
+	h.hasRead.Store(true)
+	site.SetPage("/5.html", `<title>Harbour Lights - Page 5</title><div id="cc-comicbody"><img src="/5.png"></div><a rel="next" href="/6.html">n</a>`)
+	site.SetPage("/6.html", `<title>Harbour Lights - Page 6</title><div id="cc-comicbody"><img src="/6.png"></div>`)
+	h.settle(t)
+	if got := len(h.entries(t, s.ID)); got != 6 {
+		t.Errorf("entries after waking = %d, want 6", got)
+	}
+	if got := h.get(t, s.ID); got.State != "tail" || got.DueAt == nil {
+		t.Errorf("state = %q, due_at = %v, want tail with a next check", got.State, got.DueAt)
+	}
+
+	// Demand that only moves doesn't book an extra check.
+	due := h.get(t, s.ID).DueAt
+	seq = 3
+	if err := h.store.SetDemand(t.Context(), s.ID, &seq); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.get(t, s.ID).DueAt; !got.Equal(*due) {
+		t.Errorf("due_at moved from %v to %v", due, got)
+	}
+}
+
+func TestARequestedCrawlStillChecksAParkedSource(t *testing.T) {
+	h := newHarness(t, 50)
+	site := sitetest.Serve(t, "comiccontrol")
+	s := h.source(t, site.URL+"/1.html")
+	h.settle(t)
+	if err := h.store.RequestCrawl(t.Context(), s.ID); err != nil {
+		t.Fatal(err)
+	}
+	before := len(site.Requests())
+	h.settle(t)
+	if len(site.Requests()) == before {
+		t.Error("the requested crawl didn't fetch anything")
+	}
+	if got := h.get(t, s.ID); got.State != "tail" || got.DueAt != nil {
+		t.Errorf("state = %q, due_at = %v, want parked again", got.State, got.DueAt)
 	}
 }

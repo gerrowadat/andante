@@ -195,7 +195,8 @@ func interval(d time.Duration) pgtype.Interval {
 
 // RecordOutcome records a crawl pass that indexed nothing.
 func (s *Store) RecordOutcome(ctx context.Context, outcome Outcome) error {
-	if err := s.queries.RecordSourceOutcome(ctx, outcomeParams(outcome)); err != nil {
+	err := s.locked(ctx, func(q *db.Queries) error { return q.RecordSourceOutcome(ctx, outcomeParams(outcome)) })
+	if err != nil {
 		return fmt.Errorf("record outcome for source %d: %w", outcome.SourceID, err)
 	}
 	return nil
@@ -214,7 +215,12 @@ func outcomeParams(o Outcome) db.RecordSourceOutcomeParams {
 
 // RequestCrawl marks a source due now, or returns ErrNotFound.
 func (s *Store) RequestCrawl(ctx context.Context, id int64) error {
-	rows, err := s.queries.RequestCrawl(ctx, id)
+	var rows int64
+	err := s.locked(ctx, func(q *db.Queries) error {
+		var err error
+		rows, err = q.RequestCrawl(ctx, id)
+		return err
+	})
 	if err != nil {
 		return fmt.Errorf("request crawl of source %d: %w", id, err)
 	}

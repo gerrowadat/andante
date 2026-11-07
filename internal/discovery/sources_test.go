@@ -159,6 +159,7 @@ func TestEachStrategyIndexesThenTails(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			h := newHarness(t, 50)
+			h.hasRead.Store(true)
 			site := sitetest.Serve(t, tt.site)
 			grow := tt.prepare(t, site)
 			s := h.sourceOf(t, tt.strategy, tt.kind, tt.config(site.URL))

@@ -52,7 +52,14 @@ SELECT * FROM deleted_sources WHERE revision > $1 ORDER BY revision LIMIT $2;
 SELECT pg_advisory_xact_lock(1668511849);
 
 -- name: SetDemand :execrows
+-- demand_seq isn't a column the revision trigger watches, so this alone is no change.
 UPDATE sources SET demand_seq = $2 WHERE id = $1;
+
+-- name: WakeParked :exec
+-- A parked source, at the live end with nobody reading it, gets checked straight
+-- away when someone starts. What it missed is still there to find. It only touches
+-- a source that's parked, because touching due_at makes a revision.
+UPDATE sources SET due_at = now() WHERE id = $1 AND state = 'tail' AND due_at IS NULL;
 
 -- name: Demand :one
 SELECT demand_seq FROM sources WHERE id = $1;

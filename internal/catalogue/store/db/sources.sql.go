@@ -394,6 +394,7 @@ type SetDemandParams struct {
 	DemandSeq *int32
 }
 
+// demand_seq isn't a column the revision trigger watches, so this alone is no change.
 func (q *Queries) SetDemand(ctx context.Context, arg SetDemandParams) (int64, error) {
 	result, err := q.db.Exec(ctx, setDemand, arg.ID, arg.DemandSeq)
 	if err != nil {
@@ -508,4 +509,16 @@ func (q *Queries) UpdateSource(ctx context.Context, arg UpdateSourceParams) (Sou
 		&i.Revision,
 	)
 	return i, err
+}
+
+const wakeParked = `-- name: WakeParked :exec
+UPDATE sources SET due_at = now() WHERE id = $1 AND state = 'tail' AND due_at IS NULL
+`
+
+// A parked source, at the live end with nobody reading it, gets checked straight
+// away when someone starts. What it missed is still there to find. It only touches
+// a source that's parked, because touching due_at makes a revision.
+func (q *Queries) WakeParked(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, wakeParked, id)
+	return err
 }
