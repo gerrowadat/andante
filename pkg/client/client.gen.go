@@ -509,6 +509,26 @@ type AuditList struct {
 	Next nullable.Nullable[NextLink] `json:"next"`
 }
 
+// Candidate A way of reading a site, tried with a probe. If existing_source_id is set, the catalogue already has it and the sample is empty.
+type Candidate struct {
+	// Config How the source's archive is discovered.
+	Config SourceConfig `json:"config"`
+
+	// DatedShare The share of the sample with an original date.
+	DatedShare  float64 `json:"dated_share"`
+	DefaultKind Kind    `json:"default_kind"`
+
+	// ExistingSourceID The source that is certainly this serial.
+	ExistingSourceID nullable.Nullable[int64] `json:"existing_source_id,omitempty"`
+	HomeURL          string                   `json:"home_url"`
+	Sample           []Entry                  `json:"sample"`
+
+	// SimilarSourceIds Sources with the same title or home page, which might be this serial.
+	SimilarSourceIds []int64  `json:"similar_source_ids"`
+	Title            string   `json:"title"`
+	Warnings         []string `json:"warnings"`
+}
+
 // CatchUp defines model for CatchUp.
 type CatchUp string
 
@@ -525,6 +545,21 @@ type CrawlConfig struct {
 
 // CrawlConfigStrategy defines model for CrawlConfig.Strategy.
 type CrawlConfigStrategy string
+
+// DiscoveryRequest defines model for DiscoveryRequest.
+type DiscoveryRequest struct {
+	// Limit The most entries to try for each candidate.
+	Limit *int32 `json:"limit,omitempty"`
+
+	// URL The address of a site, or of its feed.
+	URL string `json:"url"`
+}
+
+// DiscoveryResult defines model for DiscoveryResult.
+type DiscoveryResult struct {
+	// Candidates Best first. Empty means nothing worked, so ask for the first page's URL.
+	Candidates []Candidate `json:"candidates"`
+}
 
 // Enclosure defines model for Enclosure.
 type Enclosure struct {
@@ -814,10 +849,13 @@ type Problem struct {
 	Detail *string `json:"detail,omitempty"`
 
 	// Errors What was wrong with the request, field by field.
-	Errors   *[]FieldError `json:"errors,omitempty"`
-	Instance *string       `json:"instance,omitempty"`
-	Status   int32         `json:"status"`
-	Title    string        `json:"title"`
+	Errors *[]FieldError `json:"errors,omitempty"`
+
+	// ExistingSourceID On a conflict over a duplicate, the source that's already there.
+	ExistingSourceID *int64  `json:"existing_source_id,omitempty"`
+	Instance         *string `json:"instance,omitempty"`
+	Status           int32   `json:"status"`
+	Title            string  `json:"title"`
 
 	// Type Identifies the problem. about:blank means the status says it all.
 	Type string `json:"type"`
@@ -1150,6 +1188,9 @@ type ListEntriesParams struct {
 
 // CreateAPITokenJSONRequestBody defines body for CreateAPIToken for application/json ContentType.
 type CreateAPITokenJSONRequestBody = APITokenCreate
+
+// CreateDiscoveryJSONRequestBody defines body for CreateDiscovery for application/json ContentType.
+type CreateDiscoveryJSONRequestBody = DiscoveryRequest
 
 // ExportOPMLJSONRequestBody defines body for ExportOPML for application/json ContentType.
 type ExportOPMLJSONRequestBody = OPMLExportRequest
@@ -1810,6 +1851,24 @@ type ClientInterface interface {
 	// Corresponds with GET /audit (the `ListAudit` operationId).
 	ListAudit(ctx context.Context, params *ListAuditParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// CreateDiscoveryWithBody Work out how to read a site
+	//
+	// Takes a site's address and returns ranked candidate sources, each tried with a probe. Saves nothing. If the catalogue already has the serial it says so, without making a request. This keeps to the crawl interval, so it can take minutes.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /discoveries (the `CreateDiscovery` operationId).
+	CreateDiscoveryWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateDiscovery Work out how to read a site
+	//
+	// Takes a site's address and returns ranked candidate sources, each tried with a probe. Saves nothing. If the catalogue already has the serial it says so, without making a request. This keeps to the crawl interval, so it can take minutes.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /discoveries (the `CreateDiscovery` operationId).
+	CreateDiscovery(ctx context.Context, body CreateDiscoveryJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ExportOPMLWithBody Export reads as OPML
 	//
 	// Issues a fresh feed token per read with the given role and label, and returns OPML 2.0 of their feed URLs. Raw tokens are never stored, so an export can only contain tokens created for it.
@@ -2173,6 +2232,44 @@ func (c *Client) RevokeAPIToken(ctx context.Context, id ID, reqEditors ...Reques
 // Corresponds with GET /audit (the `ListAudit` operationId).
 func (c *Client) ListAudit(ctx context.Context, params *ListAuditParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListAuditRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateDiscoveryWithBody Work out how to read a site
+//
+// Takes a site's address and returns ranked candidate sources, each tried with a probe. Saves nothing. If the catalogue already has the serial it says so, without making a request. This keeps to the crawl interval, so it can take minutes.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /discoveries (the `CreateDiscovery` operationId).
+func (c *Client) CreateDiscoveryWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateDiscoveryRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateDiscovery Work out how to read a site
+//
+// Takes a site's address and returns ranked candidate sources, each tried with a probe. Saves nothing. If the catalogue already has the serial it says so, without making a request. This keeps to the crawl interval, so it can take minutes.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /discoveries (the `CreateDiscovery` operationId).
+func (c *Client) CreateDiscovery(ctx context.Context, body CreateDiscoveryJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateDiscoveryRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -3018,6 +3115,46 @@ func NewListAuditRequest(server string, params *ListAuditParams) (*http.Request,
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewCreateDiscoveryRequest calls the generic CreateDiscovery builder with application/json body
+func NewCreateDiscoveryRequest(server string, body CreateDiscoveryJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateDiscoveryRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateDiscoveryRequestWithBody constructs an http.Request for the CreateDiscovery method, with any body, and a specified content type
+func NewCreateDiscoveryRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/discoveries")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -4300,6 +4437,24 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /audit (the `ListAudit` operationId).
 	ListAuditWithResponse(ctx context.Context, params *ListAuditParams, reqEditors ...RequestEditorFn) (*ListAuditResponse, error)
 
+	// CreateDiscoveryWithBodyWithResponse Work out how to read a site
+	//
+	// Takes a site's address and returns ranked candidate sources, each tried with a probe. Saves nothing. If the catalogue already has the serial it says so, without making a request. This keeps to the crawl interval, so it can take minutes.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /discoveries (the `CreateDiscovery` operationId).
+	CreateDiscoveryWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateDiscoveryResponse, error)
+
+	// CreateDiscoveryWithResponse Work out how to read a site
+	//
+	// Takes a site's address and returns ranked candidate sources, each tried with a probe. Saves nothing. If the catalogue already has the serial it says so, without making a request. This keeps to the crawl interval, so it can take minutes.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /discoveries (the `CreateDiscovery` operationId).
+	CreateDiscoveryWithResponse(ctx context.Context, body CreateDiscoveryJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateDiscoveryResponse, error)
+
 	// ExportOPMLWithBodyWithResponse Export reads as OPML
 	//
 	// Issues a fresh feed token per read with the given role and label, and returns OPML 2.0 of their feed URLs. Raw tokens are never stored, so an export can only contain tokens created for it.
@@ -4809,6 +4964,54 @@ func (r ListAuditResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r ListAuditResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateDiscoveryResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *DiscoveryResult
+	// ApplicationProblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationProblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r CreateDiscoveryResponse) GetJSON200() *DiscoveryResult {
+	return r.JSON200
+}
+
+// GetApplicationProblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r CreateDiscoveryResponse) GetApplicationProblemJSONDefault() *Problem {
+	return r.ApplicationProblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateDiscoveryResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateDiscoveryResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateDiscoveryResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateDiscoveryResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -6138,6 +6341,36 @@ func (c *ClientWithResponses) ListAuditWithResponse(ctx context.Context, params 
 	return ParseListAuditResponse(rsp)
 }
 
+// CreateDiscoveryWithBodyWithResponse Work out how to read a site
+//
+// Takes a site's address and returns ranked candidate sources, each tried with a probe. Saves nothing. If the catalogue already has the serial it says so, without making a request. This keeps to the crawl interval, so it can take minutes.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /discoveries (the `CreateDiscovery` operationId).
+func (c *ClientWithResponses) CreateDiscoveryWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateDiscoveryResponse, error) {
+	rsp, err := c.CreateDiscoveryWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateDiscoveryResponse(rsp)
+}
+
+// CreateDiscoveryWithResponse Work out how to read a site
+//
+// Takes a site's address and returns ranked candidate sources, each tried with a probe. Saves nothing. If the catalogue already has the serial it says so, without making a request. This keeps to the crawl interval, so it can take minutes.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /discoveries (the `CreateDiscovery` operationId).
+func (c *ClientWithResponses) CreateDiscoveryWithResponse(ctx context.Context, body CreateDiscoveryJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateDiscoveryResponse, error) {
+	rsp, err := c.CreateDiscovery(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateDiscoveryResponse(rsp)
+}
+
 // ExportOPMLWithBodyWithResponse Export reads as OPML
 //
 // Issues a fresh feed token per read with the given role and label, and returns OPML 2.0 of their feed URLs. Raw tokens are never stored, so an export can only contain tokens created for it.
@@ -6812,6 +7045,39 @@ func ParseListAuditResponse(rsp *http.Response) (*ListAuditResponse, error) {
 			headers.Link = &value
 		}
 		response.Headers200 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseCreateDiscoveryResponse parses an HTTP response from a CreateDiscoveryWithResponse call
+func ParseCreateDiscoveryResponse(rsp *http.Response) (*CreateDiscoveryResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateDiscoveryResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DiscoveryResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationProblemJSONDefault = &dest
+
 	}
 
 	return response, nil

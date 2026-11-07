@@ -45,6 +45,9 @@ func NewProber(registry *Registry, fetcher *Fetcher, metrics *Metrics) *Prober {
 	return &Prober{registry: registry, fetcher: fetcher, metrics: metrics}
 }
 
+// Fetcher returns the fetcher probes use, for anything else that isn't a crawl.
+func (p *Prober) Fetcher() PageFetcher { return probeFetcher{p} }
+
 type probeFetcher struct{ p *Prober }
 
 func (f probeFetcher) Fetch(ctx context.Context, url string) (*Response, error) {

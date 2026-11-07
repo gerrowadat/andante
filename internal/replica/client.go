@@ -162,6 +162,26 @@ func (c *Client) Probe(ctx context.Context, request client.ProbeRequest) (client
 	return result, nil
 }
 
+// Discover works out how to read a site.
+func (c *Client) Discover(ctx context.Context, request client.DiscoveryRequest) (client.DiscoveryResult, error) {
+	body, err := json.Marshal(request)
+	if err != nil {
+		return client.DiscoveryResult{}, fmt.Errorf("encode discovery: %w", err)
+	}
+	resp, err := c.api.CreateDiscoveryWithBodyWithResponse(ctx, "application/json", bytes.NewReader(body))
+	if err != nil {
+		return client.DiscoveryResult{}, down(err)
+	}
+	if resp.StatusCode() != http.StatusOK {
+		return client.DiscoveryResult{}, failure(resp.StatusCode(), resp.Body)
+	}
+	var result client.DiscoveryResult
+	if err := json.Unmarshal(resp.Body, &result); err != nil {
+		return client.DiscoveryResult{}, fmt.Errorf("decode discovery: %w", err)
+	}
+	return result, nil
+}
+
 // SetDemand says how far readers have got, or with nil that nobody is reading.
 func (c *Client) SetDemand(ctx context.Context, id int64, seq *int32) error {
 	if seq == nil {

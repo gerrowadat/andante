@@ -116,7 +116,14 @@ is only good enough for trying it out.
 
 ### Add a Serial
 
-Probe first. A probe tries a config and saves nothing.
+Start with the site's address. This works out how to read it, tries what it finds, and tells you
+if someone has already added it:
+
+```sh
+andante source discover https://comic.example/
+```
+
+If it comes up empty, or you'd rather say how yourself, a probe tries a config and saves nothing.
 
 For a podcast, or anything else that keeps its whole archive in its feed:
 
@@ -204,8 +211,8 @@ andante import opml /dev/stdin < feeds.opml
 andante export opml --issue viewer --label "For Alex" > feeds.opml
 ```
 
-An import creates paused sources, so nothing crawls until you've looked at each one.
-`andante source edit <slug> --resume` turns one on.
+An import creates paused sources, so nothing crawls until you've looked at each one. Making a read on
+one turns it on.
 
 That's been tested under Compose, but I haven't tried it through `nomad alloc exec`. If it
 doesn't behave, run the CLI from a machine that can reach the admin port instead. There's a

@@ -203,6 +203,7 @@ func (h *handler) CreateRead(ctx context.Context, r gen.CreateReadRequestObject)
 	if err != nil {
 		return nil, err
 	}
+	h.startIfNew(ctx, created.Read.SourceID)
 	h.demandChanged(ctx, created.Read.SourceID)
 	return gen.CreateRead201JSONResponse(body), nil
 }
@@ -359,4 +360,22 @@ func (h *handler) demandChanged(ctx context.Context, sourceID int64) {
 	if err := h.sync.PushDemand(ctx, sourceID); err != nil {
 		h.logger.Warn("could not report demand", "source", sourceID, "error", err)
 	}
+}
+
+// startIfNew starts a paused source that has never been crawled, which is what an OPML
+// import leaves behind. Only admins can change a source, so otherwise whoever imported
+// it couldn't start it. A read is the decision to follow it. A source that's been
+// crawled was paused on purpose, so it stays paused. The read exists either way, so a
+// failure here is only logged.
+func (h *handler) startIfNew(ctx context.Context, sourceID int64) {
+	source, err := h.store.GetSource(ctx, sourceID)
+	if err != nil || source.State != statePaused || source.LastCrawledAt != nil {
+		return
+	}
+	state := client.SourcePatchStateIndexing
+	if _, err := h.catalogue.UpdateSource(ctx, sourceID, client.SourcePatch{State: &state}); err != nil {
+		h.logger.Warn("could not start a new source", "source", sourceID, "error", err)
+		return
+	}
+	h.caughtUp(ctx)
 }

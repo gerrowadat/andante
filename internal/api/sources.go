@@ -152,6 +152,14 @@ func (h *handler) RequestCrawl(ctx context.Context, r gen.RequestCrawlRequestObj
 	return gen.RequestCrawl202Response{}, nil
 }
 
+func (h *handler) CreateDiscovery(ctx context.Context, r gen.CreateDiscoveryRequestObject) (gen.CreateDiscoveryResponseObject, error) {
+	result, err := h.catalogue.Discover(ctx, *r.Body)
+	if err != nil {
+		return nil, err
+	}
+	return gen.CreateDiscovery200JSONResponse(result), nil
+}
+
 func (h *handler) CreateProbe(ctx context.Context, r gen.CreateProbeRequestObject) (gen.CreateProbeResponseObject, error) {
 	result, err := h.catalogue.Probe(ctx, *r.Body)
 	if err != nil {

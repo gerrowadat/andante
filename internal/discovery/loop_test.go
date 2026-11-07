@@ -332,7 +332,7 @@ func TestStoppingConditions(t *testing.T) {
 		h := newHarness(t, 50)
 		s, err := h.store.CreateSource(t.Context(), db.InsertSourceParams{
 			Slug: "f", Title: "t", HomeUrl: "https://feed.example/", DefaultKind: "episode",
-			Strategy: "feed", Config: []byte(`{}`), State: "indexing",
+			Strategy: "feed", Config: []byte(`{"feed_url":"https://feed.example/rss"}`), State: "indexing",
 		})
 		if err != nil {
 			t.Fatal(err)

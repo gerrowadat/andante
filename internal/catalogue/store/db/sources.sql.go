@@ -110,7 +110,7 @@ func (q *Queries) EntriesChangedAfter(ctx context.Context, arg EntriesChangedAft
 }
 
 const getSource = `-- name: GetSource :one
-SELECT id, slug, title, home_url, default_kind, image_url, extra, strategy, config, cursor, state, due_at, last_crawled_at, last_error, created_at, demand_seq, revision FROM sources WHERE id = $1
+SELECT id, slug, title, home_url, default_kind, image_url, extra, strategy, config, cursor, state, due_at, last_crawled_at, last_error, created_at, canonical_key, home_key, demand_seq, revision FROM sources WHERE id = $1
 `
 
 func (q *Queries) GetSource(ctx context.Context, id int64) (Source, error) {
@@ -132,6 +132,70 @@ func (q *Queries) GetSource(ctx context.Context, id int64) (Source, error) {
 		&i.LastCrawledAt,
 		&i.LastError,
 		&i.CreatedAt,
+		&i.CanonicalKey,
+		&i.HomeKey,
+		&i.DemandSeq,
+		&i.Revision,
+	)
+	return i, err
+}
+
+const getSourceByHomeKey = `-- name: GetSourceByHomeKey :one
+SELECT id, slug, title, home_url, default_kind, image_url, extra, strategy, config, cursor, state, due_at, last_crawled_at, last_error, created_at, canonical_key, home_key, demand_seq, revision FROM sources WHERE home_key = $1 ORDER BY id LIMIT 1
+`
+
+func (q *Queries) GetSourceByHomeKey(ctx context.Context, homeKey string) (Source, error) {
+	row := q.db.QueryRow(ctx, getSourceByHomeKey, homeKey)
+	var i Source
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Title,
+		&i.HomeUrl,
+		&i.DefaultKind,
+		&i.ImageUrl,
+		&i.Extra,
+		&i.Strategy,
+		&i.Config,
+		&i.Cursor,
+		&i.State,
+		&i.DueAt,
+		&i.LastCrawledAt,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.CanonicalKey,
+		&i.HomeKey,
+		&i.DemandSeq,
+		&i.Revision,
+	)
+	return i, err
+}
+
+const getSourceByKey = `-- name: GetSourceByKey :one
+SELECT id, slug, title, home_url, default_kind, image_url, extra, strategy, config, cursor, state, due_at, last_crawled_at, last_error, created_at, canonical_key, home_key, demand_seq, revision FROM sources WHERE canonical_key = $1
+`
+
+func (q *Queries) GetSourceByKey(ctx context.Context, canonicalKey string) (Source, error) {
+	row := q.db.QueryRow(ctx, getSourceByKey, canonicalKey)
+	var i Source
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Title,
+		&i.HomeUrl,
+		&i.DefaultKind,
+		&i.ImageUrl,
+		&i.Extra,
+		&i.Strategy,
+		&i.Config,
+		&i.Cursor,
+		&i.State,
+		&i.DueAt,
+		&i.LastCrawledAt,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.CanonicalKey,
+		&i.HomeKey,
 		&i.DemandSeq,
 		&i.Revision,
 	)
@@ -139,7 +203,7 @@ func (q *Queries) GetSource(ctx context.Context, id int64) (Source, error) {
 }
 
 const getSourceForUpdate = `-- name: GetSourceForUpdate :one
-SELECT id, slug, title, home_url, default_kind, image_url, extra, strategy, config, cursor, state, due_at, last_crawled_at, last_error, created_at, demand_seq, revision FROM sources WHERE id = $1 FOR UPDATE
+SELECT id, slug, title, home_url, default_kind, image_url, extra, strategy, config, cursor, state, due_at, last_crawled_at, last_error, created_at, canonical_key, home_key, demand_seq, revision FROM sources WHERE id = $1 FOR UPDATE
 `
 
 func (q *Queries) GetSourceForUpdate(ctx context.Context, id int64) (Source, error) {
@@ -161,6 +225,8 @@ func (q *Queries) GetSourceForUpdate(ctx context.Context, id int64) (Source, err
 		&i.LastCrawledAt,
 		&i.LastError,
 		&i.CreatedAt,
+		&i.CanonicalKey,
+		&i.HomeKey,
 		&i.DemandSeq,
 		&i.Revision,
 	)
@@ -169,20 +235,22 @@ func (q *Queries) GetSourceForUpdate(ctx context.Context, id int64) (Source, err
 
 const insertSource = `-- name: InsertSource :one
 
-INSERT INTO sources (slug, title, home_url, default_kind, image_url, strategy, config, state)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, slug, title, home_url, default_kind, image_url, extra, strategy, config, cursor, state, due_at, last_crawled_at, last_error, created_at, demand_seq, revision
+INSERT INTO sources (slug, title, home_url, default_kind, image_url, strategy, config, state, canonical_key, home_key)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+RETURNING id, slug, title, home_url, default_kind, image_url, extra, strategy, config, cursor, state, due_at, last_crawled_at, last_error, created_at, canonical_key, home_key, demand_seq, revision
 `
 
 type InsertSourceParams struct {
-	Slug        string
-	Title       string
-	HomeUrl     string
-	DefaultKind string
-	ImageUrl    *string
-	Strategy    string
-	Config      []byte
-	State       string
+	Slug         string
+	Title        string
+	HomeUrl      string
+	DefaultKind  string
+	ImageUrl     *string
+	Strategy     string
+	Config       []byte
+	State        string
+	CanonicalKey string
+	HomeKey      string
 }
 
 // SPDX-License-Identifier: Apache-2.0
@@ -197,6 +265,8 @@ func (q *Queries) InsertSource(ctx context.Context, arg InsertSourceParams) (Sou
 		arg.Strategy,
 		arg.Config,
 		arg.State,
+		arg.CanonicalKey,
+		arg.HomeKey,
 	)
 	var i Source
 	err := row.Scan(
@@ -215,6 +285,8 @@ func (q *Queries) InsertSource(ctx context.Context, arg InsertSourceParams) (Sou
 		&i.LastCrawledAt,
 		&i.LastError,
 		&i.CreatedAt,
+		&i.CanonicalKey,
+		&i.HomeKey,
 		&i.DemandSeq,
 		&i.Revision,
 	)
@@ -270,6 +342,38 @@ func (q *Queries) ListEntries(ctx context.Context, arg ListEntriesParams) ([]Ent
 	return items, nil
 }
 
+const listSimilarSources = `-- name: ListSimilarSources :many
+SELECT id FROM sources
+WHERE lower(title) = lower($1) OR home_key = $2
+ORDER BY id
+`
+
+type ListSimilarSourcesParams struct {
+	Title   string
+	HomeKey string
+}
+
+// What looks like the same serial, without being a certain match.
+func (q *Queries) ListSimilarSources(ctx context.Context, arg ListSimilarSourcesParams) ([]int64, error) {
+	rows, err := q.db.Query(ctx, listSimilarSources, arg.Title, arg.HomeKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockRevisions = `-- name: LockRevisions :exec
 SELECT pg_advisory_xact_lock(1668511849)
 `
@@ -299,7 +403,7 @@ func (q *Queries) SetDemand(ctx context.Context, arg SetDemandParams) (int64, er
 }
 
 const sourcesChangedAfter = `-- name: SourcesChangedAfter :many
-SELECT id, slug, title, home_url, default_kind, image_url, extra, strategy, config, cursor, state, due_at, last_crawled_at, last_error, created_at, demand_seq, revision FROM sources WHERE revision > $1 ORDER BY revision LIMIT $2
+SELECT id, slug, title, home_url, default_kind, image_url, extra, strategy, config, cursor, state, due_at, last_crawled_at, last_error, created_at, canonical_key, home_key, demand_seq, revision FROM sources WHERE revision > $1 ORDER BY revision LIMIT $2
 `
 
 type SourcesChangedAfterParams struct {
@@ -332,6 +436,8 @@ func (q *Queries) SourcesChangedAfter(ctx context.Context, arg SourcesChangedAft
 			&i.LastCrawledAt,
 			&i.LastError,
 			&i.CreatedAt,
+			&i.CanonicalKey,
+			&i.HomeKey,
 			&i.DemandSeq,
 			&i.Revision,
 		); err != nil {
@@ -347,20 +453,23 @@ func (q *Queries) SourcesChangedAfter(ctx context.Context, arg SourcesChangedAft
 
 const updateSource = `-- name: UpdateSource :one
 UPDATE sources
-SET title = $2, home_url = $3, default_kind = $4, image_url = $5, strategy = $6, config = $7, state = $8
+SET title = $2, home_url = $3, default_kind = $4, image_url = $5, strategy = $6, config = $7, state = $8,
+    canonical_key = $9, home_key = $10
 WHERE id = $1
-RETURNING id, slug, title, home_url, default_kind, image_url, extra, strategy, config, cursor, state, due_at, last_crawled_at, last_error, created_at, demand_seq, revision
+RETURNING id, slug, title, home_url, default_kind, image_url, extra, strategy, config, cursor, state, due_at, last_crawled_at, last_error, created_at, canonical_key, home_key, demand_seq, revision
 `
 
 type UpdateSourceParams struct {
-	ID          int64
-	Title       string
-	HomeUrl     string
-	DefaultKind string
-	ImageUrl    *string
-	Strategy    string
-	Config      []byte
-	State       string
+	ID           int64
+	Title        string
+	HomeUrl      string
+	DefaultKind  string
+	ImageUrl     *string
+	Strategy     string
+	Config       []byte
+	State        string
+	CanonicalKey string
+	HomeKey      string
 }
 
 func (q *Queries) UpdateSource(ctx context.Context, arg UpdateSourceParams) (Source, error) {
@@ -373,6 +482,8 @@ func (q *Queries) UpdateSource(ctx context.Context, arg UpdateSourceParams) (Sou
 		arg.Strategy,
 		arg.Config,
 		arg.State,
+		arg.CanonicalKey,
+		arg.HomeKey,
 	)
 	var i Source
 	err := row.Scan(
@@ -391,6 +502,8 @@ func (q *Queries) UpdateSource(ctx context.Context, arg UpdateSourceParams) (Sou
 		&i.LastCrawledAt,
 		&i.LastError,
 		&i.CreatedAt,
+		&i.CanonicalKey,
+		&i.HomeKey,
 		&i.DemandSeq,
 		&i.Revision,
 	)

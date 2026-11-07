@@ -57,6 +57,35 @@ feed-first order and its warning for a feed cut off at a round number. It did no
 take the heuristics that find archive pages with generated XPaths: `crawl` with
 selectors covers those sites, with rules that a person can read.
 
+## Finding a Site
+
+`internal/find` turns a site's address into candidate sources. It uses the probes' fetcher, so
+robots.txt, spacing and the SSRF guard all apply. In order, it:
+
+1. Checks the address against each source's home page and canonical key, and stops there if one
+   matches. That's what stops a second person adding a serial from costing the site anything.
+2. Fetches the address. If that's a feed, it's used as it is.
+3. Follows `<link rel="alternate">` feeds, then tries common paths such as `/feed` and `/rss.xml`.
+4. If a feed looks cut off, tries `?paged=2`. A different first item means it's paged.
+5. If no feed gets the whole archive, looks for a first page to crawl from: `rel="first"`, or the
+   platform patterns the extractors already know. A crawl ranks above a feed that's cut off.
+
+Each idea then gets a normal probe, and one that fails is dropped, so a broken feed can't hide a crawl
+that would work. A paged feed's probe stops after two pages, because walking the whole of one here
+would take as long as indexing it. The config on the candidate has no such limit.
+
+### Duplicates
+
+Each source has a canonical key: its strategy plus its normalised feed URL, start URL or URL template
+(lower-case host, no default port, no fragment, no trailing slash, query in order). It has a unique
+index, and `POST /sources` answers 409 with the existing source's ID, which also covers the CLI and
+OPML import. Changing a config to one in use gets the same.
+
+This won't catch everything. The same comic through its feed and by crawling gets two keys, and so does
+one feed read as `feed` and `feed-paged`. A site that moves gets a new key. So a candidate also lists
+sources with the same title or home page in `similar_source_ids`. Those are for a person to look at,
+because neither proves anything.
+
 ## Extraction
 
 An `Extractor` pulls fields out of a fetched page. It's chosen by the entry's kind: `page` puts

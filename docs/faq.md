@@ -18,7 +18,9 @@ source with no reads only indexes the lookahead.
 ## Why Isn't My New Source Crawling?
 
 It might be paused. An OPML import creates paused sources, so that you can probe each one
-first. `andante source edit <slug> --resume` turns one on. It might also be in `error`, with
+first. Making a read on one turns it on. An admin can use `andante source edit <slug> --resume`, which
+is also the only way to restart a source that was paused after it had been crawled. It might also be
+in `error`, with
 the reason in `last_error`, or waiting for a host to allow requests again, in which case
 `due_at` says when.
 

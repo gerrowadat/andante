@@ -364,6 +364,30 @@ func truncationWarning(docs []*gofeed.Feed) []string {
 	return nil
 }
 
+// FeedInfo is what can be told about a feed from one look at it.
+type FeedInfo struct {
+	Title   string
+	HomeURL string
+	Items   int
+	First   string // The identity of its first item, to tell pages apart.
+	CutOff  bool   // It looks like the latest items, and not the archive.
+}
+
+// ReadFeed returns what's in a feed, or false if body isn't one with items in it.
+func ReadFeed(body []byte, base string) (FeedInfo, bool) {
+	doc, err := parse(body)
+	if err != nil || len(doc.Items) == 0 {
+		return FeedInfo{}, false
+	}
+	return FeedInfo{
+		Title:   doc.Title,
+		HomeURL: doc.Link,
+		Items:   len(doc.Items),
+		First:   itemIdentity(doc.Items[0]),
+		CutOff:  len(truncationWarning([]*gofeed.Feed{doc})) > 0 && archiveLink(body, base) == "",
+	}, true
+}
+
 func sourceUpdate(doc *gofeed.Feed) *discovery.SourceUpdate {
 	update := &discovery.SourceUpdate{Extra: map[string]any{}}
 	if doc.Image != nil {

@@ -45,6 +45,7 @@ Error: Bad Request: the request does not match the API description
 A source is given by its ID or its slug.
 
 ```sh
+andante source discover https://comic.example/                # work out how to read a site
 andante source probe https://comic.example/1                  # what would be indexed, saving nothing
 andante source probe https://comic.example/1 --selector next=a.forward --limit 5
 andante source add https://comic.example/1 --slug my-comic --title "My Comic"

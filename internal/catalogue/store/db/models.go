@@ -63,6 +63,8 @@ type Source struct {
 	LastCrawledAt *time.Time
 	LastError     *string
 	CreatedAt     time.Time
+	CanonicalKey  string
+	HomeKey       string
 	DemandSeq     *int32
 	Revision      int64
 }

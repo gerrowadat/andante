@@ -221,7 +221,7 @@ func TestSourceCommands(t *testing.T) {
 func TestPaging(t *testing.T) {
 	h := newHarness(t)
 	for _, slug := range []string{"a", "b", "c"} {
-		h.ok(t, "source", "add", "https://comic.example/1", "--slug", slug)
+		h.ok(t, "source", "add", "https://comic.example/"+slug, "--slug", slug)
 	}
 	first := h.run("source", "list", "--limit", "2")
 	if strings.Contains(first.stdout, "  c  ") || !strings.Contains(first.stderr, "more: --cursor ") {
@@ -234,7 +234,7 @@ func TestPaging(t *testing.T) {
 	}
 	// A slug beyond the first page still resolves.
 	for i := range 55 {
-		h.ok(t, "source", "add", "https://comic.example/1", "--slug", "more-"+strconv.Itoa(i))
+		h.ok(t, "source", "add", "https://comic.example/more/"+strconv.Itoa(i), "--slug", "more-"+strconv.Itoa(i))
 	}
 	if got := h.ok(t, "source", "get", "more-54"); !strings.Contains(got, "more-54") {
 		t.Errorf("get = %s", got)
@@ -640,6 +640,38 @@ func TestWhoAmI(t *testing.T) {
 	got := h.ok(t, "whoami")
 	if !strings.Contains(got, "admin") {
 		t.Errorf("whoami = %s", got)
+	}
+}
+
+func TestDiscover(t *testing.T) {
+	h := newHarness(t)
+	site := sitetest.Serve(t, "discover-comic")
+	got := h.ok(t, "source", "discover", site.URL+"/", "--limit", "2")
+	for _, want := range []string{"The Comic", "crawl", "/1.html", "Dated:"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("discover = %s, want %q", got, want)
+		}
+	}
+
+	h.ok(t, "source", "add", site.URL+"/1.html", "--slug", "comic", "--home-url", site.URL+"/")
+	if got := h.ok(t, "source", "discover", site.URL); !strings.Contains(got, "Already here:") {
+		t.Errorf("the second discover = %s", got)
+	}
+
+	empty := sitetest.Serve(t, "discover-comic")
+	empty.SetPage("/", "<title>Nothing</title>")
+	empty.Intercept(func(w http.ResponseWriter, r *http.Request) bool {
+		if r.URL.Path == "/" {
+			_, _ = io.WriteString(w, "<title>Nothing</title>")
+			return true
+		}
+		return false
+	})
+	if got := h.ok(t, "source", "discover", empty.URL+"/"); !strings.Contains(got, "Nothing found") {
+		t.Errorf("nothing to find = %s", got)
+	}
+	if r := h.run("source", "discover", "ftp://a.example/"); r.err == nil {
+		t.Error("accepted a bad scheme")
 	}
 }
 

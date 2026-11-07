@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>A WordPress Blog</title>
+    <link>https://wordpress.example/</link>
+    <description>A WordPress Blog</description>
+    <item>
+      <title>A WordPress Blog 15</title>
+      <link>https://wordpress.example/15</link>
+      <guid>https://wordpress.example/15</guid>
+      <pubDate>Mon, 16 Jan 2018 09:00:00 +0000</pubDate>
+      <description>Number 15</description>
+    </item>
+    <item>
+      <title>A WordPress Blog 14</title>
+      <link>https://wordpress.example/14</link>
+      <guid>https://wordpress.example/14</guid>
+      <pubDate>Mon, 15 Jan 2018 09:00:00 +0000</pubDate>
+      <description>Number 14</description>
+    </item>
+    <item>
+      <title>A WordPress Blog 13</title>
+      <link>https://wordpress.example/13</link>
+      <guid>https://wordpress.example/13</guid>
+      <pubDate>Mon, 14 Jan 2018 09:00:00 +0000</pubDate>
+      <description>Number 13</description>
+    </item>
+    <item>
+      <title>A WordPress Blog 12</title>
+      <link>https://wordpress.example/12</link>
+      <guid>https://wordpress.example/12</guid>
+      <pubDate>Mon, 13 Jan 2018 09:00:00 +0000</pubDate>
+      <description>Number 12</description>
+    </item>
+    <item>
+      <title>A WordPress Blog 11</title>
+      <link>https://wordpress.example/11</link>
+      <guid>https://wordpress.example/11</guid>
+      <pubDate>Mon, 12 Jan 2018 09:00:00 +0000</pubDate>
+      <description>Number 11</description>
+    </item>
+    <item>
+      <title>A WordPress Blog 10</title>
+      <link>https://wordpress.example/10</link>
+      <guid>https://wordpress.example/10</guid>
+      <pubDate>Mon, 11 Jan 2018 09:00:00 +0000</pubDate>
+      <description>Number 10</description>
+    </item>
+    <item>
+      <title>A WordPress Blog 9</title>
+      <link>https://wordpress.example/9</link>
+      <guid>https://wordpress.example/9</guid>
+      <pubDate>Mon, 10 Jan 2018 09:00:00 +0000</pubDate>
+      <description>Number 9</description>
+    </item>
+    <item>
+      <title>A WordPress Blog 8</title>
+      <link>https://wordpress.example/8</link>
+      <guid>https://wordpress.example/8</guid>
+      <pubDate>Mon, 09 Jan 2018 09:00:00 +0000</pubDate>
+      <description>Number 8</description>
+    </item>
+    <item>
+      <title>A WordPress Blog 7</title>
+      <link>https://wordpress.example/7</link>
+      <guid>https://wordpress.example/7</guid>
+      <pubDate>Mon, 08 Jan 2018 09:00:00 +0000</pubDate>
+      <description>Number 7</description>
+    </item>
+    <item>
+      <title>A WordPress Blog 6</title>
+      <link>https://wordpress.example/6</link>
+      <guid>https://wordpress.example/6</guid>
+      <pubDate>Mon, 07 Jan 2018 09:00:00 +0000</pubDate>
+      <description>Number 6</description>
+    </item>
+  </channel>
+</rss>

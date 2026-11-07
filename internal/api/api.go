@@ -87,7 +87,7 @@ func New(opts Options) (http.Handler, error) {
 	}
 	kit := &httpapi.Kit{
 		Logger: opts.Logger, Router: router, Valid: h.authenticate,
-		ProbeRoute: "POST " + BasePath + "/probes", ProbeTimeout: opts.ProbeTimeout,
+		SlowRoutes: []string{"POST " + BasePath + "/probes", "POST " + BasePath + "/discoveries"}, ProbeTimeout: opts.ProbeTimeout,
 	}
 	h.kit = kit
 

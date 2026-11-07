@@ -10,9 +10,10 @@ Paste a site's address and get a working source, or be told it already exists.
 
 - `POST /discoveries` on the catalogue, using the same fetcher as probes.
 - Canonical keys with a unique index, and a 409 from `POST /sources` with the existing source's ID.
-- Matching on title and home page, and the UI asking before adding one that looks close.
-- The Add page, which runs discovery in the background and shows progress.
-- Falling back to asking for the first page's URL.
+- Matching on title and home page, with candidates marked as looking close.
+- `andante source discover`, and the same operation on `/api/v1`.
+
+The Add page moved to phase 14, because this phase went first.
 
 ## Acceptance Criteria
 
