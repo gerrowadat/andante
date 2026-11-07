@@ -22,6 +22,7 @@ type pageExtractor struct{}
 const (
 	platformImage = "#cc-comic, #cc-comicbody img, .webcomic-image img, #comic img, .comic-image img, #spliced-comic img"
 	platformNext  = "a.cc-next, a.next-comic, .webcomic-link.next-webcomic-link a, a.next-webcomic-link, a.comic-nav-next, .comic-nav-next a, a.navi-next, a.next"
+	platformFirst = "a.cc-first, a.first-comic, a.first-webcomic-link, a.comic-nav-first, .webcomic-link.first-webcomic-link a"
 	platformPrev  = "a.cc-prev, a.previous-comic, a.previous-webcomic-link, a.comic-nav-previous, .comic-nav-previous a, a.navi-prev, a.prev"
 )
 

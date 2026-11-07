@@ -18,7 +18,7 @@ func source(t *testing.T, s *store.Store, slug string) db.Source {
 	t.Helper()
 	created, err := s.CreateSource(t.Context(), db.InsertSourceParams{
 		Slug: slug, Title: "t", HomeUrl: "https://example.com/", DefaultKind: "page",
-		Strategy: "crawl", Config: []byte("{}"), State: "indexing",
+		Strategy: "crawl", Config: []byte(`{"start_url":"https://example.com/` + slug + `"}`), State: "indexing",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -204,8 +204,8 @@ func TestEntryIdentity(t *testing.T) {
 	s := storetest.Catalogue(t)
 	ctx := t.Context()
 	var source int64
-	err := s.Pool().QueryRow(ctx, `INSERT INTO sources (slug, title, home_url, default_kind, strategy, config, state)
-		VALUES ('s', 't', 'https://example.com/', 'page', 'crawl', '{}', 'indexing') RETURNING id`).Scan(&source)
+	err := s.Pool().QueryRow(ctx, `INSERT INTO sources (slug, title, home_url, default_kind, strategy, config, state, canonical_key, home_key)
+		VALUES ('s', 't', 'https://example.com/', 'page', 'crawl', '{}', 'indexing', 'k', 'h') RETURNING id`).Scan(&source)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>A WordPress Blog</title>
+    <link>https://wordpress.example/</link>
+    <description>A WordPress Blog</description>
+    <item>
+      <title>A WordPress Blog 5</title>
+      <link>https://wordpress.example/5</link>
+      <guid>https://wordpress.example/5</guid>
+      <pubDate>Mon, 06 Jan 2018 09:00:00 +0000</pubDate>
+      <description>Number 5</description>
+    </item>
+    <item>
+      <title>A WordPress Blog 4</title>
+      <link>https://wordpress.example/4</link>
+      <guid>https://wordpress.example/4</guid>
+      <pubDate>Mon, 05 Jan 2018 09:00:00 +0000</pubDate>
+      <description>Number 4</description>
+    </item>
+    <item>
+      <title>A WordPress Blog 3</title>
+      <link>https://wordpress.example/3</link>
+      <guid>https://wordpress.example/3</guid>
+      <pubDate>Mon, 04 Jan 2018 09:00:00 +0000</pubDate>
+      <description>Number 3</description>
+    </item>
+    <item>
+      <title>A WordPress Blog 2</title>
+      <link>https://wordpress.example/2</link>
+      <guid>https://wordpress.example/2</guid>
+      <pubDate>Mon, 03 Jan 2018 09:00:00 +0000</pubDate>
+      <description>Number 2</description>
+    </item>
+    <item>
+      <title>A WordPress Blog 1</title>
+      <link>https://wordpress.example/1</link>
+      <guid>https://wordpress.example/1</guid>
+      <pubDate>Mon, 02 Jan 2018 09:00:00 +0000</pubDate>
+      <description>Number 1</description>
+    </item>
+  </channel>
+</rss>

@@ -19,6 +19,7 @@ import (
 	"github.com/gerrowadat/andante/internal/discovery"
 	"github.com/gerrowadat/andante/internal/discovery/sitetest"
 	"github.com/gerrowadat/andante/internal/discovery/strategies"
+	"github.com/gerrowadat/andante/internal/find"
 	"github.com/gerrowadat/andante/internal/reads"
 	"github.com/gerrowadat/andante/internal/replica"
 	"github.com/gerrowadat/andante/internal/store"
@@ -49,8 +50,10 @@ func CatalogueHandler(t *testing.T, st *catalogue.Store, reg prometheus.Register
 	t.Helper()
 	registry := discovery.NewRegistry(strategies.All()...)
 	fetcher := discovery.NewFetcher(sitetest.FetcherOptions(sitetest.NewClock()))
+	metrics := discovery.NewMetrics(reg)
+	prober := discovery.NewProber(registry, fetcher, metrics)
 	handler, err := catalogueapi.New(catalogueapi.Options{
-		Store: st, Strategies: registry, Prober: discovery.NewProber(registry, fetcher, discovery.NewMetrics(reg)),
+		Store: st, Strategies: registry, Prober: prober, Finder: find.New(st, prober, metrics),
 		Token: CatalogueToken, Registry: reg, Logger: slog.New(slog.DiscardHandler), ProbeTimeout: time.Minute,
 	})
 	if err != nil {

@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -193,9 +194,64 @@ func kindOf(raw string) (client.Kind, error) {
 
 func (a *app) sourceCmd() *cobra.Command {
 	source := &cobra.Command{Use: "source", Short: "Manage sources."}
-	source.AddCommand(a.sourceProbe(), a.sourceAdd(), a.sourceList(), a.sourceGet(), a.sourceEdit(),
+	source.AddCommand(a.sourceDiscover(), a.sourceProbe(), a.sourceAdd(), a.sourceList(), a.sourceGet(), a.sourceEdit(),
 		a.sourceRemove(), a.sourceCrawl(), a.sourceEntries())
 	return source
+}
+
+func (a *app) sourceDiscover() *cobra.Command {
+	var limit int32
+	cmd := operation(&cobra.Command{
+		Use:   "discover <url>",
+		Short: "Work out how to read a site, from its address. Saves nothing.",
+		Long: "Work out how to read a site, from its address. Saves nothing.\n\n" +
+			"It keeps to the crawl interval, so it can take a minute or two.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			request := client.DiscoveryRequest{URL: args[0]}
+			if limit != 0 {
+				request.Limit = &limit
+			}
+			resp, err := a.client.CreateDiscoveryWithResponse(cmd.Context(), request)
+			if err != nil {
+				return err
+			}
+			return a.show(resp.StatusCode(), resp.Body, func(w *table) {
+				if len(resp.JSON200.Candidates) == 0 {
+					w.println("Nothing found. Try source probe with the URL of the first page.")
+					return
+				}
+				for _, c := range resp.JSON200.Candidates {
+					printCandidate(w, c)
+				}
+			})
+		},
+	}, "createDiscovery")
+	cmd.Flags().Int32Var(&limit, "limit", 0, "most entries to try for each candidate (at most 10)")
+	return cmd
+}
+
+func printCandidate(w *table, c client.Candidate) {
+	strategy, _ := c.Config.Discriminator()
+	raw, _ := c.Config.MarshalJSON()
+	var config struct {
+		FeedURL  string `json:"feed_url"`
+		StartURL string `json:"start_url"`
+	}
+	_ = json.Unmarshal(raw, &config)
+	w.printf("Title:\t%s\nStrategy:\t%s\nKind:\t%s\nURL:\t%s%s\nHome:\t%s\n", c.Title, strategy, c.DefaultKind, config.FeedURL, config.StartURL, c.HomeURL)
+	if id, err := c.ExistingSourceID.Get(); err == nil {
+		w.printf("Already here:\tsource %d\n", id)
+	} else {
+		w.printf("Dated:\t%.0f%%\n", c.DatedShare*100)
+	}
+	for _, id := range c.SimilarSourceIds {
+		w.printf("Looks like:\tsource %d\n", id)
+	}
+	for _, warning := range c.Warnings {
+		w.println("Warning:", warning)
+	}
+	w.println()
 }
 
 func (a *app) sourceProbe() *cobra.Command {

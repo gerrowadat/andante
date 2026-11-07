@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"regexp"
 	"runtime/debug"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -114,8 +115,8 @@ type Kit struct {
 	// the spec secures, so a new operation needs a token unless it says otherwise.
 	// It gets the request's context, which is how it passes on who the token is for.
 	Valid func(ctx context.Context, token string) (bool, error)
-	// ProbeRoute is the route that gets ProbeTimeout to answer.
-	ProbeRoute   string
+	// SlowRoutes are the routes that get ProbeTimeout to answer.
+	SlowRoutes   []string
 	ProbeTimeout time.Duration
 }
 
@@ -124,7 +125,7 @@ type Kit struct {
 // the server would otherwise cut the response off.
 func (k *Kit) ExtendProbeDeadline(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Pattern == k.ProbeRoute {
+		if slices.Contains(k.SlowRoutes, r.Pattern) {
 			deadline := time.Now().Add(k.ProbeTimeout + probeDeadlineMargin)
 			if err := http.NewResponseController(w).SetWriteDeadline(deadline); err != nil && !errors.Is(err, http.ErrNotSupported) {
 				k.Logger.Warn("could not extend the probe's deadline", "error", err)

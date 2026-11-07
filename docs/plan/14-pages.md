@@ -4,7 +4,7 @@ Read first: `CLAUDE.md`, the pages and stack sections of `docs/proposals/web-ui.
 
 ## Goal
 
-A logged-in user can do everything the CLI can, except adding a new site by its address.
+A logged-in user can do everything the CLI can.
 
 ## Do
 
@@ -14,13 +14,17 @@ A logged-in user can do everything the CLI can, except adding a new site by its 
 - A `/users` API for the Users page: list, disable, enable and change role. Phase 12 only added users
   from the command line.
 - Tracking a source from Browse: pick a pace, get a feed link.
+- The Add page, moved here from phase 15, which built what's under it. Paste an address and run
+  `POST /discoveries` in the background, showing progress. Go to the source if there's an
+  `existing_source_id`, ask before adding one with `similar_source_ids`, and fall back to asking for the
+  first page's URL.
 - A feed page at `GET /f/{token}` on the public listener, with no login: the source, the pace in
   words, the position and the next release. Add the pace to the feed's description too (#30).
 - Pace presets, using the CLI's shorthand, moved to a shared package.
 
 ## Out of Scope
 
-The add flow, OIDC and TOTP.
+OIDC and TOTP.
 
 ## Acceptance Criteria
 

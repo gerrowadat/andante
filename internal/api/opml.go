@@ -123,6 +123,9 @@ func (h *handler) importOutline(ctx context.Context, outline feed.Outline, resul
 		case !errors.As(err, &p):
 			invalid("the source could not be saved")
 			return
+		case p.Problem.ExistingSourceID != nil:
+			result.Status, result.SourceID = client.OPMLOutlineResultStatusDuplicate, p.Problem.ExistingSourceID
+			return
 		case p.Problem.Status == http.StatusConflict:
 			continue
 		case p.Problem.Detail != nil:

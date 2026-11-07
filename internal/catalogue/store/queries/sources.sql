@@ -2,19 +2,32 @@
 -- Copyright (C) 2026 Dave O'Connor
 
 -- name: InsertSource :one
-INSERT INTO sources (slug, title, home_url, default_kind, image_url, strategy, config, state)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+INSERT INTO sources (slug, title, home_url, default_kind, image_url, strategy, config, state, canonical_key, home_key)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 RETURNING *;
 
 -- name: GetSource :one
 SELECT * FROM sources WHERE id = $1;
+
+-- name: GetSourceByKey :one
+SELECT * FROM sources WHERE canonical_key = $1;
+
+-- name: GetSourceByHomeKey :one
+SELECT * FROM sources WHERE home_key = $1 ORDER BY id LIMIT 1;
+
+-- name: ListSimilarSources :many
+-- What looks like the same serial, without being a certain match.
+SELECT id FROM sources
+WHERE lower(title) = lower(sqlc.arg(title)) OR home_key = sqlc.arg(home_key)
+ORDER BY id;
 
 -- name: GetSourceForUpdate :one
 SELECT * FROM sources WHERE id = $1 FOR UPDATE;
 
 -- name: UpdateSource :one
 UPDATE sources
-SET title = $2, home_url = $3, default_kind = $4, image_url = $5, strategy = $6, config = $7, state = $8
+SET title = $2, home_url = $3, default_kind = $4, image_url = $5, strategy = $6, config = $7, state = $8,
+    canonical_key = $9, home_key = $10
 WHERE id = $1
 RETURNING *;
 

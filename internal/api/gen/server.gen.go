@@ -29,6 +29,9 @@ type ServerInterface interface {
 	// RevokeAPIToken Revoke an API token
 	// (DELETE /api-tokens/{id})
 	RevokeAPIToken(w http.ResponseWriter, r *http.Request, id ID)
+	// CreateDiscovery Work out how to read a site
+	// (POST /discoveries)
+	CreateDiscovery(w http.ResponseWriter, r *http.Request)
 	// ExportOPML Export reads as OPML
 	// (POST /exports/opml)
 	ExportOPML(w http.ResponseWriter, r *http.Request)
@@ -186,6 +189,20 @@ func (siw *ServerInterfaceWrapper) RevokeAPIToken(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RevokeAPIToken(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateDiscovery operation middleware
+func (siw *ServerInterfaceWrapper) CreateDiscovery(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateDiscovery(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -993,6 +1010,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/sources/{id}", wrapper.UpdateSource)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/sources/{id}/entries", wrapper.ListEntries)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/sources/{id}/crawls", wrapper.RequestCrawl)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/discoveries", wrapper.CreateDiscovery)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/probes", wrapper.CreateProbe)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/reads", wrapper.ListReads)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/reads", wrapper.CreateRead)
@@ -1125,6 +1143,45 @@ type RevokeAPITokendefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response RevokeAPITokendefaultApplicationProblemPlusJSONResponse) VisitRevokeAPITokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateDiscoveryRequestObject struct {
+	Body *CreateDiscoveryJSONRequestBody
+}
+
+type CreateDiscoveryResponseObject interface {
+	VisitCreateDiscoveryResponse(w http.ResponseWriter) error
+}
+
+type CreateDiscovery200JSONResponse DiscoveryResult
+
+func (response CreateDiscovery200JSONResponse) VisitCreateDiscoveryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateDiscoverydefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response CreateDiscoverydefaultApplicationProblemPlusJSONResponse) VisitCreateDiscoveryResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -2080,6 +2137,9 @@ type StrictServerInterface interface {
 	// RevokeAPIToken Revoke an API token
 	// (DELETE /api-tokens/{id})
 	RevokeAPIToken(ctx context.Context, request RevokeAPITokenRequestObject) (RevokeAPITokenResponseObject, error)
+	// CreateDiscovery Work out how to read a site
+	// (POST /discoveries)
+	CreateDiscovery(ctx context.Context, request CreateDiscoveryRequestObject) (CreateDiscoveryResponseObject, error)
 	// ExportOPML Export reads as OPML
 	// (POST /exports/opml)
 	ExportOPML(ctx context.Context, request ExportOPMLRequestObject) (ExportOPMLResponseObject, error)
@@ -2266,6 +2326,37 @@ func (sh *strictHandler) RevokeAPIToken(w http.ResponseWriter, r *http.Request, 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(RevokeAPITokenResponseObject); ok {
 		if err := validResponse.VisitRevokeAPITokenResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateDiscovery operation middleware
+func (sh *strictHandler) CreateDiscovery(w http.ResponseWriter, r *http.Request) {
+	var request CreateDiscoveryRequestObject
+
+	var body CreateDiscoveryJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateDiscovery(ctx, request.(CreateDiscoveryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateDiscovery")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateDiscoveryResponseObject); ok {
+		if err := validResponse.VisitCreateDiscoveryResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

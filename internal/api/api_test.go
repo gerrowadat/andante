@@ -76,7 +76,7 @@ func (f *fixture) createSource(t *testing.T, slug string) client.Source {
 		Title:       "Title of " + slug,
 		HomeURL:     "https://comic.example/",
 		DefaultKind: client.Page,
-		Config:      crawlConfig(t, "https://comic.example/1"),
+		Config:      crawlConfig(t, "https://comic.example/"+slug),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -108,7 +108,7 @@ func TestSourceLifecycle(t *testing.T) {
 		t.Fatalf("get: %d %s", got.StatusCode(), got.Body)
 	}
 	crawl, err := got.JSON200.Config.AsCrawlConfig()
-	if err != nil || crawl.StartURL != "https://comic.example/1" {
+	if err != nil || crawl.StartURL != "https://comic.example/example" {
 		t.Errorf("config = %+v, %v", crawl, err)
 	}
 
@@ -1597,5 +1597,182 @@ func TestEachUserKeepsTheirLastToken(t *testing.T) {
 	last, err := bob.client.RevokeAPITokenWithResponse(ctx, tokens.JSON200.Items[0].ID)
 	if err != nil || last.StatusCode() != http.StatusConflict {
 		t.Errorf("revoking bob's last token: %v %d, though the admin has one too", err, last.StatusCode())
+	}
+}
+
+func TestASerialCantBeAddedTwice(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	first, err := f.client.CreateSourceWithResponse(ctx, client.SourceCreate{
+		Slug: "first", Title: "t", HomeURL: "https://comic.example/", DefaultKind: client.Page, Config: crawlConfig(t, "https://comic.example/1"),
+	})
+	if err != nil || first.JSON201 == nil {
+		t.Fatalf("create: %v %s", err, first.Body)
+	}
+
+	for _, address := range []string{"https://comic.example/1", "https://COMIC.example:443/1/", "https://comic.example/1#top"} {
+		again, err := f.client.CreateSourceWithResponse(ctx, client.SourceCreate{
+			Slug: "again", Title: "t", HomeURL: "https://comic.example/", DefaultKind: client.Page, Config: crawlConfig(t, address),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if again.StatusCode() != http.StatusConflict {
+			t.Errorf("%s: %d %s", address, again.StatusCode(), again.Body)
+			continue
+		}
+		problem := again.ApplicationProblemJSONDefault
+		if problem == nil || problem.ExistingSourceID == nil || *problem.ExistingSourceID != first.JSON201.ID {
+			t.Errorf("%s: problem = %s", address, again.Body)
+		}
+	}
+
+	slug, err := f.client.CreateSourceWithResponse(ctx, client.SourceCreate{
+		Slug: "first", Title: "t", HomeURL: "https://comic.example/", DefaultKind: client.Page, Config: crawlConfig(t, "https://comic.example/2"),
+	})
+	if err != nil || slug.StatusCode() != http.StatusConflict || slug.ApplicationProblemJSONDefault.ExistingSourceID != nil {
+		t.Errorf("a slug in use: %v %s", err, slug.Body)
+	}
+
+	other := f.createSource(t, "other")
+	config := crawlConfig(t, "https://comic.example/1/")
+	moved, err := f.client.UpdateSourceWithApplicationMergePatchPlusJSONBodyWithResponse(ctx, other.ID, client.SourcePatch{Config: &config})
+	if err != nil || moved.StatusCode() != http.StatusConflict || moved.ApplicationProblemJSONDefault == nil ||
+		moved.ApplicationProblemJSONDefault.ExistingSourceID == nil || *moved.ApplicationProblemJSONDefault.ExistingSourceID != first.JSON201.ID {
+		t.Errorf("changing a config to one in use: %v %s", err, moved.Body)
+	}
+	own := crawlConfig(t, "https://comic.example/1/")
+	unchanged, err := f.client.UpdateSourceWithApplicationMergePatchPlusJSONBodyWithResponse(ctx, first.JSON201.ID, client.SourcePatch{Config: &own})
+	if err != nil || unchanged.StatusCode() != http.StatusOK {
+		t.Errorf("a source keeping its own key: %v %s", err, unchanged.Body)
+	}
+}
+
+func TestAnImportCatchesADuplicateSpeltDifferently(t *testing.T) {
+	f := newFixture(t)
+	f.do(t, "POST", "/api/v1/sources", "application/json",
+		`{"slug":"known","title":"Known","home_url":"https://k.example/","default_kind":"article","config":{"strategy":"feed","feed_url":"https://k.example/rss"}}`, f.token)
+	opml := `<opml version="2.0"><body><outline title="Known" xmlUrl="https://K.example/rss/"/></body></opml>`
+	resp, body := f.do(t, "POST", "/api/v1/imports/opml", "text/x-opml", opml, f.token)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d: %s", resp.StatusCode, body)
+	}
+	var result client.OPMLImportResult
+	if err := json.Unmarshal([]byte(body), &result); err != nil {
+		t.Fatal(err)
+	}
+	if got := result.Results[0]; got.Status != client.OPMLOutlineResultStatusDuplicate || got.SourceID == nil {
+		t.Errorf("result = %s", body)
+	}
+}
+
+func TestAReadStartsASourceNobodyHasLookedAt(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	bob := f.user(t, "bob", false)
+	opml := `<opml version="2.0"><body><outline title="Blog" xmlUrl="https://blog.example/rss"/></body></opml>`
+	resp, body := f.do(t, "POST", "/api/v1/imports/opml", "text/x-opml", opml, bob.token)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("import: %d %s", resp.StatusCode, body)
+	}
+	var result client.OPMLImportResult
+	if err := json.Unmarshal([]byte(body), &result); err != nil {
+		t.Fatal(err)
+	}
+	id := *result.Results[0].SourceID
+	state := func() client.SourceState {
+		t.Helper()
+		got, err := bob.client.GetSourceWithResponse(ctx, id)
+		if err != nil || got.JSON200 == nil {
+			t.Fatalf("get: %v", err)
+		}
+		return got.JSON200.State
+	}
+	if got := state(); got != client.SourceStatePaused {
+		t.Fatalf("after the import: %q", got)
+	}
+	read, err := bob.client.CreateReadWithResponse(ctx, client.ReadCreate{SourceID: id, Name: "r", Pacing: rrulePacing(t)})
+	if err != nil || read.JSON201 == nil {
+		t.Fatalf("create read: %v %s", err, read.Body)
+	}
+	if got := state(); got != client.SourceStateIndexing {
+		t.Errorf("after the read: %q, want indexing", got)
+	}
+}
+
+func TestAReadLeavesASourcePausedOnPurpose(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	source := f.createSource(t, "s")
+	_, err := f.stack.Catalogue.Pool().Exec(ctx, "UPDATE sources SET state = 'paused', last_crawled_at = now() WHERE id = $1", source.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.stack.Sync.CatchUp(ctx); err != nil {
+		t.Fatal(err)
+	}
+	bob := f.user(t, "bob", false)
+	read, err := bob.client.CreateReadWithResponse(ctx, client.ReadCreate{SourceID: source.ID, Name: "r", Pacing: rrulePacing(t)})
+	if err != nil || read.JSON201 == nil {
+		t.Fatalf("create read: %v %s", err, read.Body)
+	}
+	got, err := bob.client.GetSourceWithResponse(ctx, source.ID)
+	if err != nil || got.JSON200 == nil || got.JSON200.State != client.SourceStatePaused {
+		t.Errorf("state = %s, %v", got.Body, err)
+	}
+}
+
+func TestDiscoveries(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	bob := f.user(t, "bob", false)
+	site := sitetest.Serve(t, "discover-full")
+
+	limit := int32(2)
+	found, err := bob.client.CreateDiscoveryWithResponse(ctx, client.DiscoveryRequest{URL: site.URL + "/", Limit: &limit})
+	if err != nil || found.JSON200 == nil {
+		t.Fatalf("discover: %v %s", err, found.Body)
+	}
+	if len(found.JSON200.Candidates) != 1 {
+		t.Fatalf("candidates = %s", found.Body)
+	}
+	c := found.JSON200.Candidates[0]
+	if c.Title != "A Full Blog" || len(c.Sample) != 2 || c.ExistingSourceID.IsSpecified() && !c.ExistingSourceID.IsNull() {
+		t.Errorf("candidate = %s", found.Body)
+	}
+
+	created, err := bob.client.CreateSourceWithResponse(ctx, client.SourceCreate{
+		Slug: "blog", Title: c.Title, HomeURL: site.URL + "/", DefaultKind: c.DefaultKind, Config: c.Config,
+	})
+	if err != nil || created.JSON201 == nil {
+		t.Fatalf("create from a candidate: %v %s", err, created.Body)
+	}
+	before := len(site.Requests())
+	again, err := bob.client.CreateDiscoveryWithResponse(ctx, client.DiscoveryRequest{URL: site.URL})
+	if err != nil || again.JSON200 == nil || len(again.JSON200.Candidates) != 1 {
+		t.Fatalf("second discovery: %v %s", err, again.Body)
+	}
+	if id, err := again.JSON200.Candidates[0].ExistingSourceID.Get(); err != nil || id != created.JSON201.ID {
+		t.Errorf("second discovery: %s", again.Body)
+	}
+	if got := len(site.Requests()); got != before {
+		t.Errorf("the second discovery made %d requests", got-before)
+	}
+
+	bad, err := bob.client.CreateDiscoveryWithResponse(ctx, client.DiscoveryRequest{URL: "ftp://a.example/"})
+	if err != nil || bad.StatusCode() != http.StatusUnprocessableEntity {
+		t.Errorf("a bad scheme: %v %d", err, bad.StatusCode())
+	}
+	blocked := sitetest.Serve(t, "robots-disallow")
+	refused, err := bob.client.CreateDiscoveryWithResponse(ctx, client.DiscoveryRequest{URL: blocked.URL + "/comics/1.html"})
+	if err != nil || refused.StatusCode() != http.StatusUnprocessableEntity || refused.ApplicationProblemJSONDefault == nil ||
+		!strings.HasSuffix(refused.ApplicationProblemJSONDefault.Type, "#probe-failed") {
+		t.Errorf("a site that says no: %v %s", err, refused.Body)
+	}
+
+	f.stack.CatalogueServer.Close()
+	down, err := bob.client.CreateDiscoveryWithResponse(ctx, client.DiscoveryRequest{URL: site.URL})
+	if err != nil || down.StatusCode() != http.StatusServiceUnavailable {
+		t.Errorf("the catalogue down: %v %d", err, down.StatusCode())
 	}
 }

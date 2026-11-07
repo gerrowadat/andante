@@ -155,7 +155,7 @@ func (q *Queries) LatestValidators(ctx context.Context, arg LatestValidatorsPara
 
 const listDueSources = `-- name: ListDueSources :many
 
-SELECT id, slug, title, home_url, default_kind, image_url, extra, strategy, config, cursor, state, due_at, last_crawled_at, last_error, created_at, demand_seq, revision FROM sources
+SELECT id, slug, title, home_url, default_kind, image_url, extra, strategy, config, cursor, state, due_at, last_crawled_at, last_error, created_at, canonical_key, home_key, demand_seq, revision FROM sources
 WHERE state IN ('indexing', 'tail') AND (due_at IS NULL OR due_at <= $1)
 ORDER BY due_at NULLS LAST, id
 `
@@ -189,6 +189,8 @@ func (q *Queries) ListDueSources(ctx context.Context, dueAt *time.Time) ([]Sourc
 			&i.LastCrawledAt,
 			&i.LastError,
 			&i.CreatedAt,
+			&i.CanonicalKey,
+			&i.HomeKey,
 			&i.DemandSeq,
 			&i.Revision,
 		); err != nil {

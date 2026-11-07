@@ -63,7 +63,8 @@ says which. A probe that gets some pages and then stops returns those, with a wa
 
 ### Conflict
 
-Status 409. The request clashes with what exists: a slug already in use, deleting
+Status 409. The request clashes with what exists: a source that already reads this serial, whose ID is
+in `existing_source_id`, a slug already in use, deleting
 a source a read still uses, revoking your last active API token, changing a read's
 `catch_up` or `buffer`, a jump to or behind the read's position or past the index, a
 skip with nothing to skip to, pausing a paused read, or resuming one that is not.
@@ -96,6 +97,16 @@ your reads. An admin can reach anyone's, and `GET /reads?all=true` lists them al
 `POST /imports/opml` takes an OPML file of at most 5 MiB and creates a paused `feed` source for
 each outline. It answers 200 with a result per outline: `created`, `duplicate` or `invalid`. A
 body that isn't OPML gets a 400.
+
+## Discoveries
+
+`POST /discoveries` takes a site's address and returns candidate sources, best first, each tried with
+a probe. Saves nothing. It keeps to the same limits as a probe, so set your client's timeout to match.
+An empty list means nothing worked, so ask for the first page's URL.
+
+`existing_source_id` means andante already has this serial. It's found without asking the site, and
+the sample is empty. `similar_source_ids` lists sources with the same title or home page, which might
+be the same serial and might not.
 
 ## Probes and Crawls
 

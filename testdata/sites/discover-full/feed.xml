@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>A Full Blog</title>
+    <link>https://full.example/</link>
+    <description>A Full Blog</description>
+    <item>
+      <title>A Full Blog 7</title>
+      <link>https://full.example/7</link>
+      <guid>https://full.example/7</guid>
+      <pubDate>Mon, 08 Jan 2018 09:00:00 +0000</pubDate>
+      <description>Number 7</description>
+    </item>
+    <item>
+      <title>A Full Blog 6</title>
+      <link>https://full.example/6</link>
+      <guid>https://full.example/6</guid>
+      <pubDate>Mon, 07 Jan 2018 09:00:00 +0000</pubDate>
+      <description>Number 6</description>
+    </item>
+    <item>
+      <title>A Full Blog 5</title>
+      <link>https://full.example/5</link>
+      <guid>https://full.example/5</guid>
+      <pubDate>Mon, 06 Jan 2018 09:00:00 +0000</pubDate>
+      <description>Number 5</description>
+    </item>
+    <item>
+      <title>A Full Blog 4</title>
+      <link>https://full.example/4</link>
+      <guid>https://full.example/4</guid>
+      <pubDate>Mon, 05 Jan 2018 09:00:00 +0000</pubDate>
+      <description>Number 4</description>
+    </item>
+    <item>
+      <title>A Full Blog 3</title>
+      <link>https://full.example/3</link>
+      <guid>https://full.example/3</guid>
+      <pubDate>Mon, 04 Jan 2018 09:00:00 +0000</pubDate>
+      <description>Number 3</description>
+    </item>
+    <item>
+      <title>A Full Blog 2</title>
+      <link>https://full.example/2</link>
+      <guid>https://full.example/2</guid>
+      <pubDate>Mon, 03 Jan 2018 09:00:00 +0000</pubDate>
+      <description>Number 2</description>
+    </item>
+    <item>
+      <title>A Full Blog 1</title>
+      <link>https://full.example/1</link>
+      <guid>https://full.example/1</guid>
+      <pubDate>Mon, 02 Jan 2018 09:00:00 +0000</pubDate>
+      <description>Number 1</description>
+    </item>
+  </channel>
+</rss>

@@ -2,6 +2,26 @@
 
 A source is a serial, plus how to find its archive.
 
+## Adding a Site
+
+Give andante the site's address, and it works out the rest:
+
+```sh
+andante source discover https://comic.example/
+```
+
+It looks for a feed the page links to, then tries common paths such as `/feed` and `/rss.xml`, and
+checks whether the feed holds the whole archive. If it doesn't, it looks for a `?paged=` feed, or a
+link to the first page. Each candidate gets a normal probe, so you can see what you'd get before you
+add anything. Best first, each one has the config to pass to `source add`. Nothing is saved.
+
+This keeps to the same limits as crawling, so it can take a minute or two. If it finds nothing, it
+says so, and you'll need to find the first page yourself and use a probe.
+
+A serial is only crawled once, so if the catalogue already has this one it says which source, without
+asking the site anything. Track that one with a read. A candidate can also list sources that look close,
+with the same title or home page. Have a look at those before adding another.
+
 ## Choosing a Strategy
 
 Start with what the serial's feed holds, because a feed costs one request and a crawl costs
@@ -57,6 +77,10 @@ This creates a paused `feed` source for each outline, including those in folders
 crawls until you've probed one and enabled it. The result lists each outline as `created`,
 `duplicate` (the file or the database already has it) or `invalid`. One bad outline doesn't
 stop the rest.
+
+Creating a read on one of these starts it. That only works on a source that has never been crawled,
+because one that has was paused on purpose, and only an admin can restart that. The read needs a
+schedule, because replay needs dates and nothing is indexed yet.
 
 ## Adding a Comic
 

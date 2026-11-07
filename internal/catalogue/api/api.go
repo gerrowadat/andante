@@ -13,14 +13,17 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/gerrowadat/andante/api"
+	"github.com/gerrowadat/andante/internal/canon"
 	"github.com/gerrowadat/andante/internal/catalogue/api/gen"
 	"github.com/gerrowadat/andante/internal/catalogue/client"
 	"github.com/gerrowadat/andante/internal/catalogue/store"
 	"github.com/gerrowadat/andante/internal/catalogue/store/db"
 	"github.com/gerrowadat/andante/internal/discovery"
+	"github.com/gerrowadat/andante/internal/find"
 	"github.com/gerrowadat/andante/internal/httpapi"
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/openapi3filter"
@@ -39,6 +42,7 @@ const BasePath = "/v1"
 const (
 	stateIndexing     = "indexing"
 	defaultProbeLimit = 10
+	defaultSampleSize = 3
 
 	defaultChangeLimit = 500
 	// changePoll is how often a held request looks for changes.
@@ -50,6 +54,7 @@ type Options struct {
 	Store        *store.Store
 	Strategies   *discovery.Registry
 	Prober       *discovery.Prober
+	Finder       *find.Finder
 	Token        string
 	Registry     prometheus.Registerer
 	Logger       *slog.Logger
@@ -63,6 +68,7 @@ type handler struct {
 	store        *store.Store
 	strategies   *discovery.Registry
 	prober       *discovery.Prober
+	finder       *find.Finder
 	probeTimeout time.Duration
 	stopping     context.Context //nolint:containedctx // It's the service's lifetime, not a request's.
 }
@@ -84,13 +90,16 @@ func New(opts Options) (http.Handler, error) {
 	if opts.Stopping == nil {
 		opts.Stopping = context.Background()
 	}
-	h := &handler{store: opts.Store, strategies: opts.Strategies, prober: opts.Prober, probeTimeout: opts.ProbeTimeout, stopping: opts.Stopping}
+	h := &handler{
+		store: opts.Store, strategies: opts.Strategies, prober: opts.Prober, finder: opts.Finder,
+		probeTimeout: opts.ProbeTimeout, stopping: opts.Stopping,
+	}
 	kit := &httpapi.Kit{
 		Logger: opts.Logger, Router: router,
 		Valid: func(_ context.Context, token string) (bool, error) {
 			return subtle.ConstantTimeCompare([]byte(token), []byte(opts.Token)) == 1, nil
 		},
-		ProbeRoute: "POST " + BasePath + "/probes", ProbeTimeout: opts.ProbeTimeout,
+		SlowRoutes: []string{"POST " + BasePath + "/probes", "POST " + BasePath + "/discoveries"}, ProbeTimeout: opts.ProbeTimeout,
 	}
 	strict := gen.NewStrictHandlerWithOptions(h, nil, gen.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, err error) {
@@ -233,10 +242,28 @@ func (h *handler) checkConfig(config client.SourceConfig) (string, []byte, error
 	return strategy, raw, nil
 }
 
+// duplicate returns the problem for a config that another source already has, or nil.
+func (h *handler) duplicate(ctx context.Context, strategy string, config []byte, except int64) error {
+	key, err := canon.Key(strategy, config)
+	if err != nil {
+		return nil //nolint:nilerr // checkConfig has been through it, so this can't be the cause.
+	}
+	found, err := h.store.GetSourceByKey(ctx, key)
+	if err != nil || found.ID == except {
+		return nil //nolint:nilerr // No source means the conflict was something else.
+	}
+	problem := httpapi.NewProblem(http.StatusConflict, httpapi.TypeConflict, "source "+found.Slug+" already reads this")
+	problem.Problem.ExistingSourceID = &found.ID
+	return problem
+}
+
 func (h *handler) CreateSource(ctx context.Context, r gen.CreateSourceRequestObject) (gen.CreateSourceResponseObject, error) {
 	strategy, config, err := h.checkConfig(r.Body.Config)
 	if err != nil {
 		return nil, err
+	}
+	if dup := h.duplicate(ctx, strategy, config, 0); dup != nil {
+		return nil, dup
 	}
 	state := stateIndexing
 	if r.Body.State != nil {
@@ -253,6 +280,9 @@ func (h *handler) CreateSource(ctx context.Context, r gen.CreateSourceRequestObj
 		State:       state,
 	})
 	if errors.Is(err, store.ErrConflict) {
+		if dup := h.duplicate(ctx, strategy, config, 0); dup != nil {
+			return nil, dup
+		}
 		return nil, httpapi.NewProblem(http.StatusConflict, httpapi.TypeConflict, "slug "+r.Body.Slug+" is already in use")
 	}
 	if err != nil {
@@ -297,6 +327,13 @@ func (h *handler) UpdateSource(ctx context.Context, r gen.UpdateSourceRequestObj
 	})
 	if errors.Is(err, store.ErrNotFound) {
 		return nil, httpapi.NotFound("source", r.ID)
+	}
+	if errors.Is(err, store.ErrConflict) && patch.Config != nil {
+		if strategy, config, checked := h.checkConfig(*patch.Config); checked == nil {
+			if dup := h.duplicate(ctx, strategy, config, r.ID); dup != nil {
+				return nil, dup
+			}
+		}
 	}
 	if err != nil {
 		return nil, err
@@ -374,9 +411,18 @@ func (h *handler) CreateProbe(ctx context.Context, r gen.CreateProbeRequestObjec
 		return nil, httpapi.NewProblem(http.StatusUnprocessableEntity, httpapi.TypeProbeFailed, err.Error())
 	}
 
+	return gen.CreateProbe200JSONResponse{
+		Entries:    sample(found.Entries),
+		Warnings:   nonNil(found.Warnings),
+		DatedShare: found.DatedShare,
+	}, nil
+}
+
+// sample turns entries that were found and not saved into the API's shape.
+func sample(found []discovery.Entry) []client.Entry {
 	now := time.Now().UTC()
-	entries := make([]client.Entry, 0, len(found.Entries))
-	for i, e := range found.Entries {
+	entries := make([]client.Entry, 0, len(found))
+	for i, e := range found {
 		entries = append(entries, client.Entry{
 			Seq:          int32(i), //nolint:gosec // A probe is 25 entries at most.
 			Kind:         client.Kind(e.Kind),
@@ -394,11 +440,38 @@ func (h *handler) CreateProbe(ctx context.Context, r gen.CreateProbeRequestObjec
 			DiscoveredAt: now,
 		})
 	}
-	return gen.CreateProbe200JSONResponse{
-		Entries:    entries,
-		Warnings:   nonNil(found.Warnings),
-		DatedShare: found.DatedShare,
-	}, nil
+	return entries
+}
+
+func (h *handler) CreateDiscovery(ctx context.Context, r gen.CreateDiscoveryRequestObject) (gen.CreateDiscoveryResponseObject, error) {
+	address, err := url.Parse(r.Body.URL)
+	if err != nil || (address.Scheme != "http" && address.Scheme != "https") || address.Host == "" {
+		return nil, httpapi.NewProblem(http.StatusUnprocessableEntity, httpapi.TypeInvalidConfig, "url must be an absolute http(s) URL")
+	}
+	limit := defaultSampleSize
+	if r.Body.Limit != nil {
+		limit = int(*r.Body.Limit)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, h.probeTimeout)
+	defer cancel()
+	found, err := h.finder.Find(ctx, r.Body.URL, limit)
+	if err != nil {
+		return nil, httpapi.NewProblem(http.StatusUnprocessableEntity, httpapi.TypeProbeFailed, err.Error())
+	}
+	candidates := make([]client.Candidate, 0, len(found))
+	for _, c := range found {
+		var config client.SourceConfig
+		if err := config.UnmarshalJSON(c.Config); err != nil {
+			return nil, fmt.Errorf("decode config of a candidate: %w", err)
+		}
+		candidates = append(candidates, client.Candidate{
+			Title: c.Title, DefaultKind: client.Kind(c.Kind), HomeURL: c.HomeURL, Config: config,
+			Sample: sample(c.Sample), DatedShare: c.DatedShare, Warnings: nonNil(c.Warnings),
+			ExistingSourceID: nullableValue(c.ExistingSourceID), SimilarSourceIds: nonNil(c.SimilarSourceIDs),
+		})
+	}
+	return gen.CreateDiscovery200JSONResponse{Candidates: candidates}, nil
 }
 
 func (h *handler) changes(ctx context.Context, after int64, limit int32) ([]client.Change, error) {

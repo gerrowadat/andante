@@ -321,6 +321,47 @@ paths:
           description: The source is due.
         default:
           $ref: "#/components/responses/Problem"
+  /discoveries:
+    post:
+      operationId: createDiscovery
+      tags: [sources]
+      summary: Work out how to read a site
+      description: >-
+        Takes a site's address and returns ranked candidate sources, each tried
+        with a probe. Saves nothing. If the catalogue already has the serial it
+        says so, without making a request. This keeps to the crawl interval, so
+        it can take minutes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DiscoveryRequest"
+            example:
+              url: https://comic.example/
+      responses:
+        "200":
+          description: The candidates.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiscoveryResult"
+              example:
+                candidates:
+                  - title: Example Comic
+                    default_kind: page
+                    home_url: https://comic.example/
+                    config:
+                      strategy: crawl
+                      start_url: https://comic.example/1
+                    sample:
+                      - *entry
+                    dated_share: 1
+                    warnings: []
+                    existing_source_id: null
+                    similar_source_ids: []
+        default:
+          $ref: "#/components/responses/Problem"
   /probes:
     post:
       operationId: createProbe
@@ -823,6 +864,10 @@ components:
           description: What was wrong with the request, field by field.
           items:
             $ref: "#/components/schemas/FieldError"
+        existing_source_id:
+          type: integer
+          format: int64
+          description: On a conflict over a duplicate, the source that's already there.
     FieldError:
       type: object
       required: [detail]
@@ -1621,3 +1666,63 @@ components:
             $ref: "#/components/schemas/APIToken"
         next:
           $ref: "#/components/schemas/NextLink"
+    DiscoveryRequest:
+      type: object
+      additionalProperties: false
+      required: [url]
+      properties:
+        url:
+          type: string
+          format: uri
+          description: The address of a site, or of its feed.
+        limit:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 10
+          default: 3
+          description: The most entries to try for each candidate.
+    Candidate:
+      type: object
+      description: A way of reading a site, tried with a probe. If existing_source_id is set, the catalogue already has it and the sample is empty.
+      required: [title, default_kind, home_url, config, sample, dated_share, warnings, similar_source_ids]
+      properties:
+        title:
+          type: string
+        default_kind:
+          $ref: "#/components/schemas/Kind"
+        home_url:
+          type: string
+        config:
+          $ref: "#/components/schemas/SourceConfig"
+        sample:
+          type: array
+          items:
+            $ref: "#/components/schemas/Entry"
+        dated_share:
+          type: number
+          format: double
+          description: The share of the sample with an original date.
+        warnings:
+          type: array
+          items:
+            type: string
+        existing_source_id:
+          type: [integer, "null"]
+          format: int64
+          description: The source that is certainly this serial.
+        similar_source_ids:
+          type: array
+          description: Sources with the same title or home page, which might be this serial.
+          items:
+            type: integer
+            format: int64
+    DiscoveryResult:
+      type: object
+      required: [candidates]
+      properties:
+        candidates:
+          type: array
+          description: Best first. Empty means nothing worked, so ask for the first page's URL.
+          items:
+            $ref: "#/components/schemas/Candidate"

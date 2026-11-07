@@ -37,6 +37,8 @@ type Problem struct {
 	Status int32         `json:"status"`
 	Detail *string       `json:"detail,omitempty"`
 	Errors *[]FieldError `json:"errors,omitempty"`
+	// ExistingSourceID says which source a duplicate would repeat.
+	ExistingSourceID *int64 `json:"existing_source_id,omitempty"`
 }
 
 // Error is an error that renders as problem details.

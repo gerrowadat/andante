@@ -1,7 +1,8 @@
 # Proposal: Users and a Web UI
 
-Status: accepted, being built. Phases 11 and 12, the split into two services and users, have shipped
-and are in [`design/architecture.md`](../design/architecture.md). The rest of this is still to come.
+Status: accepted, being built. The split into two services, users, and working out how to read a site
+have shipped, and are in [`design/architecture.md`](../design/architecture.md) and
+[`design/discovery.md`](../design/discovery.md). The rest of this is still to come.
 
 This adds people and a website to `andante-server`. A user logs in, pastes a site's address or picks from what's already
 indexed, chooses a pace, and gets a feed.
@@ -22,54 +23,6 @@ Nobody uses the API or has data to keep, so this assumes a clean start. There's 
 | Editing sources | Admins only, for now |
 | Friends | A viewer link needs no account |
 | Binaries | `andante-server` stays one binary for the UI, API and feeds for now. This stays open as we build |
-
-## Additions to the Catalogue API
-
-`POST /sources` and `DELETE /sources/{id}` already exist. These are new.
-
-### Discovery
-
-```json
-{"url": "https://comic.example/"}
-```
-
-```json
-{"candidates": [{
-  "title": "Example Comic",
-  "default_kind": "page",
-  "config": {"strategy": "crawl", "start_url": "https://comic.example/comic/1"},
-  "sample": [],
-  "dated_share": 0.98,
-  "warnings": [],
-  "existing_source_id": null
-}]}
-```
-
-It uses the same fetcher as probes, so robots.txt, spacing and the SSRF guard all apply. In order,
-it:
-
-1. Checks the address against each source's `home_url`, and stops there if one matches.
-2. Follows `<link rel="alternate">` feeds, then tries common paths such as `/feed` and `/rss.xml`.
-3. Checks each feed for RFC 5005 archives, `?paged=` support and a cut-off archive.
-4. Looks for a first page to crawl from: `rel="first"`, or the platform patterns the extractors
-   already know.
-
-Each candidate then gets a normal probe. This is slow, because a request every 5 seconds is the
-point, so the UI runs it in the background and shows progress. It won't find everything. If there's
-no good candidate, the page asks for the first page's URL.
-
-### Duplicates
-
-Each source has a canonical key: its strategy plus its normalised feed URL, start URL or URL
-template (lower-case host, no default port, no fragment, no trailing slash). The key has a unique
-index, and `POST /sources` answers 409 with the existing source's ID.
-
-This won't catch everything. The same comic added through its feed and by crawling gets two keys,
-and a site that moves gets a new one. So candidates are also matched on title and home page, and
-the UI asks before adding one that looks close.
-
-`DELETE /sources/{id}` answers 409 while a source has demand, so a source with reads can't be
-deleted.
 
 ## Stack
 
@@ -169,7 +122,7 @@ Each phase leaves a working system, and each is one PR.
 | 12 | Done: users, personal API tokens, `user_id` on reads, the API on the main listener, encrypted feed tokens |
 | 13 | Password login, sessions, invites, CSRF, headers, rate limits, audit log |
 | 14 | Pages: Home, Browse, reads, feed links, sources, users, with per-user tests on every route |
-| 15 | Discovery, canonical keys and the add flow |
+| 15 | Done: discovery, canonical keys and close matches, through the API and CLI. The Add page moved to phase 14 |
 | 16 | TOTP and OIDC |
 | 17 | Compose, Nomad, docs, backups, and a security review before it faces the internet |
 

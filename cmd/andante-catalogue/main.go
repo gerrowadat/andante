@@ -26,6 +26,7 @@ import (
 	"github.com/gerrowadat/andante/internal/config"
 	"github.com/gerrowadat/andante/internal/discovery"
 	"github.com/gerrowadat/andante/internal/discovery/strategies"
+	"github.com/gerrowadat/andante/internal/find"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -113,9 +114,11 @@ func serve(ctx context.Context, cfg config.Catalogue, logger *slog.Logger) error
 	// ending for any reason ends the crawl.
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	prober := discovery.NewProber(registry, fetcher, metrics)
 	apiHandler, err := catalogueapi.New(catalogueapi.Options{
+		Finder:   find.New(st, prober, metrics),
 		Stopping: ctx,
-		Store:    st, Strategies: registry, Prober: discovery.NewProber(registry, fetcher, metrics),
+		Store:    st, Strategies: registry, Prober: prober,
 		Token: cfg.APIToken, Registry: reg, Logger: logger, ProbeTimeout: cfg.ProbeTimeout,
 	})
 	if err != nil {

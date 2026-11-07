@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/gerrowadat/andante/internal/canon"
 	"github.com/gerrowadat/andante/internal/catalogue/store/db"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -38,13 +39,47 @@ func translate(err error) error {
 	return err
 }
 
-// CreateSource stores a new source.
+// CreateSource stores a new source, working out its keys. It returns ErrConflict if the
+// slug or the canonical key is taken.
 func (s *Store) CreateSource(ctx context.Context, params db.InsertSourceParams) (db.Source, error) {
+	key, err := canon.Key(params.Strategy, params.Config)
+	if err != nil {
+		return db.Source{}, fmt.Errorf("insert source: %w", err)
+	}
+	params.CanonicalKey, params.HomeKey = key, canon.URL(params.HomeUrl)
 	source, err := s.queries.InsertSource(ctx, params)
 	if err != nil {
 		return db.Source{}, fmt.Errorf("insert source: %w", translate(err))
 	}
 	return source, nil
+}
+
+// GetSourceByKey returns the source with a canonical key, or ErrNotFound.
+func (s *Store) GetSourceByKey(ctx context.Context, key string) (db.Source, error) {
+	source, err := s.queries.GetSourceByKey(ctx, key)
+	if err != nil {
+		return db.Source{}, fmt.Errorf("get source by key: %w", translate(err))
+	}
+	return source, nil
+}
+
+// GetSourceByHome returns the first source with this home page, or ErrNotFound.
+func (s *Store) GetSourceByHome(ctx context.Context, address string) (db.Source, error) {
+	source, err := s.queries.GetSourceByHomeKey(ctx, canon.URL(address))
+	if err != nil {
+		return db.Source{}, fmt.Errorf("get source by home: %w", translate(err))
+	}
+	return source, nil
+}
+
+// SimilarSources returns the IDs of sources with this title or home page. It's for
+// asking a person, because neither proves that two sources are the same serial.
+func (s *Store) SimilarSources(ctx context.Context, title, home string) ([]int64, error) {
+	ids, err := s.queries.ListSimilarSources(ctx, db.ListSimilarSourcesParams{Title: title, HomeKey: canon.URL(home)})
+	if err != nil {
+		return nil, fmt.Errorf("list similar sources: %w", err)
+	}
+	return ids, nil
 }
 
 // GetSource returns a source, or ErrNotFound.
@@ -83,6 +118,10 @@ func (s *Store) UpdateSource(ctx context.Context, id int64, change func(*db.Upda
 		if err := change(&params); err != nil {
 			return err
 		}
+		if params.CanonicalKey, err = canon.Key(params.Strategy, params.Config); err != nil {
+			return err
+		}
+		params.HomeKey = canon.URL(params.HomeUrl)
 		updated, err = q.UpdateSource(ctx, params)
 		return err
 	})

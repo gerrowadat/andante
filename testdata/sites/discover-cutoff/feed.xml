@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>A Cut Off Blog</title>
+    <link>https://cutoff.example/</link>
+    <description>A Cut Off Blog</description>
+    <item>
+      <title>A Cut Off Blog 40</title>
+      <link>https://cutoff.example/40</link>
+      <guid>https://cutoff.example/40</guid>
+      <pubDate>Mon, 14 Jan 2018 09:00:00 +0000</pubDate>
+      <description>Number 40</description>
+    </item>
+    <item>
+      <title>A Cut Off Blog 39</title>
+      <link>https://cutoff.example/39</link>
+      <guid>https://cutoff.example/39</guid>
+      <pubDate>Mon, 13 Jan 2018 09:00:00 +0000</pubDate>
+      <description>Number 39</description>
+    </item>
+    <item>
+      <title>A Cut Off Blog 38</title>
+      <link>https://cutoff.example/38</link>
+      <guid>https://cutoff.example/38</guid>
+      <pubDate>Mon, 12 Jan 2018 09:00:00 +0000</pubDate>
+      <description>Number 38</description>
+    </item>
+    <item>
+      <title>A Cut Off Blog 37</title>
+      <link>https://cutoff.example/37</link>
+      <guid>https://cutoff.example/37</guid>
+      <pubDate>Mon, 11 Jan 2018 09:00:00 +0000</pubDate>
+      <description>Number 37</description>
+    </item>
+    <item>
+      <title>A Cut Off Blog 36</title>
+      <link>https://cutoff.example/36</link>
+      <guid>https://cutoff.example/36</guid>
+      <pubDate>Mon, 10 Jan 2018 09:00:00 +0000</pubDate>
+      <description>Number 36</description>
+    </item>
+    <item>
+      <title>A Cut Off Blog 35</title>
+      <link>https://cutoff.example/35</link>
+      <guid>https://cutoff.example/35</guid>
+      <pubDate>Mon, 09 Jan 2018 09:00:00 +0000</pubDate>
+      <description>Number 35</description>
+    </item>
+    <item>
+      <title>A Cut Off Blog 34</title>
+      <link>https://cutoff.example/34</link>
+      <guid>https://cutoff.example/34</guid>
+      <pubDate>Mon, 08 Jan 2018 09:00:00 +0000</pubDate>
+      <description>Number 34</description>
+    </item>
+    <item>
+      <title>A Cut Off Blog 33</title>
+      <link>https://cutoff.example/33</link>
+      <guid>https://cutoff.example/33</guid>
+      <pubDate>Mon, 07 Jan 2018 09:00:00 +0000</pubDate>
+      <description>Number 33</description>
+    </item>
+    <item>
+      <title>A Cut Off Blog 32</title>
+      <link>https://cutoff.example/32</link>
+      <guid>https://cutoff.example/32</guid>
+      <pubDate>Mon, 06 Jan 2018 09:00:00 +0000</pubDate>
+      <description>Number 32</description>
+    </item>
+    <item>
+      <title>A Cut Off Blog 31</title>
+      <link>https://cutoff.example/31</link>
+      <guid>https://cutoff.example/31</guid>
+      <pubDate>Mon, 05 Jan 2018 09:00:00 +0000</pubDate>
+      <description>Number 31</description>
+    </item>
+  </channel>
+</rss>

@@ -20,6 +20,8 @@ CREATE TABLE sources (
     last_crawled_at timestamptz,
     last_error      text,
     created_at      timestamptz NOT NULL DEFAULT now(),
+    canonical_key   text UNIQUE NOT NULL,
+    home_key        text NOT NULL,
     demand_seq      integer,
     revision        bigint NOT NULL DEFAULT 0
 );
@@ -50,6 +52,7 @@ CREATE TABLE entries (
 -- share a link or have none. Otherwise it is its URL.
 CREATE UNIQUE INDEX entries_source_guid_key ON entries (source_id, guid) WHERE guid IS NOT NULL;
 CREATE UNIQUE INDEX entries_source_url_key ON entries (source_id, url) WHERE guid IS NULL;
+CREATE INDEX sources_home_key ON sources (home_key);
 CREATE INDEX sources_revision ON sources (revision);
 CREATE INDEX entries_revision ON entries (revision);
 

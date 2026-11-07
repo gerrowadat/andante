@@ -14,6 +14,11 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Feed URLs can be shown again, through `GET /reads/{id}/tokens` and `andante token list`.
   `andante-server rotate-secret` changes the key.
 
+- `andante source discover` and `POST /discoveries` work out how to read a site from its address.
+- A serial can only be added once. `POST /sources` answers 409 with the existing source's ID.
+- Creating a read on a paused source that has never been crawled starts it, so that anyone who imports
+  OPML can start what they imported.
+
 ### Changed
 
 - The API moved to the public listener, and the CLI's default URL with it. `--admin-listen` is now
