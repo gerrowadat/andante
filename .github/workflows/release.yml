@@ -8,9 +8,11 @@
 #
 # Other ways in:
 #   - workflow_dispatch without publish=true runs the suite and stops.
-#   - pull_request runs full-suite alone. GitHub only dispatches a workflow once
-#     its file is on the default branch, so this is how changes here prove
-#     themselves before merge.
+#   - pull_request runs full-suite alone, for changes ci.yml can't vouch for: the
+#     release itself, and how the binaries start, migrate and talk to each other.
+#     GitHub only dispatches a workflow once its file is on the default branch, so
+#     this is how changes here prove themselves before merge. It isn't a required
+#     check, so a PR it skips doesn't wait for it.
 #   - A pushed vX.Y.Z tag runs everything against that tag, which already
 #     exists, so publish does not create it.
 name: release
@@ -19,6 +21,23 @@ on:
   push:
     tags: ["v[0-9]+.[0-9]+.[0-9]+"]
   pull_request:
+    paths:
+      # The release.
+      - .github/workflows/release.yml
+      - scripts/build-dist.sh
+      - scripts/release.sh
+      - Dockerfile
+      - go.mod
+      - go.sum
+      # What only the end-to-end suite exercises.
+      - test/e2e/**
+      - api/*.yaml
+      - cmd/andante-server/**
+      - cmd/andante-catalogue/**
+      - internal/config/**
+      - internal/server/**
+      - internal/replica/**
+      - internal/**/migrations/**
   workflow_dispatch:
     inputs:
       version:
