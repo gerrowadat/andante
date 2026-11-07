@@ -1,0 +1,62 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 Dave O'Connor
+#
+# The end-to-end suite: the real binaries, driven the way a person would. This is
+# here for what a change does, so it runs on any change to the code and skips docs.
+# Packaging is release.yml's job. This isn't a required check, because a required
+# check that a path filter skips would leave a PR waiting for ever.
+name: e2e
+
+on:
+  push:
+    branches: [main]
+    paths: &code
+      - "**.go"
+      - "**.sql"
+      - go.mod
+      - go.sum
+      - api/**
+      - testdata/**
+      - .github/workflows/e2e.yml
+  pull_request:
+    paths: *code
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: andante
+          POSTGRES_PASSWORD: andante
+          POSTGRES_DB: andante
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U andante -d andante"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      # Not make e2e: the service is already up, and make e2e starts compose.
+      - name: End-to-end suite
+        env:
+          ANDANTE_TEST_DATABASE_URL: postgres://andante:andante@localhost:55432/andante?sslmode=disable
+          ANDANTE_REQUIRE_DB: "1"
+        run: go test -tags=e2e -race -count=1 ./test/e2e/...

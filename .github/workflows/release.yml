@@ -6,13 +6,13 @@
 # people fetch and that cannot be quietly taken back. scripts/release.sh
 # dispatches this with publish=true and waits.
 #
+# This is the only place the release files get built and checked, so it only runs
+# when a release is on the way. Pull requests get ci.yml and e2e.yml, which are about
+# what the code does.
+#
 # Other ways in:
-#   - workflow_dispatch without publish=true runs the suite and stops.
-#   - pull_request runs full-suite alone, for changes ci.yml can't vouch for: the
-#     release itself, and how the binaries start, migrate and talk to each other.
-#     GitHub only dispatches a workflow once its file is on the default branch, so
-#     this is how changes here prove themselves before merge. It isn't a required
-#     check, so a PR it skips doesn't wait for it.
+#   - workflow_dispatch without publish=true runs the suite and stops. On a branch,
+#     that's how a change to this file or to packaging proves itself before merge.
 #   - A pushed vX.Y.Z tag runs everything against that tag, which already
 #     exists, so publish does not create it.
 name: release
@@ -20,24 +20,6 @@ name: release
 on:
   push:
     tags: ["v[0-9]+.[0-9]+.[0-9]+"]
-  pull_request:
-    paths:
-      # The release.
-      - .github/workflows/release.yml
-      - scripts/build-dist.sh
-      - scripts/release.sh
-      - Dockerfile
-      - go.mod
-      - go.sum
-      # What only the end-to-end suite exercises.
-      - test/e2e/**
-      - api/*.yaml
-      - cmd/andante-server/**
-      - cmd/andante-catalogue/**
-      - internal/config/**
-      - internal/server/**
-      - internal/replica/**
-      - internal/**/migrations/**
   workflow_dispatch:
     inputs:
       version:
@@ -59,7 +41,7 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: false
 
 jobs:
   full-suite:
@@ -93,30 +75,24 @@ jobs:
       - name: Determine the version
         id: version
         env:
-          EVENT: ${{ github.event_name }}
           RAW_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
           WANT_COMMIT: ${{ inputs.commit }}
           PUBLISHING: ${{ inputs.publish == true || inputs.publish == 'true' || github.event_name == 'push' }}
         run: |
           set -eu
-          if [ "$EVENT" = "pull_request" ]; then
-            # A PR has no inputs, so there is nothing to validate.
-            v=v0.0.0-pr
-          else
-            v=$RAW_VERSION
-            if [ -n "$WANT_COMMIT" ] && [ "$WANT_COMMIT" != "$GITHUB_SHA" ]; then
-              echo "asked to release $WANT_COMMIT, but this run checked out $GITHUB_SHA."
-              echo "main moved after dispatch; nothing has been published."
-              exit 1
-            fi
-            if ! printf '%s' "$v" | grep -Eq '^v[0-9A-Za-z.-]+$'; then
-              echo "'$v' cannot name an archive"
-              exit 1
-            fi
-            if [ "$PUBLISHING" = "true" ] && ! printf '%s' "$v" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
-              echo "'$v' is not a vX.Y.Z version; refusing to publish it"
-              exit 1
-            fi
+          v=$RAW_VERSION
+          if [ -n "$WANT_COMMIT" ] && [ "$WANT_COMMIT" != "$GITHUB_SHA" ]; then
+            echo "asked to release $WANT_COMMIT, but this run checked out $GITHUB_SHA."
+            echo "main moved after dispatch; nothing has been published."
+            exit 1
+          fi
+          if ! printf '%s' "$v" | grep -Eq '^v[0-9A-Za-z.-]+$'; then
+            echo "'$v' cannot name an archive"
+            exit 1
+          fi
+          if [ "$PUBLISHING" = "true" ] && ! printf '%s' "$v" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "'$v' is not a vX.Y.Z version; refusing to publish it"
+            exit 1
           fi
           echo "version=$v" >>"$GITHUB_OUTPUT"
           echo "date=$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ)" >>"$GITHUB_OUTPUT"
@@ -253,7 +229,7 @@ jobs:
 
   publish:
     needs: full-suite
-    if: github.event_name != 'pull_request' && (github.event_name == 'push' || inputs.publish == true || inputs.publish == 'true')
+    if: github.event_name == 'push' || inputs.publish == true || inputs.publish == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write # Push the tag and create the release.
@@ -312,7 +288,7 @@ jobs:
 
   image:
     needs: [full-suite, publish]
-    if: github.event_name != 'pull_request' && (github.event_name == 'push' || inputs.publish == true || inputs.publish == 'true')
+    if: github.event_name == 'push' || inputs.publish == true || inputs.publish == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
