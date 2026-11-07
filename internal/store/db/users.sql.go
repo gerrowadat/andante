@@ -21,7 +21,7 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, name, role, created_at, disabled_at FROM users WHERE id = $1
+SELECT id, name, role, created_at, disabled_at, password_hash FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
@@ -33,12 +33,13 @@ func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
 		&i.Role,
 		&i.CreatedAt,
 		&i.DisabledAt,
+		&i.PasswordHash,
 	)
 	return i, err
 }
 
 const getUserByName = `-- name: GetUserByName :one
-SELECT id, name, role, created_at, disabled_at FROM users WHERE name = $1
+SELECT id, name, role, created_at, disabled_at, password_hash FROM users WHERE name = $1
 `
 
 func (q *Queries) GetUserByName(ctx context.Context, name string) (User, error) {
@@ -50,13 +51,14 @@ func (q *Queries) GetUserByName(ctx context.Context, name string) (User, error) 
 		&i.Role,
 		&i.CreatedAt,
 		&i.DisabledAt,
+		&i.PasswordHash,
 	)
 	return i, err
 }
 
 const insertUser = `-- name: InsertUser :one
 
-INSERT INTO users (name, role) VALUES ($1, $2) RETURNING id, name, role, created_at, disabled_at
+INSERT INTO users (name, role) VALUES ($1, $2) RETURNING id, name, role, created_at, disabled_at, password_hash
 `
 
 type InsertUserParams struct {
@@ -75,6 +77,7 @@ func (q *Queries) InsertUser(ctx context.Context, arg InsertUserParams) (User, e
 		&i.Role,
 		&i.CreatedAt,
 		&i.DisabledAt,
+		&i.PasswordHash,
 	)
 	return i, err
 }

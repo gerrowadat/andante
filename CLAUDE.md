@@ -90,6 +90,9 @@ internal/config/          server flags + env (kong)
 internal/store/           the server's Postgres: migrations/, queries/, db/ (sqlc output)
 internal/catalogue/       the catalogue's store/, api/ and generated client/
 internal/replica/         the server's catalogue client, the sync and demand
+internal/web/             the website: login, sessions, invites
+internal/password/        Argon2id hashing and password rules
+internal/clientip/        where a request really came from, for limits and the audit log
 internal/httpapi/         what both APIs share: problems, validation, auth, metrics
 internal/stacktest/       both services together, for tests
 internal/discovery/       Strategy interface, crawler, politeness, strategies/

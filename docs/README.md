@@ -26,6 +26,7 @@ Start at the [project README](../README.md) if you don't know what andante is ye
   - [Architecture](design/architecture.md): the two services, how they talk, data model, API, listeners.
   - [Delivery](design/delivery.md): CI, security scanning, releases, supply chain.
   - [API](design/api.md): why the API's contract is the way it is.
+  - [Login](design/login.md): passwords, sessions, invites, throttling, the audit log.
   - [Discovery](design/discovery.md): strategies, extraction, politeness, tail mode.
   - [Scheduling](design/scheduling.md): pacing, segments and the arithmetic of a read.
   - [Feeds and sharing](design/feeds-and-sharing.md): output formats, tokens, decorators.

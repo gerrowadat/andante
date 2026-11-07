@@ -177,3 +177,20 @@ func TestRotateSecretCommand(t *testing.T) {
 		t.Errorf("forgetting: exit %d, %q", code, stderr)
 	}
 }
+
+func TestUserLinkCommand(t *testing.T) {
+	dsn := storetest.DSN(t)
+	if code, _, stderr := runCaptured(t, "user", "add", "dave", "--database-url="+dsn); code != 0 {
+		t.Fatalf("user add: exit %d, %q", code, stderr)
+	}
+	code, link, stderr := runCaptured(t, "user", "link", "dave", "--database-url="+dsn, "--base-url=https://andante.example/")
+	if code != 0 || !strings.HasPrefix(link, "https://andante.example/invite/") {
+		t.Errorf("user link: exit %d, %q, %q", code, link, stderr)
+	}
+	if code, _, _ := runCaptured(t, "user", "link", "nobody", "--database-url="+dsn, "--base-url=https://andante.example"); code != 1 {
+		t.Errorf("a link for nobody: exit %d", code)
+	}
+	if code, _, _ := runCaptured(t, "user", "add", "Not A Name", "--database-url="+dsn); code != 1 {
+		t.Errorf("a bad name: exit %d", code)
+	}
+}

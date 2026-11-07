@@ -29,6 +29,8 @@ tags:
     description: Feed tokens and API tokens.
   - name: exchange
     description: OPML import and export.
+  - name: users
+    description: Invites, sessions and the audit log.
   - name: meta
     description: The API's own description.
 # Shared example values, anchored here and aliased below.
@@ -155,6 +157,111 @@ paths:
                 name: dave
                 role: admin
                 created_at: 2026-11-05T07:00:00Z
+        default:
+          $ref: "#/components/responses/Problem"
+  /invites:
+    post:
+      operationId: createInvite
+      tags: [users]
+      summary: Invite someone, or reset a password
+      description: >-
+        Admins only. Returns a single-use link, good for a week, where someone
+        sets a password. With reset it's for an existing user, and ends their
+        sessions when it's used.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InviteCreate"
+            example:
+              name: alex
+              role: user
+      responses:
+        "201":
+          description: The invite.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invite"
+              example:
+                id: 1
+                name: alex
+                role: user
+                expires_at: 2026-11-12T07:00:00Z
+                url: https://andante.example/invite/example-invite
+        default:
+          $ref: "#/components/responses/Problem"
+  /sessions:
+    get:
+      operationId: listSessions
+      tags: [users]
+      summary: List your logged-in sessions
+      description: Lists your live sessions. Revoke one to log that browser out.
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: A page of sessions.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionList"
+              example:
+                items:
+                  - id: 1
+                    ip: 203.0.113.9
+                    user_agent: Mozilla/5.0
+                    created_at: 2026-11-05T07:00:00Z
+                    last_seen_at: 2026-11-05T07:05:00Z
+                next: null
+        default:
+          $ref: "#/components/responses/Problem"
+  /sessions/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    delete:
+      operationId: revokeSession
+      tags: [users]
+      summary: End a session
+      description: Ends one of your own sessions. Someone else's is a 404, even for an admin.
+      responses:
+        "204":
+          description: Ended.
+        default:
+          $ref: "#/components/responses/Problem"
+  /audit:
+    get:
+      operationId: listAudit
+      tags: [users]
+      summary: Read the audit log
+      description: Admins only. Oldest first.
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: A page of the audit log.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditList"
+              example:
+                items:
+                  - id: 1
+                    at: 2026-11-05T07:00:00Z
+                    who: dave
+                    action: login
+                    target: ""
+                    ip: 203.0.113.9
+                next: null
         default:
           $ref: "#/components/responses/Problem"
   /sources:
@@ -896,6 +1003,96 @@ components:
         created_at:
           type: string
           format: date-time
+    InviteCreate:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+          pattern: ^[a-z0-9][a-z0-9._-]{0,63}$
+        role:
+          type: string
+          enum: [admin, user]
+          default: user
+        reset:
+          type: boolean
+          default: false
+          description: This is for an existing user, to set a new password.
+    Invite:
+      type: object
+      required: [id, name, role, expires_at, url]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        role:
+          type: string
+          enum: [admin, user]
+        expires_at:
+          type: string
+          format: date-time
+        url:
+          type: string
+          format: uri
+          description: The link, shown only here.
+    Session:
+      type: object
+      required: [id, ip, user_agent, created_at, last_seen_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        ip:
+          type: string
+        user_agent:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        last_seen_at:
+          type: string
+          format: date-time
+    SessionList:
+      type: object
+      required: [items, next]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Session"
+        next:
+          $ref: "#/components/schemas/NextLink"
+    AuditEntry:
+      type: object
+      required: [id, at, who, action, target, ip]
+      properties:
+        id:
+          type: integer
+          format: int64
+        at:
+          type: string
+          format: date-time
+        who:
+          type: string
+        action:
+          type: string
+        target:
+          type: string
+        ip:
+          type: string
+    AuditList:
+      type: object
+      required: [items, next]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditEntry"
+        next:
+          $ref: "#/components/schemas/NextLink"
     Kind:
       type: string
       enum: [page, episode, article]

@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/gerrowadat/andante/internal/clientip"
 	"github.com/gerrowadat/andante/internal/seal"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -31,6 +32,9 @@ type Config struct {
 	IdleTimeout       time.Duration `name:"idle-timeout" env:"ANDANTE_IDLE_TIMEOUT" default:"2m" help:"How long an idle keep-alive connection stays open."`
 	ShutdownTimeout   time.Duration `name:"shutdown-timeout" env:"ANDANTE_SHUTDOWN_TIMEOUT" default:"15s" help:"Time allowed for in-flight requests on shutdown."`
 	ReadinessTimeout  time.Duration `name:"readiness-timeout" env:"ANDANTE_READINESS_TIMEOUT" default:"2s" help:"Time allowed for the /readyz check."`
+
+	TrustedProxies []string `name:"trusted-proxies" env:"ANDANTE_TRUSTED_PROXIES" help:"CIDRs of proxies whose X-Forwarded-For to believe."`
+	PasswordLogin  bool     `name:"password-login" env:"ANDANTE_PASSWORD_LOGIN" default:"true" negatable:"" help:"Allow logging in with a password."`
 
 	CatalogueURL   string        `name:"catalogue-url" env:"ANDANTE_CATALOGUE_URL" required:"" help:"Address of andante-catalogue."`
 	CatalogueToken string        `name:"catalogue-token" env:"ANDANTE_CATALOGUE_TOKEN" required:"" help:"The catalogue's API token."`
@@ -78,6 +82,9 @@ func (c *Config) Validate() error {
 		if d.value <= 0 {
 			errs = append(errs, fmt.Errorf("%s must be positive, got %s", d.flag, d.value))
 		}
+	}
+	if _, err := clientip.New(c.TrustedProxies); err != nil {
+		errs = append(errs, fmt.Errorf("--trusted-proxies: %w", err))
 	}
 	if c.Secret == "" {
 		errs = append(errs, errors.New("--secret is required"))

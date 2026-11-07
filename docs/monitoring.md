@@ -30,6 +30,7 @@ you create. Tokens and read IDs are never labels.
 | `andante_discoveries_total` | `result` | Attempts to work out how to read a site: `existing`, `found`, `none` or `failed` |
 | `andante_feed_requests_total` | `format`, `role`, `status` | Feed requests |
 | `andante_feed_render_duration_seconds` | | Time to render a feed |
+| `andante_logins_total` | `result` | Login attempts: `ok`, `failed` or `throttled` |
 | `andante_api_requests_total` | `route`, `status` | Admin API requests |
 
 ## Alerts

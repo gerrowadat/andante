@@ -92,6 +92,13 @@ matches part of a title or slug, and `kind`.
 Reads and tokens are yours. Someone else's is a 404, so that an ID tells you nothing. `GET /reads` means
 your reads. An admin can reach anyone's, and `GET /reads?all=true` lists them all.
 
+## Invites, Sessions and the Audit Log
+
+`POST /invites` is for admins, and returns a single-use link, good for a week, where someone sets a
+password. With `reset` it's for an existing user. `GET /sessions` lists your logged-in browsers, and
+`DELETE /sessions/{id}` ends one. Someone else's session is a 404, even for an admin. `GET /audit` is
+for admins.
+
 ## Importing OPML
 
 `POST /imports/opml` takes an OPML file of at most 5 MiB and creates a paused `feed` source for

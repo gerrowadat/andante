@@ -137,6 +137,17 @@ andante api-token list
 andante api-token rm 2
 ```
 
+## Logins
+
+```sh
+andante invite add alex                  # a single-use link. Admins only
+andante invite add pat --admin
+andante invite add alex --reset          # a new password for an existing user
+andante session list
+andante session rm 4                     # log that browser out
+andante audit                            # admins only
+```
+
 ## The API Itself
 
 ```sh

@@ -45,7 +45,7 @@ func (q *Queries) GetAPIToken(ctx context.Context, arg GetAPITokenParams) (ApiTo
 }
 
 const getActiveAPITokenByHash = `-- name: GetActiveAPITokenByHash :one
-SELECT t.id, t.token_hash, u.id AS user_id, u.role
+SELECT t.id, t.token_hash, u.id AS user_id, u.role, u.name
 FROM api_tokens t JOIN users u ON u.id = t.user_id
 WHERE t.token_hash = $1 AND t.revoked_at IS NULL AND u.disabled_at IS NULL
 `
@@ -55,6 +55,7 @@ type GetActiveAPITokenByHashRow struct {
 	TokenHash []byte
 	UserID    int64
 	Role      string
+	Name      string
 }
 
 func (q *Queries) GetActiveAPITokenByHash(ctx context.Context, tokenHash []byte) (GetActiveAPITokenByHashRow, error) {
@@ -65,6 +66,7 @@ func (q *Queries) GetActiveAPITokenByHash(ctx context.Context, tokenHash []byte)
 		&i.TokenHash,
 		&i.UserID,
 		&i.Role,
+		&i.Name,
 	)
 	return i, err
 }

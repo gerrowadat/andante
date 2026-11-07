@@ -291,9 +291,12 @@ func (p *public) ownerControls(w http.ResponseWriter, r *http.Request) (string, 
 		tooMany(w, wait)
 		return "", db.FeedToken{}, false
 	}
-	// This URL holds the token, and the page after it is someone else's site.
+	// This URL holds the token, and the page after it is someone else's site. That's
+	// also why the policy has no form-action: browsers apply it to the redirect.
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	return raw, token, true
 }
 

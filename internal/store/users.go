@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
+	"time"
 
 	"github.com/gerrowadat/andante/internal/seal"
 	"github.com/gerrowadat/andante/internal/store/db"
@@ -33,6 +35,7 @@ var ErrWrongSecret = errors.New("--secret is not the one this database was set u
 type Actor struct {
 	UserID int64
 	Admin  bool
+	Name   string // For the audit log. It decides nothing.
 }
 
 // Holder is the actor for code that's already established the right to a read, by a
@@ -40,8 +43,17 @@ type Actor struct {
 // for by ID.
 var Holder = Actor{Admin: true}
 
+// validName is what a user can be called. Logging in folds names to lower case.
+var validName = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
+
+// ErrBadName means a name is no good.
+var ErrBadName = errors.New("a name is 1 to 64 lower-case letters, digits, dots, dashes or underscores")
+
 // CreateUser adds a user and their first API token, and returns the raw token.
 func (s *Store) CreateUser(ctx context.Context, name, role string) (db.User, string, error) {
+	if !validName.MatchString(name) {
+		return db.User{}, "", ErrBadName
+	}
 	var (
 		user db.User
 		raw  string
@@ -79,8 +91,9 @@ func (s *Store) CountUsers(ctx context.Context) (int64, error) {
 	return count, nil
 }
 
-// ResetUser revokes all of a user's API tokens and issues a new one, for someone who
-// has lost theirs. It's what the command line is for, and no API reaches it.
+// ResetUser is for an account that's lost or compromised. It revokes all of a user's
+// API tokens, ends their sessions, clears their password and issues a new token. It's
+// what the command line is for, and no API reaches it.
 func (s *Store) ResetUser(ctx context.Context, name string) (string, error) {
 	var raw string
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
@@ -90,6 +103,13 @@ func (s *Store) ResetUser(ctx context.Context, name string) (string, error) {
 			return err
 		}
 		if err := q.RevokeAllAPITokens(ctx, user.ID); err != nil {
+			return err
+		}
+		now := time.Now()
+		if err := q.RevokeAllSessions(ctx, db.RevokeAllSessionsParams{UserID: user.ID, At: &now}); err != nil {
+			return err
+		}
+		if err := q.ClearPassword(ctx, user.ID); err != nil {
 			return err
 		}
 		_, raw, err = insertAPIToken(ctx, q, user.ID, "reset")

@@ -1,8 +1,9 @@
 # Proposal: Users and a Web UI
 
-Status: accepted, being built. The split into two services, users, and working out how to read a site
-have shipped, and are in [`design/architecture.md`](../design/architecture.md) and
-[`design/discovery.md`](../design/discovery.md). The rest of this is still to come.
+Status: accepted, being built. The split into two services, users, login, and working out how to read
+a site have shipped, and are in [`design/architecture.md`](../design/architecture.md),
+[`design/login.md`](../design/login.md), and [`design/discovery.md`](../design/discovery.md).
+The rest of this is still to come.
 
 This adds people and a website to `andante-server`. A user logs in, pastes a site's address or picks from what's already
 indexed, chooses a pace, and gets a feed.
@@ -65,16 +66,7 @@ are for admins.
 
 ## Login
 
-Following the OWASP cheat sheets and NIST SP 800-63B. There's no public sign-up.
-
-**Accounts.** The first admin comes from `andante-server user add --admin`, so there's never an
-unclaimed setup page on the internet. After that, an admin sends a single-use invite link. There's
-no email dependency, so password resets are an admin job or `andante-server user reset`.
-
-**Passwords.** Argon2id, 64 MiB and 3 passes, with a limit on concurrent hashes so that login can't
-be used to exhaust memory. 12 to 128 characters, no composition rules, and checked against an
-embedded list of common passwords. Login failures all look the same, and take the same time whether
-or not the user exists.
+Passwords, sessions, invites and throttling have shipped. Two things are left.
 
 **Two-factor.** TOTP for password accounts, with single-use recovery codes stored hashed. Admins can
 require it. Passkeys would be a good later addition.
@@ -84,26 +76,12 @@ compliant provider works. A user is matched on issuer and subject, never on emai
 on an email claim is how accounts get taken over. Someone new needs an invite, or must match
 `--oidc-allowed-domain` or `--oidc-allowed-group`. Two-factor is the provider's job here.
 
-**Sessions.** A random 256-bit ID in a `__Host-` cookie (`Secure`, `HttpOnly`, `SameSite=Lax`),
-stored hashed so that a database leak can't be replayed. Rotated at login and on any change of
-privilege. 7 days idle, 30 days absolute. Users can see and end their sessions.
-
-**Requests.** `http.CrossOriginProtection` from the standard library, plus a per-session CSRF token
-on forms. A strict Content-Security-Policy with no inline scripts, HSTS, and
-`frame-ancestors 'none'`. `html/template` handles escaping.
-
-**Abuse.** Rate limits by IP and by account, with backoff in place of a hard lockout, so that a
-stranger can't lock someone out by guessing. `--trusted-proxies` says whose `X-Forwarded-For` to
-believe. Login, invites, role changes and token actions go to an audit log.
-
 ## Configuration
 
 `andante-server` gains these, with `ANDANTE_*` variables:
 
 | Flag | Purpose |
 |---|---|
-| `--trusted-proxies` | CIDRs to trust for client addresses |
-| `--password-login` | On by default |
 | `--oidc-issuer`, `--oidc-client-id`, `--oidc-client-secret` | OIDC, off when unset |
 | `--oidc-allowed-domain`, `--oidc-allowed-group` | Who can sign in without an invite |
 
@@ -120,7 +98,7 @@ Each phase leaves a working system, and each is one PR.
 |---|---|
 | 11 | Done: `andante-catalogue` with its database, API, revisions, `/changes` and demand. `andante-server` syncs and serves feeds from its copy |
 | 12 | Done: users, personal API tokens, `user_id` on reads, the API on the main listener, encrypted feed tokens |
-| 13 | Password login, sessions, invites, CSRF, headers, rate limits, audit log |
+| 13 | Done: password login, sessions, invites, CSRF, headers, rate limits, audit log |
 | 14 | Pages: Home, Browse, reads, feed links, sources, users, with per-user tests on every route |
 | 15 | Done: discovery, canonical keys and close matches, through the API and CLI. The Add page moved to phase 14 |
 | 16 | TOTP and OIDC |

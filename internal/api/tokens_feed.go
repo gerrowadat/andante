@@ -89,6 +89,7 @@ func (h *handler) CreateFeedToken(ctx context.Context, r gen.CreateFeedTokenRequ
 	if err != nil {
 		return nil, err
 	}
+	h.audit(ctx, "feed-token.created", token.Label)
 	issued := gen.CreateFeedToken201JSONResponse{
 		ID:        token.ID,
 		ReadID:    token.ReadID,
@@ -110,6 +111,7 @@ func (h *handler) RevokeFeedToken(ctx context.Context, r gen.RevokeFeedTokenRequ
 	if err != nil {
 		return nil, err
 	}
+	h.audit(ctx, "feed-token.revoked", "")
 	return gen.RevokeFeedToken204Response{}, nil
 }
 
@@ -142,6 +144,7 @@ func (h *handler) ExportOPML(ctx context.Context, r gen.ExportOPMLRequestObject)
 			after = read.ID
 		}
 	}
+	h.audit(ctx, "feed-token.exported", r.Body.Label)
 	body, err := feed.OPML(outlines)
 	if err != nil {
 		return nil, err

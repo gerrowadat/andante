@@ -15,6 +15,7 @@ import (
 	"github.com/gerrowadat/andante/internal/api"
 	"github.com/gerrowadat/andante/internal/buildinfo"
 	"github.com/gerrowadat/andante/internal/config"
+	"github.com/gerrowadat/andante/internal/web"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -31,6 +32,8 @@ type Deps struct {
 	Logger   *slog.Logger
 	// API is mounted at api.BasePath on the public listener. It may be nil.
 	API http.Handler
+	// Web is the website, mounted at web.Paths on the public listener. It may be nil.
+	Web http.Handler
 	// Public serves the rest of the public listener. With none, it answers 404.
 	Public http.Handler
 }
@@ -56,10 +59,17 @@ func New(cfg config.Config, deps Deps) (*Server, error) {
 	if deps.Public != nil {
 		publicHandler = deps.Public
 	}
-	if deps.API != nil {
+	if deps.API != nil || deps.Web != nil {
 		mux := http.NewServeMux()
 		mux.Handle("/", publicHandler)
-		mux.Handle(api.BasePath+"/", deps.API)
+		if deps.API != nil {
+			mux.Handle(api.BasePath+"/", deps.API)
+		}
+		if deps.Web != nil {
+			for _, path := range web.Paths {
+				mux.Handle(path, deps.Web)
+			}
+		}
 		publicHandler = mux
 	}
 	public, err := newListener(cfg, cfg.Listen, publicHandler, logger)

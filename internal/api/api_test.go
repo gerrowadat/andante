@@ -1370,6 +1370,7 @@ var scoped = map[string]struct {
 	"createFeedToken":  {`{"role":"viewer","label":"me"}`, "application/json"},
 	"revokeFeedToken":  {},
 	"revokeAPIToken":   {},
+	"revokeSession":    {},
 }
 
 func TestUsersCantReachEachOthersThings(t *testing.T) {
@@ -1392,6 +1393,8 @@ func TestUsersCantReachEachOthersThings(t *testing.T) {
 		t.Fatalf("create API token: %v %s", err, second.Body)
 	}
 
+	session := f.session(t, alice)
+
 	spec, err := openapi3.NewLoader().LoadFromData(specfile.OpenAPI)
 	if err != nil {
 		t.Fatal(err)
@@ -1406,6 +1409,8 @@ func TestUsersCantReachEachOthersThings(t *testing.T) {
 			id = token.JSON201.ID
 		case strings.HasPrefix(path, "/api-tokens/{id}"):
 			id = second.JSON201.ID
+		case strings.HasPrefix(path, "/sessions/{id}"):
+			id = session
 		default:
 			continue
 		}
@@ -1774,5 +1779,110 @@ func TestDiscoveries(t *testing.T) {
 	down, err := bob.client.CreateDiscoveryWithResponse(ctx, client.DiscoveryRequest{URL: site.URL})
 	if err != nil || down.StatusCode() != http.StatusServiceUnavailable {
 		t.Errorf("the catalogue down: %v %d", err, down.StatusCode())
+	}
+}
+
+// session logs a user in, and returns the session's ID.
+func (f *fixture) session(t *testing.T, u other) int64 {
+	t.Helper()
+	if _, err := f.store.CreateSession(t.Context(), u.actor.UserID, store.Client{IP: "203.0.113.1", UserAgent: "test"}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	sessions, err := u.client.ListSessionsWithResponse(t.Context(), nil)
+	if err != nil || sessions.JSON200 == nil || len(sessions.JSON200.Items) == 0 {
+		t.Fatalf("list sessions: %v", err)
+	}
+	return sessions.JSON200.Items[len(sessions.JSON200.Items)-1].ID
+}
+
+func TestSessions(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	bob := f.user(t, "bob", false)
+	id := f.session(t, bob)
+
+	got, err := bob.client.ListSessionsWithResponse(ctx, nil)
+	if err != nil || got.JSON200 == nil || len(got.JSON200.Items) != 1 || got.JSON200.Items[0].IP != "203.0.113.1" {
+		t.Fatalf("sessions = %s, %v", got.Body, err)
+	}
+	// Someone else's is a 404, even for an admin.
+	admin, err := f.client.RevokeSessionWithResponse(ctx, id)
+	if err != nil || admin.StatusCode() != http.StatusNotFound {
+		t.Errorf("an admin ending bob's session: %v %d", err, admin.StatusCode())
+	}
+	ended, err := bob.client.RevokeSessionWithResponse(ctx, id)
+	if err != nil || ended.StatusCode() != http.StatusNoContent {
+		t.Fatalf("ending it: %v %d", err, ended.StatusCode())
+	}
+	left, err := bob.client.ListSessionsWithResponse(ctx, nil)
+	if err != nil || left.JSON200 == nil || len(left.JSON200.Items) != 0 {
+		t.Errorf("sessions left = %s, %v", left.Body, err)
+	}
+}
+
+func TestInvitesAreForAdmins(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	bob := f.user(t, "bob", false)
+
+	refused, err := bob.client.CreateInviteWithResponse(ctx, client.InviteCreate{Name: "alex"})
+	if err != nil || refused.StatusCode() != http.StatusForbidden {
+		t.Errorf("a user inviting: %v %d", err, refused.StatusCode())
+	}
+	created, err := f.client.CreateInviteWithResponse(ctx, client.InviteCreate{Name: "alex"})
+	if err != nil || created.JSON201 == nil {
+		t.Fatalf("an admin inviting: %v %s", err, created.Body)
+	}
+	if created.JSON201.Role != client.InviteRoleUser || !strings.HasPrefix(created.JSON201.URL, "https://andante.example/invite/") {
+		t.Errorf("invite = %s", created.Body)
+	}
+	taken, err := f.client.CreateInviteWithResponse(ctx, client.InviteCreate{Name: "bob"})
+	if err != nil || taken.StatusCode() != http.StatusConflict {
+		t.Errorf("a taken name: %v %d", err, taken.StatusCode())
+	}
+	reset := true
+	again, err := f.client.CreateInviteWithResponse(ctx, client.InviteCreate{Name: "bob", Reset: &reset})
+	if err != nil || again.JSON201 == nil {
+		t.Errorf("a reset: %v %s", err, again.Body)
+	}
+	nobody, err := f.client.CreateInviteWithResponse(ctx, client.InviteCreate{Name: "nobody", Reset: &reset})
+	if err != nil || nobody.StatusCode() != http.StatusConflict {
+		t.Errorf("a reset for nobody: %v %d", err, nobody.StatusCode())
+	}
+	bad, err := f.client.CreateInviteWithResponse(ctx, client.InviteCreate{Name: "Not A Name"})
+	if err != nil || bad.StatusCode() != http.StatusBadRequest {
+		t.Errorf("a bad name: %v %d", err, bad.StatusCode())
+	}
+}
+
+func TestTheAuditLog(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	bob := f.user(t, "bob", false)
+
+	refused, err := bob.client.ListAuditWithResponse(ctx, nil)
+	if err != nil || refused.StatusCode() != http.StatusForbidden {
+		t.Errorf("a user reading it: %v %d", err, refused.StatusCode())
+	}
+
+	if _, err := bob.client.CreateAPITokenWithResponse(ctx, client.APITokenCreate{Label: "laptop"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.client.CreateInviteWithResponse(ctx, client.InviteCreate{Name: "alex"}); err != nil {
+		t.Fatal(err)
+	}
+	log, err := f.client.ListAuditWithResponse(ctx, nil)
+	if err != nil || log.JSON200 == nil {
+		t.Fatalf("read it: %v", err)
+	}
+	var got []string
+	for _, e := range log.JSON200.Items {
+		got = append(got, e.Who+" "+e.Action+" "+e.Target)
+	}
+	if want := "bob api-token.created laptop,admin invite.created alex"; strings.Join(got, ",") != want {
+		t.Errorf("audit = %v", got)
+	}
+	if log.JSON200.Items[0].IP == "" {
+		t.Error("no address on an audit line")
 	}
 }

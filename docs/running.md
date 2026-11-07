@@ -97,6 +97,23 @@ crawl loop takes a Postgres advisory lock.
 The rest is the same either way. You add a **source** (the serial), make a **read** (a
 paced replay of it), and issue a **token** (which gets you a feed URL).
 
+### Log In
+
+The website only does logging in so far, and everything else is the CLI. To set a password:
+
+```sh
+andante-server user link dave --base-url https://feeds.example.com
+```
+
+Run that the same way as `user add`, and open the link it prints. To invite someone else:
+
+```sh
+andante invite add alex
+```
+
+The link works once and lasts a week. With an `http://` base URL the session cookie isn't `Secure`, which
+is only good enough for trying it out.
+
 ### Add a Serial
 
 Start with the site's address. This works out how to read it, tries what it finds, and tells you
