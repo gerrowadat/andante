@@ -93,7 +93,7 @@ for it.
 
 ## Users
 
-Sources are shared and reads are private. A read has a `user_id` with a foreign key, and every store
+Logging in is in [`login.md`](login.md). Sources are shared and reads are private. A read has a `user_id` with a foreign key, and every store
 method that reaches a read takes a `store.Actor`, so there's no way to fetch one without saying whose
 it is. Someone else's is `ErrNotFound`. An admin's actor reaches anything. `store.Holder` is the same
 thing for code that's already established the right, such as a feed request with a valid token, and

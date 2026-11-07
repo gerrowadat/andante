@@ -330,3 +330,32 @@ func TestNewFailsWhenAListenerCannotBind(t *testing.T) {
 		})
 	}
 }
+
+func TestTheWebsiteIsOnThePublicListener(t *testing.T) {
+	cfg := testConfig()
+	site := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusTeapot) })
+	public := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusAccepted) })
+	s, err := New(cfg, Deps{Ready: alwaysReady, Registry: prometheus.NewRegistry(), Logger: slog.New(slog.DiscardHandler), Web: site, Public: public})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- s.Run(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+	address := "http://" + s.PublicAddr().String()
+	for _, path := range []string{"/", "/login", "/logout", "/invite/abc"} {
+		if code, _ := get(t, address+path); code != http.StatusTeapot {
+			t.Errorf("%s = %d, want the website", path, code)
+		}
+	}
+	if code, _ := get(t, address+"/f/abc.rss"); code != http.StatusAccepted {
+		t.Errorf("/f/abc.rss = %d, want the feeds", code)
+	}
+	if code, _ := get(t, "http://"+s.OpsAddr().String()+"/login"); code != http.StatusNotFound {
+		t.Errorf("ops /login = %d, want 404", code)
+	}
+}

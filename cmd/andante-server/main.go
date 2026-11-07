@@ -18,18 +18,25 @@ import (
 	"github.com/alecthomas/kong"
 	"github.com/gerrowadat/andante/internal/api"
 	"github.com/gerrowadat/andante/internal/buildinfo"
+	"github.com/gerrowadat/andante/internal/clientip"
 	"github.com/gerrowadat/andante/internal/config"
+	"github.com/gerrowadat/andante/internal/password"
 	"github.com/gerrowadat/andante/internal/reads"
 	"github.com/gerrowadat/andante/internal/replica"
 	"github.com/gerrowadat/andante/internal/seal"
 	"github.com/gerrowadat/andante/internal/server"
 	"github.com/gerrowadat/andante/internal/store"
+	"github.com/gerrowadat/andante/internal/web"
 	"github.com/prometheus/client_golang/prometheus"
 
 	// Embedded because the distroless image has no zoneinfo, and schedules
 	// are evaluated in IANA time zones.
 	_ "time/tzdata"
 )
+
+// hashesAtOnce limits password hashing. At 64 MiB each, this is what a burst of logins
+// can cost.
+const hashesAtOnce = 2
 
 type cli struct {
 	Version kong.VersionFlag `help:"Print the version and exit."`
@@ -53,7 +60,11 @@ type userCmd struct {
 	} `cmd:"" help:"Add a user, and print their first API token."`
 	Reset struct {
 		Name string `arg:""`
-	} `cmd:"" help:"Revoke a user's API tokens, and print a new one."`
+	} `cmd:"" help:"Revoke a user's API tokens, end their sessions, clear their password, and print a new token."`
+	Link struct {
+		Name    string `arg:""`
+		BaseURL string `name:"base-url" env:"ANDANTE_BASE_URL" required:"" help:"Public URL used in the link."`
+	} `cmd:"" help:"Print a single-use link for a user to set a password."`
 }
 
 type rotateCmd struct {
@@ -104,6 +115,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, exit func
 			if err != nil {
 				return err
 			}
+			if err := commandAudit(ctx, st, "user.added", c.User.Add.Name); err != nil {
+				return err
+			}
 			_, _ = fmt.Fprintln(stdout, token)
 			return nil
 		})
@@ -113,7 +127,22 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, exit func
 			if err != nil {
 				return err
 			}
+			if err := commandAudit(ctx, st, "user.reset", c.User.Reset.Name); err != nil {
+				return err
+			}
 			_, _ = fmt.Fprintln(stdout, token)
+			return nil
+		})
+	case "user link <name>":
+		return withStore(ctx, c.User.DatabaseURL, stderr, func(st *store.Store) error {
+			_, raw, err := st.CreateInvite(ctx, c.User.Link.Name, store.RoleUser, true, time.Now())
+			if err != nil {
+				return err
+			}
+			if err := commandAudit(ctx, st, "invite.created", c.User.Link.Name); err != nil {
+				return err
+			}
+			_, _ = fmt.Fprintln(stdout, api.InviteURL(c.User.Link.BaseURL, raw))
 			return nil
 		})
 	case "rotate-secret":
@@ -128,6 +157,10 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, exit func
 		return 1
 	}
 	return 0
+}
+
+func commandAudit(ctx context.Context, st *store.Store, action, target string) error {
+	return st.Audit(ctx, store.AuditEntry{Who: "command line", Action: action, Target: target}, time.Now())
 }
 
 // withStore runs a command against a migrated store. A command can come before the
@@ -207,11 +240,16 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		Store: st, Client: catalogue, Logger: logger, Registry: reg,
 		Furthest: readService.Furthest, DemandInterval: cfg.DemandInterval,
 	})
+	clients, err := clientip.New(cfg.TrustedProxies)
+	if err != nil {
+		return err
+	}
 	apiHandler, err := api.New(api.Options{
 		Store:        st,
 		Catalogue:    catalogue,
 		Sync:         syncer,
 		Reads:        readService,
+		Clients:      clients,
 		BaseURL:      cfg.BaseURL,
 		Registry:     reg,
 		Logger:       logger,
@@ -220,6 +258,15 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+
+	hasher, err := password.NewHasher(password.DefaultParams, hashesAtOnce)
+	if err != nil {
+		return err
+	}
+	site := web.New(web.Options{
+		Store: st, Hasher: hasher, Clients: clients, BaseURL: cfg.BaseURL, PasswordLogin: cfg.PasswordLogin,
+		Registry: reg, Logger: logger, Now: now,
+	})
 
 	public := server.NewPublic(server.PublicOptions{
 		Store:       st,
@@ -230,7 +277,7 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		Logger:      logger,
 		Now:         now,
 	})
-	srv, err := server.New(cfg, server.Deps{Ready: st.Ready, Registry: reg, Logger: logger, API: apiHandler, Public: public})
+	srv, err := server.New(cfg, server.Deps{Ready: st.Ready, Registry: reg, Logger: logger, API: apiHandler, Web: site, Public: public})
 	if err != nil {
 		return err
 	}

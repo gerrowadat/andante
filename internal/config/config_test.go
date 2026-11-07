@@ -4,6 +4,7 @@
 package config
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -37,6 +38,9 @@ func TestDefaults(t *testing.T) {
 	}
 	if c.DefaultTimezone != "UTC" || c.LogFormat != "json" || c.LogLevel != "info" {
 		t.Errorf("timezone, format, level = %q, %q, %q", c.DefaultTimezone, c.LogFormat, c.LogLevel)
+	}
+	if !c.PasswordLogin || len(c.TrustedProxies) != 0 {
+		t.Errorf("password login = %v, trusted proxies = %v", c.PasswordLogin, c.TrustedProxies)
 	}
 	if c.DemandInterval != 30*time.Second {
 		t.Errorf("demand interval = %s", c.DemandInterval)
@@ -76,13 +80,13 @@ func TestEnvVars(t *testing.T) {
 	want := Config{
 		DatabaseURL: "postgres://db/andante", Listen: ":1", OpsListen: ":2",
 		BaseURL: "https://env.example", DefaultTimezone: "Europe/Dublin",
-		Secret: secret, LogFormat: "text", LogLevel: "debug",
+		Secret: secret, PasswordLogin: true, LogFormat: "text", LogLevel: "debug",
 		ReadHeaderTimeout: 2 * time.Second, ReadTimeout: 3 * time.Second,
 		WriteTimeout: 4 * time.Second, IdleTimeout: 5 * time.Second, ShutdownTimeout: 6 * time.Second,
 		ReadinessTimeout: 7 * time.Second, ProbeTimeout: 15 * time.Second,
 		CatalogueURL: "http://catalogue.env:8082/v1", CatalogueToken: "catalogue-token", DemandInterval: 17 * time.Second, ReplayMinDatedShare: 0.5, FeedRateLimit: 16,
 	}
-	if *got != want {
+	if !reflect.DeepEqual(*got, want) {
 		t.Errorf("got %+v\nwant %+v", *got, want)
 	}
 }
@@ -113,6 +117,7 @@ func TestRejected(t *testing.T) {
 		{"missing catalogue token", []string{db, base, cat, key}, "catalogue-token"},
 		{"non-http catalogue URL", []string{db, base, tok, key, "--catalogue-url=ftp://c.example"}, "catalogue-url"},
 		{"missing secret", []string{db, base, cat, tok}, "secret"},
+		{"bad trusted proxy", []string{db, base, cat, tok, key, "--trusted-proxies=nonsense"}, "trusted-proxies"},
 		{"short secret", []string{db, base, cat, tok, "--secret=short"}, "secret"},
 		{"bad DSN", []string{"--database-url=postgres://u:hunter2@host:notaport/db", base, cat, tok, key}, "database-url"},
 		{"negative test clock", []string{db, base, cat, tok, key, "--test-clock-offset=-1h"}, "test-clock-offset"},
@@ -191,5 +196,15 @@ func TestCrawlerUserAgent(t *testing.T) {
 	c.UserAgent = "custom"
 	if got := c.CrawlerUserAgent(); got != "custom" {
 		t.Errorf("CrawlerUserAgent() = %q, want custom", got)
+	}
+}
+
+func TestLoginFlags(t *testing.T) {
+	c, err := parse(t, append(required, "--no-password-login", "--trusted-proxies=10.0.0.0/8,fd00::/8")...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.PasswordLogin || len(c.TrustedProxies) != 2 {
+		t.Errorf("password login = %v, trusted proxies = %v", c.PasswordLogin, c.TrustedProxies)
 	}
 }

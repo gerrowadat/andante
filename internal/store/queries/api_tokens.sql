@@ -11,7 +11,7 @@ SELECT count(*) FROM api_tokens WHERE user_id = $1 AND revoked_at IS NULL;
 INSERT INTO api_tokens (user_id, token_hash, label) VALUES ($1, $2, $3) RETURNING *;
 
 -- name: GetActiveAPITokenByHash :one
-SELECT t.id, t.token_hash, u.id AS user_id, u.role
+SELECT t.id, t.token_hash, u.id AS user_id, u.role, u.name
 FROM api_tokens t JOIN users u ON u.id = t.user_id
 WHERE t.token_hash = $1 AND t.revoked_at IS NULL AND u.disabled_at IS NULL;
 

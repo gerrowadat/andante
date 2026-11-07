@@ -17,8 +17,11 @@ run by hand.
 | Catalogue | `127.0.0.1:8082` | Its private API, `/healthz`, `/readyz`, `/metrics` | `andante-server` and Prometheus |
 
 Keep the ops listener on loopback or a private network, because `/metrics` and the health endpoints
-have no auth. The API needs a token, but there's no rate limiting on it until the login work lands,
-so hold off on putting it on the open internet.
+have no auth. Logins are throttled, but there's no two-factor or OIDC yet, so hold off on putting this
+on the open internet. Behind a proxy, set `--trusted-proxies`, or every login looks like it came from the
+proxy, and throttling treats them all as one address.
+
+Each login can take 64 MiB, and two run at once, so leave room for that. The Nomad job allows for it.
 
 Set `--base-url` to the address readers will use, because feed links are built from it.
 

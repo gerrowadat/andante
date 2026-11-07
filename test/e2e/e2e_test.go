@@ -218,8 +218,8 @@ func TestTwoServersShareOneDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if applied != 1 {
-		t.Errorf("recorded %d migrations, want 1", applied)
+	if applied != 2 {
+		t.Errorf("recorded %d migrations, want 2", applied)
 	}
 }
 

@@ -17,6 +17,8 @@ has its own.
 | `--base-url` | `ANDANTE_BASE_URL` | required | Public URL used in feed links; absolute http(s) |
 | `--listen` | `ANDANTE_LISTEN` | `:8080` | Public listener (feeds and the API) |
 | `--ops-listen` | `ANDANTE_OPS_LISTEN` | `127.0.0.1:8081` | Ops listener (health, metrics) |
+| `--trusted-proxies` | `ANDANTE_TRUSTED_PROXIES` | none | CIDRs of proxies whose `X-Forwarded-For` to believe. Set this behind a proxy, or every login looks like it comes from the proxy |
+| `--password-login` | `ANDANTE_PASSWORD_LOGIN` | on | Allow logging in with a password. `--no-password-login` turns it off |
 | `--catalogue-url` | `ANDANTE_CATALOGUE_URL` | required | Address of `andante-catalogue`, including `/v1` |
 | `--catalogue-token` | `ANDANTE_CATALOGUE_TOKEN` | required | The catalogue's API token |
 | `--demand-interval` | `ANDANTE_DEMAND_INTERVAL` | `30s` | How often to tell the catalogue how far readers have got |
@@ -74,7 +76,15 @@ andante-server user add dave --admin
 ```
 
 An admin can change sources and reach everyone's reads. Without `--admin`, a user only has their own
-reads and tokens. If someone loses their token, this revokes all of theirs and prints a new one:
+reads and tokens. A user starts with no password, so this prints a single-use link to set one. It lasts
+a week:
+
+```sh
+andante-server user link dave --base-url https://feeds.example.com
+```
+
+After that, an admin can invite people with `andante invite add`. If an account is lost or compromised,
+this revokes its API tokens, ends its sessions, clears its password and prints a new token:
 
 ```sh
 andante-server user reset dave

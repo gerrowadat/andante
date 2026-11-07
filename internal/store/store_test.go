@@ -17,7 +17,7 @@ import (
 	"github.com/gerrowadat/andante/internal/store/storetest"
 )
 
-const wantMigrations = 1
+const wantMigrations = 2
 
 func appliedMigrations(t *testing.T, s *store.Store) int {
 	t.Helper()
