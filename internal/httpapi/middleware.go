@@ -112,6 +112,7 @@ type Kit struct {
 	Router routers.Router
 	// Valid reports whether a bearer token is good. It's asked for any operation
 	// the spec secures, so a new operation needs a token unless it says otherwise.
+	// It gets the request's context, which is how it passes on who the token is for.
 	Valid func(ctx context.Context, token string) (bool, error)
 	// ProbeRoute is the route that gets ProbeTimeout to answer.
 	ProbeRoute   string
@@ -161,12 +162,12 @@ type authUnavailableError struct{ err error }
 func (e *authUnavailableError) Error() string { return e.err.Error() }
 
 // Authenticate checks the bearer token on any operation the spec secures.
-func (k *Kit) Authenticate(ctx context.Context, input *openapi3filter.AuthenticationInput) error {
+func (k *Kit) Authenticate(_ context.Context, input *openapi3filter.AuthenticationInput) error {
 	token, ok := strings.CutPrefix(input.RequestValidationInput.Request.Header.Get("Authorization"), "Bearer ")
 	if !ok || token == "" {
 		return errors.New("missing bearer token")
 	}
-	valid, err := k.Valid(ctx, token)
+	valid, err := k.Valid(input.RequestValidationInput.Request.Context(), token)
 	if err != nil {
 		return &authUnavailableError{err: err}
 	}

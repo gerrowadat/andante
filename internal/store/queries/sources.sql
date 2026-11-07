@@ -5,7 +5,12 @@
 SELECT * FROM sources WHERE id = $1;
 
 -- name: ListSources :many
-SELECT * FROM sources WHERE id > $1 ORDER BY id LIMIT $2;
+-- An empty q or kind matches everything.
+SELECT * FROM sources
+WHERE id > sqlc.arg(after)
+  AND (sqlc.arg(q)::text = '' OR title ILIKE '%' || sqlc.arg(q) || '%' OR slug ILIKE '%' || sqlc.arg(q) || '%')
+  AND (sqlc.arg(kind)::text = '' OR default_kind = sqlc.arg(kind))
+ORDER BY id LIMIT sqlc.arg(page_size);
 
 -- name: ListSourceIDs :many
 SELECT id FROM sources ORDER BY id;

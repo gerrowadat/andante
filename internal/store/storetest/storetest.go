@@ -14,6 +14,7 @@ import (
 	"time"
 
 	catalogue "github.com/gerrowadat/andante/internal/catalogue/store"
+	"github.com/gerrowadat/andante/internal/seal"
 	"github.com/gerrowadat/andante/internal/store"
 	"github.com/gerrowadat/andante/internal/store/db"
 	"github.com/jackc/pgx/v5"
@@ -26,7 +27,31 @@ func New(t *testing.T) *store.Store {
 	if err := s.Migrate(t.Context()); err != nil {
 		t.Fatal(err)
 	}
+	box, err := seal.New(Secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UseBox(t.Context(), box); err != nil {
+		t.Fatal(err)
+	}
 	return s
+}
+
+// Secret is what New seals with.
+const Secret = "a-secret-for-tests-and-nothing-else"
+
+// User adds a user, and returns who they are and their first API token.
+func User(t *testing.T, s *store.Store, name string, admin bool) (store.Actor, string) {
+	t.Helper()
+	role := store.RoleUser
+	if admin {
+		role = store.RoleAdmin
+	}
+	user, token, err := s.CreateUser(t.Context(), name, role)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return store.Actor{UserID: user.ID, Admin: admin}, token
 }
 
 // Unmigrated returns a store in a schema of its own, with nothing migrated.

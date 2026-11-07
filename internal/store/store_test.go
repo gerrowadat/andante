@@ -5,13 +5,15 @@ package store_test
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/base64"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/gerrowadat/andante/internal/seal"
 	"github.com/gerrowadat/andante/internal/store"
+	"github.com/gerrowadat/andante/internal/store/db"
 	"github.com/gerrowadat/andante/internal/store/storetest"
 )
 
@@ -126,101 +128,139 @@ func TestReady(t *testing.T) {
 	})
 }
 
-func storedHashes(t *testing.T, s *store.Store) [][]byte {
+func TestUsersAndTheirTokens(t *testing.T) {
+	s := storetest.New(t)
+	ctx := t.Context()
+	user, token, err := s.CreateUser(ctx, "dave", store.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actor, ok, err := s.AuthenticateAPIToken(ctx, token)
+	if err != nil || !ok || actor.UserID != user.ID || !actor.Admin {
+		t.Errorf("authenticate = %+v, %v, %v", actor, ok, err)
+	}
+	if _, _, err := s.CreateUser(ctx, "dave", store.RoleUser); !errors.Is(err, store.ErrConflict) {
+		t.Errorf("a second dave = %v", err)
+	}
+	if _, ok, err := s.AuthenticateAPIToken(ctx, "not-a-token"); err != nil || ok {
+		t.Errorf("a bad token = %v, %v", ok, err)
+	}
+
+	fresh, err := s.ResetUser(ctx, "dave")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, _ := s.AuthenticateAPIToken(ctx, token); ok {
+		t.Error("the old token survived a reset")
+	}
+	if _, ok, _ := s.AuthenticateAPIToken(ctx, fresh); !ok {
+		t.Error("the new token doesn't work")
+	}
+	if _, err := s.ResetUser(ctx, "nobody"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("resetting nobody = %v", err)
+	}
+}
+
+func box(t *testing.T, secret string) *seal.Box {
 	t.Helper()
-	rows, err := s.Pool().Query(t.Context(), "SELECT token_hash FROM api_tokens")
+	b, err := seal.New(secret)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer rows.Close()
-	var hashes [][]byte
-	for rows.Next() {
-		var h []byte
-		if err := rows.Scan(&h); err != nil {
-			t.Fatal(err)
-		}
-		hashes = append(hashes, h)
-	}
-	return hashes
+	return b
 }
 
-func TestBootstrapGeneratesAToken(t *testing.T) {
-	s := storetest.New(t)
-	token, err := s.BootstrapAPIToken(t.Context(), "")
+func feedToken(t *testing.T, s *store.Store) string {
+	t.Helper()
+	ctx := t.Context()
+	source, err := storetest.AddSource(t, s, db.UpsertSourceParams{
+		Slug: "s", Title: "t", HomeUrl: "https://a.example/", DefaultKind: "page", Strategy: "feed", Config: []byte("{}"), State: "tail",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, err := base64.RawURLEncoding.DecodeString(token)
-	if err != nil || len(raw) != 32 {
-		t.Fatalf("token %q is not 32 base64url bytes: %v", token, err)
-	}
-	want := sha256.Sum256([]byte(token))
-	hashes := storedHashes(t, s)
-	if len(hashes) != 1 || string(hashes[0]) != string(want[:]) {
-		t.Errorf("stored hashes = %x, want only %x", hashes, want)
-	}
-}
-
-func TestBootstrapStoresTheGivenToken(t *testing.T) {
-	s := storetest.New(t)
-	generated, err := s.BootstrapAPIToken(t.Context(), "given")
+	actor, _ := storetest.User(t, s, "reader", false)
+	read, err := s.CreateRead(ctx, db.InsertReadParams{
+		UserID: actor.UserID, SourceID: source.ID, Name: "r", CatchUp: "passthrough", Config: []byte("{}"),
+	}, db.InsertSegmentParams{FromSeq: 0, StartsAt: time.Now(), Pacing: "paused", Timezone: "UTC", PerRelease: 1, Reason: "created", CreatedAt: time.Now()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if generated != "" {
-		t.Errorf("generated = %q, want none", generated)
-	}
-	want := sha256.Sum256([]byte("given"))
-	hashes := storedHashes(t, s)
-	if len(hashes) != 1 || string(hashes[0]) != string(want[:]) {
-		t.Errorf("stored hashes = %x, want only %x", hashes, want)
-	}
-}
-
-func TestBootstrapDoesNothingOnceATokenExists(t *testing.T) {
-	s := storetest.New(t)
-	if _, err := s.BootstrapAPIToken(t.Context(), "first"); err != nil {
+	_, raw, err := s.CreateFeedToken(ctx, actor, read.ID, "viewer", "me")
+	if err != nil {
 		t.Fatal(err)
 	}
-	for _, token := range []string{"", "second"} {
-		generated, err := s.BootstrapAPIToken(t.Context(), token)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if generated != "" {
-			t.Errorf("generated = %q, want none", generated)
-		}
+	return raw
+}
+
+func TestFeedTokensCanBeShownAgain(t *testing.T) {
+	s := storetest.New(t)
+	raw := feedToken(t, s)
+	token, err := s.LookupFeedToken(t.Context(), raw)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got := len(storedHashes(t, s)); got != 1 {
-		t.Errorf("stored tokens = %d, want 1", got)
+	if strings.Contains(string(token.TokenSealed), raw) {
+		t.Error("the token is stored in the clear")
+	}
+	shown, err := s.RawFeedToken(token)
+	if err != nil || shown != raw {
+		t.Errorf("RawFeedToken = %q, %v", shown, err)
 	}
 }
 
-func TestConcurrentBootstrapCreatesOneToken(t *testing.T) {
+func TestTheWrongSecretFailsAtTheStart(t *testing.T) {
 	s := storetest.New(t)
-	var (
-		wg        sync.WaitGroup
-		mu        sync.Mutex
-		generated int
-	)
-	for range 8 {
-		wg.Go(func() {
-			token, err := s.BootstrapAPIToken(t.Context(), "")
-			if err != nil {
-				t.Error(err)
-			}
-			if token != "" {
-				mu.Lock()
-				generated++
-				mu.Unlock()
-			}
-		})
+	err := s.UseBox(t.Context(), box(t, strings.Repeat("x", 32)))
+	if !errors.Is(err, store.ErrWrongSecret) {
+		t.Errorf("UseBox = %v", err)
 	}
-	wg.Wait()
-	if generated != 1 {
-		t.Errorf("generated %d tokens, want 1", generated)
+}
+
+func TestRotatingTheSecret(t *testing.T) {
+	s := storetest.New(t)
+	ctx := t.Context()
+	raw := feedToken(t, s)
+	before := box(t, storetest.Secret)
+	after := box(t, strings.Repeat("n", 32))
+
+	if err := s.RotateSecret(ctx, after, before); !errors.Is(err, store.ErrWrongSecret) {
+		t.Errorf("rotating from the wrong secret = %v", err)
 	}
-	if got := len(storedHashes(t, s)); got != 1 {
-		t.Errorf("stored tokens = %d, want 1", got)
+	if err := s.RotateSecret(ctx, before, after); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UseBox(ctx, before); !errors.Is(err, store.ErrWrongSecret) {
+		t.Errorf("the old secret after rotating = %v", err)
+	}
+	if err := s.UseBox(ctx, after); err != nil {
+		t.Fatal(err)
+	}
+	token, err := s.LookupFeedToken(ctx, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shown, err := s.RawFeedToken(token); err != nil || shown != raw {
+		t.Errorf("after rotating: %q, %v", shown, err)
+	}
+}
+
+func TestForgettingALostSecret(t *testing.T) {
+	s := storetest.New(t)
+	ctx := t.Context()
+	raw := feedToken(t, s)
+	fresh := box(t, strings.Repeat("n", 32))
+	if err := s.ForgetSecrets(ctx, fresh); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UseBox(ctx, fresh); err != nil {
+		t.Fatal(err)
+	}
+	token, err := s.LookupFeedToken(ctx, raw)
+	if err != nil {
+		t.Fatalf("the token stopped working: %v", err)
+	}
+	if shown, err := s.RawFeedToken(token); err != nil || shown != "" {
+		t.Errorf("RawFeedToken = %q, %v, want nothing", shown, err)
 	}
 }

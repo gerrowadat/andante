@@ -8,7 +8,7 @@ the time, so there's nothing to miss, run twice or repair.
 
 ```sh
 curl -X POST -H "Authorization: Bearer $ANDANTE_TOKEN" -H 'Content-Type: application/json' \
-  http://127.0.0.1:8081/api/v1/reads \
+  http://127.0.0.1:8080/api/v1/reads \
   -d '{"source_id": 1, "name": "Mornings", "pacing":
        {"mode": "rrule", "rrule": "FREQ=DAILY;BYHOUR=7;BYMINUTE=0;BYSECOND=0", "timezone": "Europe/Dublin"}}'
 ```

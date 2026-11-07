@@ -3,7 +3,11 @@
 
 package api
 
-import "github.com/gerrowadat/andante/internal/httpapi"
+import (
+	"net/http"
+
+	"github.com/gerrowadat/andante/internal/httpapi"
+)
 
 const (
 	problemInvalidRead = httpapi.TypeInvalidRead
@@ -15,3 +19,7 @@ var (
 	notFound       = httpapi.NotFound
 	invalidRequest = httpapi.InvalidRequest
 )
+
+func forbidden(detail string) error {
+	return newProblem(http.StatusForbidden, httpapi.TypeForbidden, detail)
+}

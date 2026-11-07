@@ -81,7 +81,7 @@ CI checks this.
 ## Project layout
 
 ```
-api/                      openapi.yaml (the admin API), catalogue.yaml (private), oapi-codegen configs
+api/                      openapi.yaml (the API), catalogue.yaml (private), oapi-codegen configs
 cmd/andante-server/       the user-facing service: reads, tokens, feeds, the API
 cmd/andante-catalogue/    the infrastructure service: sources, entries, crawling
 cmd/andante/              CLI binary (talks to the API only, via pkg/client)
@@ -96,7 +96,7 @@ internal/discovery/       Strategy interface, crawler, politeness, strategies/
 internal/extract/         page metadata extraction (JSON-LD, Open Graph, rel=next, selectors)
 internal/schedule/        pacing (RRULE, replay) + segment math — pure, no I/O
 internal/feed/            Atom, RSS 2.0 and JSON Feed rendering, decorators
-internal/api/             admin API handlers; gen/ is oapi-codegen output
+internal/api/             API handlers; gen/ is oapi-codegen output
 internal/server/          listeners, middleware, wiring, public feed routes
 pkg/client/               generated API client (public: the CLI and other tools import it)
 deploy/compose/           Docker Compose stack: andante and Postgres
@@ -116,9 +116,12 @@ scripts/                  release.sh, build-dist.sh, license-check.sh, spec-diff
   serials and has never heard of a user or a read. `andante-server` keeps a copy of
   sources and entries, and never reads the catalogue's tables. See
   `docs/design/architecture.md`.
-- `andante-server` has two listeners: public (feeds only) and admin (API,
-  `/healthz`, `/readyz`, `/metrics`). Admin routes are never mounted on the public
-  listener.
+- `andante-server` has two listeners: public (feeds and the API) and ops
+  (`/healthz`, `/readyz`, `/metrics`). What has no auth is never mounted on the
+  public listener.
+- Anything a person owns goes through a store method that takes a `store.Actor`.
+  Someone else's read is a 404. `store.Holder` is only for code that has already
+  established the right, such as a feed request with a valid token.
 - Public feed requests read the server's copy, and never call the catalogue or
   trigger a crawl.
 - Strategy config is `jsonb`, decoded into a typed struct per strategy and
@@ -147,5 +150,7 @@ scripts/                  release.sh, build-dist.sh, license-check.sh, spec-diff
 | Segment | One append-only row of a read's history: from this `seq`, at this time, under this pacing (or paused). |
 | Release | An entry becoming visible in a read's feed. |
 | Feed token | A secret in a feed URL. Role `owner` (feed + controls) or `viewer` (feed only). |
-| API token | A bearer token for the admin API. Separate from feed tokens. |
+| API token | A bearer token for the API, belonging to a user. Separate from feed tokens. |
+| User | Someone who owns reads. Sources are shared, reads are not. |
+| Actor | Who a request is for, passed to the store. |
 | Decorator | A step that adds content to a rendered feed item (image, origin, controls, links). |

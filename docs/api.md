@@ -1,7 +1,7 @@
 # Admin API
 
-The admin API is the only way to change andante's state. It's on the admin listener under
-`/api/v1`. The contract is [`api/openapi.yaml`](../api/openapi.yaml), which a running server
+The API is the only way to change andante's state. It's on the main listener alongside the feeds,
+under `/api/v1`. The contract is [`api/openapi.yaml`](../api/openapi.yaml), which a running server
 also serves at `GET /api/v1/openapi.json` without a token.
 
 ## Authentication
@@ -9,13 +9,14 @@ also serves at `GET /api/v1/openapi.json` without a token.
 Send an API token as a bearer token (RFC 6750):
 
 ```sh
-curl -H "Authorization: Bearer $ANDANTE_TOKEN" http://127.0.0.1:8081/api/v1/sources
+curl -H "Authorization: Bearer $ANDANTE_TOKEN" http://127.0.0.1:8080/api/v1/sources
 ```
 
-The first token comes from [bootstrap](configuration.md#the-bootstrap-api-token). Make more with
-`POST /api-tokens`. The raw token only appears in that response. Revoking one that's already
-revoked succeeds. The last active token can't be revoked, because then nothing could use the
-API to make another.
+Every token belongs to a user, and `GET /me` says who. The first one comes from
+[`andante-server user add`](configuration.md#users). Make more with `POST /api-tokens`. The raw
+token only appears in that response. Revoking one that's already revoked succeeds. Your last
+active token can't be revoked, because you'd be locked out until someone ran `andante-server user
+reset`.
 
 API tokens are separate from feed tokens, which appear in feed URLs and get you nothing here.
 
@@ -63,7 +64,7 @@ says which. A probe that gets some pages and then stops returns those, with a wa
 ### Conflict
 
 Status 409. The request clashes with what exists: a slug already in use, deleting
-a source a read still uses, revoking the last active API token, changing a read's
+a source a read still uses, revoking your last active API token, changing a read's
 `catch_up` or `buffer`, a jump to or behind the read's position or past the index, a
 skip with nothing to skip to, pausing a paused read, or resuming one that is not.
 
@@ -73,9 +74,22 @@ Status 503. The request needs `andante-catalogue`, and it can't be reached. This
 creating or changing sources, crawls, probes and OPML import. Reads, tokens and feeds carry on
 without it, and so does listing sources.
 
+### Forbidden
+
+Status 403. You're logged in, but this needs an admin. Sources are shared, so only admins can change
+or delete one.
+
 ### Unauthorized
 
 Status 401, with a `WWW-Authenticate` header. The bearer token is missing, unknown or revoked.
+
+## Who Sees What
+
+Sources are shared. Anyone can list them, add one or ask for a crawl. `GET /sources` takes `q`, which
+matches part of a title or slug, and `kind`.
+
+Reads and tokens are yours. Someone else's is a 404, so that an ID tells you nothing. `GET /reads` means
+your reads. An admin can reach anyone's, and `GET /reads?all=true` lists them all.
 
 ## Importing OPML
 
@@ -123,5 +137,5 @@ Go programs can import `github.com/gerrowadat/andante/pkg/client`, which is what
 too. For anything else, feed the spec to any OpenAPI 3.1 generator:
 
 ```sh
-curl -o openapi.json http://127.0.0.1:8081/api/v1/openapi.json
+curl -o openapi.json http://127.0.0.1:8080/api/v1/openapi.json
 ```

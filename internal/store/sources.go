@@ -46,9 +46,15 @@ func (s *Store) GetSource(ctx context.Context, id int64) (db.Source, error) {
 	return source, nil
 }
 
+// SourceFilter narrows a list of sources. Zero values match everything.
+type SourceFilter struct {
+	Query string // Part of a title or slug.
+	Kind  string
+}
+
 // ListSources returns up to limit sources with IDs above after.
-func (s *Store) ListSources(ctx context.Context, after int64, limit int32) ([]db.Source, error) {
-	sources, err := s.queries.ListSources(ctx, db.ListSourcesParams{ID: after, Limit: limit})
+func (s *Store) ListSources(ctx context.Context, filter SourceFilter, after int64, limit int32) ([]db.Source, error) {
+	sources, err := s.queries.ListSources(ctx, db.ListSourcesParams{After: after, Q: filter.Query, Kind: filter.Kind, PageSize: limit})
 	if err != nil {
 		return nil, fmt.Errorf("list sources: %w", err)
 	}

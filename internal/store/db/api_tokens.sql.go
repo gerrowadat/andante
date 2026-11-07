@@ -9,37 +9,32 @@ import (
 	"context"
 )
 
-const countAPITokens = `-- name: CountAPITokens :one
-SELECT count(*) FROM api_tokens
-`
-
-func (q *Queries) CountAPITokens(ctx context.Context) (int64, error) {
-	row := q.db.QueryRow(ctx, countAPITokens)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const countActiveAPITokens = `-- name: CountActiveAPITokens :one
-SELECT count(*) FROM api_tokens WHERE revoked_at IS NULL
+SELECT count(*) FROM api_tokens WHERE user_id = $1 AND revoked_at IS NULL
 `
 
-func (q *Queries) CountActiveAPITokens(ctx context.Context) (int64, error) {
-	row := q.db.QueryRow(ctx, countActiveAPITokens)
+func (q *Queries) CountActiveAPITokens(ctx context.Context, userID int64) (int64, error) {
+	row := q.db.QueryRow(ctx, countActiveAPITokens, userID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
 }
 
 const getAPIToken = `-- name: GetAPIToken :one
-SELECT id, token_hash, label, created_at, revoked_at, last_used_at FROM api_tokens WHERE id = $1
+SELECT id, user_id, token_hash, label, created_at, revoked_at, last_used_at FROM api_tokens WHERE id = $1 AND user_id = $2
 `
 
-func (q *Queries) GetAPIToken(ctx context.Context, id int64) (ApiToken, error) {
-	row := q.db.QueryRow(ctx, getAPIToken, id)
+type GetAPITokenParams struct {
+	ID     int64
+	UserID int64
+}
+
+func (q *Queries) GetAPIToken(ctx context.Context, arg GetAPITokenParams) (ApiToken, error) {
+	row := q.db.QueryRow(ctx, getAPIToken, arg.ID, arg.UserID)
 	var i ApiToken
 	err := row.Scan(
 		&i.ID,
+		&i.UserID,
 		&i.TokenHash,
 		&i.Label,
 		&i.CreatedAt,
@@ -50,37 +45,46 @@ func (q *Queries) GetAPIToken(ctx context.Context, id int64) (ApiToken, error) {
 }
 
 const getActiveAPITokenByHash = `-- name: GetActiveAPITokenByHash :one
-SELECT id, token_hash, label, created_at, revoked_at, last_used_at FROM api_tokens WHERE token_hash = $1 AND revoked_at IS NULL
+SELECT t.id, t.token_hash, u.id AS user_id, u.role
+FROM api_tokens t JOIN users u ON u.id = t.user_id
+WHERE t.token_hash = $1 AND t.revoked_at IS NULL AND u.disabled_at IS NULL
 `
 
-func (q *Queries) GetActiveAPITokenByHash(ctx context.Context, tokenHash []byte) (ApiToken, error) {
+type GetActiveAPITokenByHashRow struct {
+	ID        int64
+	TokenHash []byte
+	UserID    int64
+	Role      string
+}
+
+func (q *Queries) GetActiveAPITokenByHash(ctx context.Context, tokenHash []byte) (GetActiveAPITokenByHashRow, error) {
 	row := q.db.QueryRow(ctx, getActiveAPITokenByHash, tokenHash)
-	var i ApiToken
+	var i GetActiveAPITokenByHashRow
 	err := row.Scan(
 		&i.ID,
 		&i.TokenHash,
-		&i.Label,
-		&i.CreatedAt,
-		&i.RevokedAt,
-		&i.LastUsedAt,
+		&i.UserID,
+		&i.Role,
 	)
 	return i, err
 }
 
 const insertAPIToken = `-- name: InsertAPIToken :one
-INSERT INTO api_tokens (token_hash, label) VALUES ($1, $2) RETURNING id, token_hash, label, created_at, revoked_at, last_used_at
+INSERT INTO api_tokens (user_id, token_hash, label) VALUES ($1, $2, $3) RETURNING id, user_id, token_hash, label, created_at, revoked_at, last_used_at
 `
 
 type InsertAPITokenParams struct {
+	UserID    int64
 	TokenHash []byte
 	Label     string
 }
 
 func (q *Queries) InsertAPIToken(ctx context.Context, arg InsertAPITokenParams) (ApiToken, error) {
-	row := q.db.QueryRow(ctx, insertAPIToken, arg.TokenHash, arg.Label)
+	row := q.db.QueryRow(ctx, insertAPIToken, arg.UserID, arg.TokenHash, arg.Label)
 	var i ApiToken
 	err := row.Scan(
 		&i.ID,
+		&i.UserID,
 		&i.TokenHash,
 		&i.Label,
 		&i.CreatedAt,
@@ -91,16 +95,17 @@ func (q *Queries) InsertAPIToken(ctx context.Context, arg InsertAPITokenParams) 
 }
 
 const listAPITokens = `-- name: ListAPITokens :many
-SELECT id, token_hash, label, created_at, revoked_at, last_used_at FROM api_tokens WHERE id > $1 ORDER BY id LIMIT $2
+SELECT id, user_id, token_hash, label, created_at, revoked_at, last_used_at FROM api_tokens WHERE user_id = $1 AND id > $2 ORDER BY id LIMIT $3
 `
 
 type ListAPITokensParams struct {
-	ID    int64
-	Limit int32
+	UserID int64
+	ID     int64
+	Limit  int32
 }
 
 func (q *Queries) ListAPITokens(ctx context.Context, arg ListAPITokensParams) ([]ApiToken, error) {
-	rows, err := q.db.Query(ctx, listAPITokens, arg.ID, arg.Limit)
+	rows, err := q.db.Query(ctx, listAPITokens, arg.UserID, arg.ID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -110,6 +115,7 @@ func (q *Queries) ListAPITokens(ctx context.Context, arg ListAPITokensParams) ([
 		var i ApiToken
 		if err := rows.Scan(
 			&i.ID,
+			&i.UserID,
 			&i.TokenHash,
 			&i.Label,
 			&i.CreatedAt,
@@ -126,15 +132,15 @@ func (q *Queries) ListAPITokens(ctx context.Context, arg ListAPITokensParams) ([
 	return items, nil
 }
 
-const lockAPITokenBootstrap = `-- name: LockAPITokenBootstrap :exec
+const lockAPITokens = `-- name: LockAPITokens :exec
 
 SELECT pg_advisory_xact_lock($1)
 `
 
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 Dave O'Connor
-func (q *Queries) LockAPITokenBootstrap(ctx context.Context, pgAdvisoryXactLock int64) error {
-	_, err := q.db.Exec(ctx, lockAPITokenBootstrap, pgAdvisoryXactLock)
+func (q *Queries) LockAPITokens(ctx context.Context, pgAdvisoryXactLock int64) error {
+	_, err := q.db.Exec(ctx, lockAPITokens, pgAdvisoryXactLock)
 	return err
 }
 
@@ -144,6 +150,15 @@ UPDATE api_tokens SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL
 
 func (q *Queries) RevokeAPIToken(ctx context.Context, id int64) error {
 	_, err := q.db.Exec(ctx, revokeAPIToken, id)
+	return err
+}
+
+const revokeAllAPITokens = `-- name: RevokeAllAPITokens :exec
+UPDATE api_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL
+`
+
+func (q *Queries) RevokeAllAPITokens(ctx context.Context, userID int64) error {
+	_, err := q.db.Exec(ctx, revokeAllAPITokens, userID)
 	return err
 }
 

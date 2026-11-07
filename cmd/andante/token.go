@@ -29,7 +29,7 @@ func (a *app) tokenCmd() *cobra.Command {
 	)
 	add := operation(&cobra.Command{
 		Use:   "add <read>",
-		Short: "Issue a feed token. Its URLs are shown only once.",
+		Short: "Issue a feed token. token list shows its URL again.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := parseID(args[0])
@@ -69,9 +69,13 @@ func (a *app) tokenCmd() *cobra.Command {
 				return err
 			}
 			return a.show(resp.StatusCode(), resp.Body, func(w *table) {
-				w.println("ID\tROLE\tLABEL\tLAST SEEN\tREVOKED")
+				w.println("ID\tROLE\tLABEL\tLAST SEEN\tREVOKED\tRSS")
 				for _, t := range resp.JSON200.Items {
-					w.printf("%d\t%s\t%s\t%s\t%s\n", t.ID, t.Role, t.Label, stamp(t.LastSeenAt), stamp(t.RevokedAt))
+					url := "-"
+					if t.Urls != nil {
+						url = t.Urls.Rss
+					}
+					w.printf("%d\t%s\t%s\t%s\t%s\t%s\n", t.ID, t.Role, t.Label, stamp(t.LastSeenAt), stamp(t.RevokedAt), url)
 				}
 				a.more(resp.JSON200.Next)
 			})

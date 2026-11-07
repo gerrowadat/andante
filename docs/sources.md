@@ -64,7 +64,7 @@ Probe first. A probe tries a config and saves nothing:
 
 ```sh
 curl -X POST -H "Authorization: Bearer $ANDANTE_TOKEN" -H 'Content-Type: application/json' \
-  http://127.0.0.1:8081/api/v1/probes \
+  http://127.0.0.1:8080/api/v1/probes \
   -d '{"config": {"strategy": "crawl", "start_url": "https://comic.example/1"}}'
 ```
 
@@ -76,7 +76,7 @@ When that looks right, create the source with the same config:
 
 ```sh
 curl -X POST -H "Authorization: Bearer $ANDANTE_TOKEN" -H 'Content-Type: application/json' \
-  http://127.0.0.1:8081/api/v1/sources \
+  http://127.0.0.1:8080/api/v1/sources \
   -d '{"slug": "example-comic", "title": "Example Comic", "home_url": "https://comic.example/",
        "default_kind": "page", "config": {"strategy": "crawl", "start_url": "https://comic.example/1"}}'
 ```

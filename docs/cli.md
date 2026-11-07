@@ -1,6 +1,6 @@
 # CLI
 
-`andante` manages a server through its admin API, and that's all it does. Anything it can do,
+`andante` manages a server through its API, and that's all it does. Anything it can do,
 you can do with the API directly.
 
 ## Install
@@ -16,7 +16,7 @@ make build   # out/andante
 
 | Flag | Env | Default |
 |---|---|---|
-| `--url` | `ANDANTE_URL` | `http://127.0.0.1:8081` |
+| `--url` | `ANDANTE_URL` | `http://127.0.0.1:8080` |
 | `--token` | `ANDANTE_TOKEN` | none |
 
 Use the environment variable for the token, which keeps it out of process listings. There's no
@@ -111,9 +111,9 @@ See [reads](reads.md).
 ## Feed Tokens
 
 ```sh
-andante token add 1 --label Alex              # a viewer token. The URLs are shown only once
+andante token add 1 --label Alex              # a viewer token
 andante token add 1 --label me --owner        # with the next-one-now control
-andante token list 1
+andante token list 1                          # with each one's URL
 andante token rm 3
 ```
 
@@ -141,6 +141,7 @@ andante api-token rm 2
 ```sh
 andante api spec > openapi.json
 andante version                          # the client's, and the server's when reachable
+andante whoami
 ```
 
 ## Completions

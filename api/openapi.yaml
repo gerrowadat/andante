@@ -2,9 +2,9 @@
 # Copyright (C) 2026 Dave O'Connor
 openapi: 3.1.0
 info:
-  title: andante admin API
+  title: andante API
   version: 1.0.0
-  summary: Manage sources, reads and tokens on an andante server.
+  summary: Manage your reads and tokens, and the sources they follow.
   description: >-
     The single interface for changing andante's state. Within /api/v1 changes
     are additive only. See docs/api.md for authentication, errors, pagination
@@ -17,7 +17,7 @@ info:
     url: https://github.com/gerrowadat/andante
 servers:
   - url: /api/v1
-    description: The admin listener.
+    description: The main listener, alongside the feeds.
 security:
   - bearerAuth: []
 tags:
@@ -68,6 +68,7 @@ x-examples:
     discovered_at: 2026-11-05T07:00:00Z
   Read: &read
     id: 1
+    user_id: 1
     source_id: 1
     name: Mornings
     catch_up: passthrough
@@ -111,7 +112,7 @@ paths:
               example:
                 openapi: 3.1.0
                 info:
-                  title: andante admin API
+                  title: andante API
                   version: 1.0.0
                 paths: {}
         default:
@@ -136,15 +137,46 @@ paths:
                 date: 2026-11-05T07:00:00Z
         default:
           $ref: "#/components/responses/Problem"
+  /me:
+    get:
+      operationId: getMe
+      tags: [meta]
+      summary: Who this token belongs to
+      description: Returns the user the API token belongs to.
+      responses:
+        "200":
+          description: The user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+              example:
+                id: 1
+                name: dave
+                role: admin
+                created_at: 2026-11-05T07:00:00Z
+        default:
+          $ref: "#/components/responses/Problem"
   /sources:
     get:
       operationId: listSources
       tags: [sources]
       summary: List sources
-      description: Lists every source, oldest first.
+      description: Lists every source, oldest first. Sources are shared by all users.
       parameters:
         - $ref: "#/components/parameters/Cursor"
         - $ref: "#/components/parameters/Limit"
+        - name: q
+          in: query
+          description: Only sources with this in their title or slug.
+          schema:
+            type: string
+            maxLength: 200
+        - name: kind
+          in: query
+          description: Only sources of this kind.
+          schema:
+            $ref: "#/components/schemas/Kind"
       responses:
         "200":
           description: A page of sources.
@@ -333,6 +365,12 @@ paths:
       parameters:
         - $ref: "#/components/parameters/Cursor"
         - $ref: "#/components/parameters/Limit"
+        - name: all
+          in: query
+          description: Admins only. Everyone's reads, not just your own.
+          schema:
+            type: boolean
+            default: false
       responses:
         "200":
           description: A page of reads.
@@ -504,7 +542,7 @@ paths:
       operationId: listFeedTokens
       tags: [tokens]
       summary: List a read's feed tokens
-      description: Lists the read's feed tokens. Raw tokens are never returned.
+      description: Lists the read's feed tokens, with their URLs.
       parameters:
         - $ref: "#/components/parameters/Cursor"
         - $ref: "#/components/parameters/Limit"
@@ -798,6 +836,21 @@ components:
       type: [string, "null"]
       format: uri-reference
       description: The next page, or null on the last one.
+    User:
+      type: object
+      required: [id, name, role, created_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        role:
+          type: string
+          enum: [admin, user]
+        created_at:
+          type: string
+          format: date-time
     Kind:
       type: string
       enum: [page, episode, article]
@@ -1199,8 +1252,11 @@ components:
           enum: [paused]
     Read:
       type: object
-      required: [id, source_id, name, catch_up, buffer, config, created_at, position, due, state]
+      required: [user_id, id, source_id, name, catch_up, buffer, config, created_at, position, due, state]
       properties:
+        user_id:
+          type: integer
+          format: int64
         id:
           type: integer
           format: int64
@@ -1419,6 +1475,22 @@ components:
         last_seen_at:
           type: [string, "null"]
           format: date-time
+        urls:
+          $ref: "#/components/schemas/FeedURLs"
+    FeedURLs:
+      type: object
+      description: The token's feed URLs. Left out of a list if the token is revoked, or the secret it was sealed with was lost.
+      required: [atom, rss, json]
+      properties:
+        atom:
+          type: string
+          format: uri
+        rss:
+          type: string
+          format: uri
+        json:
+          type: string
+          format: uri
     FeedTokenCreate:
       type: object
       additionalProperties: false
@@ -1448,20 +1520,9 @@ components:
           format: date-time
         token:
           type: string
-          description: The raw token, shown only here.
+          description: The raw token.
         urls:
-          type: object
-          required: [atom, rss, json]
-          properties:
-            atom:
-              type: string
-              format: uri
-            rss:
-              type: string
-              format: uri
-            json:
-              type: string
-              format: uri
+          $ref: "#/components/schemas/FeedURLs"
         suggested:
           type: string
           enum: [atom, rss, json]

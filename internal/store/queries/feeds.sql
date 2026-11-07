@@ -2,7 +2,7 @@
 -- Copyright (C) 2026 Dave O'Connor
 
 -- name: InsertFeedToken :one
-INSERT INTO feed_tokens (read_id, token_hash, role, label) VALUES ($1, $2, $3, $4) RETURNING *;
+INSERT INTO feed_tokens (read_id, token_hash, token_sealed, role, label) VALUES ($1, $2, $3, $4, $5) RETURNING *;
 
 -- name: GetActiveFeedTokenByHash :one
 SELECT * FROM feed_tokens WHERE token_hash = $1 AND revoked_at IS NULL;
@@ -11,7 +11,18 @@ SELECT * FROM feed_tokens WHERE token_hash = $1 AND revoked_at IS NULL;
 SELECT * FROM feed_tokens WHERE read_id = $1 AND id > $2 ORDER BY id LIMIT $3;
 
 -- name: RevokeFeedToken :execrows
-UPDATE feed_tokens SET revoked_at = coalesce(revoked_at, now()) WHERE id = $1;
+UPDATE feed_tokens t SET revoked_at = coalesce(t.revoked_at, now())
+FROM reads r
+WHERE t.id = sqlc.arg(id) AND r.id = t.read_id AND (sqlc.arg(anyone)::boolean OR r.user_id = sqlc.arg(user_id));
+
+-- name: ListSealedFeedTokens :many
+SELECT id, token_sealed FROM feed_tokens WHERE token_sealed IS NOT NULL;
+
+-- name: ResealFeedToken :exec
+UPDATE feed_tokens SET token_sealed = $2 WHERE id = $1;
+
+-- name: ForgetFeedTokenSecrets :exec
+UPDATE feed_tokens SET token_sealed = NULL;
 
 -- name: TouchFeedToken :exec
 UPDATE feed_tokens SET last_seen_at = now()

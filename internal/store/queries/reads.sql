@@ -2,27 +2,29 @@
 -- Copyright (C) 2026 Dave O'Connor
 
 -- name: InsertRead :one
-INSERT INTO reads (source_id, name, catch_up, buffer, config, start_seq)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO reads (user_id, source_id, name, catch_up, buffer, config, start_seq)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
 RETURNING *;
 
 -- name: GetRead :one
-SELECT * FROM reads WHERE id = $1;
+SELECT * FROM reads WHERE id = sqlc.arg(id) AND (sqlc.arg(anyone)::boolean OR user_id = sqlc.arg(user_id));
 
 -- name: GetReadForUpdate :one
-SELECT * FROM reads WHERE id = $1 FOR UPDATE;
+SELECT * FROM reads WHERE id = sqlc.arg(id) AND (sqlc.arg(anyone)::boolean OR user_id = sqlc.arg(user_id)) FOR UPDATE;
 
 -- name: ListReads :many
-SELECT * FROM reads WHERE id > $1 ORDER BY id LIMIT $2;
+SELECT * FROM reads WHERE id > sqlc.arg(after) AND (sqlc.arg(anyone)::boolean OR user_id = sqlc.arg(user_id)) ORDER BY id LIMIT sqlc.arg(page_size);
 
 -- name: ListReadsOfSource :many
 SELECT * FROM reads WHERE source_id = $1 ORDER BY id;
 
 -- name: UpdateRead :one
-UPDATE reads SET name = $2, config = $3 WHERE id = $1 RETURNING *;
+UPDATE reads SET name = sqlc.arg(name), config = sqlc.arg(config)
+WHERE id = sqlc.arg(id) AND (sqlc.arg(anyone)::boolean OR user_id = sqlc.arg(user_id))
+RETURNING *;
 
 -- name: DeleteRead :execrows
-DELETE FROM reads WHERE id = $1;
+DELETE FROM reads WHERE id = sqlc.arg(id) AND (sqlc.arg(anyone)::boolean OR user_id = sqlc.arg(user_id));
 
 -- name: InsertSegment :exec
 INSERT INTO read_segments (

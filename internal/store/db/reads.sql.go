@@ -13,11 +13,17 @@ import (
 )
 
 const deleteRead = `-- name: DeleteRead :execrows
-DELETE FROM reads WHERE id = $1
+DELETE FROM reads WHERE id = $1 AND ($2::boolean OR user_id = $3)
 `
 
-func (q *Queries) DeleteRead(ctx context.Context, id int64) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteRead, id)
+type DeleteReadParams struct {
+	ID     int64
+	Anyone bool
+	UserID int64
+}
+
+func (q *Queries) DeleteRead(ctx context.Context, arg DeleteReadParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteRead, arg.ID, arg.Anyone, arg.UserID)
 	if err != nil {
 		return 0, err
 	}
@@ -25,14 +31,21 @@ func (q *Queries) DeleteRead(ctx context.Context, id int64) (int64, error) {
 }
 
 const getRead = `-- name: GetRead :one
-SELECT id, source_id, name, start_seq, catch_up, buffer, config, created_at FROM reads WHERE id = $1
+SELECT id, user_id, source_id, name, start_seq, catch_up, buffer, config, created_at FROM reads WHERE id = $1 AND ($2::boolean OR user_id = $3)
 `
 
-func (q *Queries) GetRead(ctx context.Context, id int64) (Read, error) {
-	row := q.db.QueryRow(ctx, getRead, id)
+type GetReadParams struct {
+	ID     int64
+	Anyone bool
+	UserID int64
+}
+
+func (q *Queries) GetRead(ctx context.Context, arg GetReadParams) (Read, error) {
+	row := q.db.QueryRow(ctx, getRead, arg.ID, arg.Anyone, arg.UserID)
 	var i Read
 	err := row.Scan(
 		&i.ID,
+		&i.UserID,
 		&i.SourceID,
 		&i.Name,
 		&i.StartSeq,
@@ -45,14 +58,21 @@ func (q *Queries) GetRead(ctx context.Context, id int64) (Read, error) {
 }
 
 const getReadForUpdate = `-- name: GetReadForUpdate :one
-SELECT id, source_id, name, start_seq, catch_up, buffer, config, created_at FROM reads WHERE id = $1 FOR UPDATE
+SELECT id, user_id, source_id, name, start_seq, catch_up, buffer, config, created_at FROM reads WHERE id = $1 AND ($2::boolean OR user_id = $3) FOR UPDATE
 `
 
-func (q *Queries) GetReadForUpdate(ctx context.Context, id int64) (Read, error) {
-	row := q.db.QueryRow(ctx, getReadForUpdate, id)
+type GetReadForUpdateParams struct {
+	ID     int64
+	Anyone bool
+	UserID int64
+}
+
+func (q *Queries) GetReadForUpdate(ctx context.Context, arg GetReadForUpdateParams) (Read, error) {
+	row := q.db.QueryRow(ctx, getReadForUpdate, arg.ID, arg.Anyone, arg.UserID)
 	var i Read
 	err := row.Scan(
 		&i.ID,
+		&i.UserID,
 		&i.SourceID,
 		&i.Name,
 		&i.StartSeq,
@@ -66,12 +86,13 @@ func (q *Queries) GetReadForUpdate(ctx context.Context, id int64) (Read, error) 
 
 const insertRead = `-- name: InsertRead :one
 
-INSERT INTO reads (source_id, name, catch_up, buffer, config, start_seq)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, source_id, name, start_seq, catch_up, buffer, config, created_at
+INSERT INTO reads (user_id, source_id, name, catch_up, buffer, config, start_seq)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, user_id, source_id, name, start_seq, catch_up, buffer, config, created_at
 `
 
 type InsertReadParams struct {
+	UserID   int64
 	SourceID int64
 	Name     string
 	CatchUp  string
@@ -84,6 +105,7 @@ type InsertReadParams struct {
 // Copyright (C) 2026 Dave O'Connor
 func (q *Queries) InsertRead(ctx context.Context, arg InsertReadParams) (Read, error) {
 	row := q.db.QueryRow(ctx, insertRead,
+		arg.UserID,
 		arg.SourceID,
 		arg.Name,
 		arg.CatchUp,
@@ -94,6 +116,7 @@ func (q *Queries) InsertRead(ctx context.Context, arg InsertReadParams) (Read, e
 	var i Read
 	err := row.Scan(
 		&i.ID,
+		&i.UserID,
 		&i.SourceID,
 		&i.Name,
 		&i.StartSeq,
@@ -178,16 +201,23 @@ func (q *Queries) ListEntryTimes(ctx context.Context, sourceID int64) ([]ListEnt
 }
 
 const listReads = `-- name: ListReads :many
-SELECT id, source_id, name, start_seq, catch_up, buffer, config, created_at FROM reads WHERE id > $1 ORDER BY id LIMIT $2
+SELECT id, user_id, source_id, name, start_seq, catch_up, buffer, config, created_at FROM reads WHERE id > $1 AND ($2::boolean OR user_id = $3) ORDER BY id LIMIT $4
 `
 
 type ListReadsParams struct {
-	ID    int64
-	Limit int32
+	After    int64
+	Anyone   bool
+	UserID   int64
+	PageSize int32
 }
 
 func (q *Queries) ListReads(ctx context.Context, arg ListReadsParams) ([]Read, error) {
-	rows, err := q.db.Query(ctx, listReads, arg.ID, arg.Limit)
+	rows, err := q.db.Query(ctx, listReads,
+		arg.After,
+		arg.Anyone,
+		arg.UserID,
+		arg.PageSize,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -197,6 +227,7 @@ func (q *Queries) ListReads(ctx context.Context, arg ListReadsParams) ([]Read, e
 		var i Read
 		if err := rows.Scan(
 			&i.ID,
+			&i.UserID,
 			&i.SourceID,
 			&i.Name,
 			&i.StartSeq,
@@ -216,7 +247,7 @@ func (q *Queries) ListReads(ctx context.Context, arg ListReadsParams) ([]Read, e
 }
 
 const listReadsOfSource = `-- name: ListReadsOfSource :many
-SELECT id, source_id, name, start_seq, catch_up, buffer, config, created_at FROM reads WHERE source_id = $1 ORDER BY id
+SELECT id, user_id, source_id, name, start_seq, catch_up, buffer, config, created_at FROM reads WHERE source_id = $1 ORDER BY id
 `
 
 func (q *Queries) ListReadsOfSource(ctx context.Context, sourceID int64) ([]Read, error) {
@@ -230,6 +261,7 @@ func (q *Queries) ListReadsOfSource(ctx context.Context, sourceID int64) ([]Read
 		var i Read
 		if err := rows.Scan(
 			&i.ID,
+			&i.UserID,
 			&i.SourceID,
 			&i.Name,
 			&i.StartSeq,
@@ -333,20 +365,31 @@ func (q *Queries) ListSegmentsPage(ctx context.Context, arg ListSegmentsPagePara
 }
 
 const updateRead = `-- name: UpdateRead :one
-UPDATE reads SET name = $2, config = $3 WHERE id = $1 RETURNING id, source_id, name, start_seq, catch_up, buffer, config, created_at
+UPDATE reads SET name = $1, config = $2
+WHERE id = $3 AND ($4::boolean OR user_id = $5)
+RETURNING id, user_id, source_id, name, start_seq, catch_up, buffer, config, created_at
 `
 
 type UpdateReadParams struct {
-	ID     int64
 	Name   string
 	Config []byte
+	ID     int64
+	Anyone bool
+	UserID int64
 }
 
 func (q *Queries) UpdateRead(ctx context.Context, arg UpdateReadParams) (Read, error) {
-	row := q.db.QueryRow(ctx, updateRead, arg.ID, arg.Name, arg.Config)
+	row := q.db.QueryRow(ctx, updateRead,
+		arg.Name,
+		arg.Config,
+		arg.ID,
+		arg.Anyone,
+		arg.UserID,
+	)
 	var i Read
 	err := row.Scan(
 		&i.ID,
+		&i.UserID,
 		&i.SourceID,
 		&i.Name,
 		&i.StartSeq,
