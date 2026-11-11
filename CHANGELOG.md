@@ -46,6 +46,11 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and there's no migration from v0.0.1. Crawl flags moved to `andante-catalogue`, and the server
   gains `--catalogue-url`, `--catalogue-token` and `--demand-interval`.
 
+### Security
+
+- Build with Go 1.27.4, for GO-2026-6859, where a race in `net/http`'s `MaxBytesReader` can crash an
+  HTTP/1 server.
+
 ## [0.0.1] - 2026-11-06
 
 The first release. andante indexes a serial's archive and replays it as a paced feed.
