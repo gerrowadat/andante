@@ -26,7 +26,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/teambition/rrule-go v1.8.2
 	github.com/temoto/robotstxt v1.1.2
-	golang.org/x/crypto v0.58.0
+	golang.org/x/crypto v0.58.1-0.20261009181718-2f1f834330b2
 	golang.org/x/oauth2 v0.38.0
 	golang.org/x/text v0.43.0
 	golang.org/x/time v0.14.0

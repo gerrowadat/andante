@@ -8,6 +8,8 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `golang.org/x/crypto` is at a commit past GO-2026-5932, which flags every older version for
+  its `openpgp` package. andante never imported it.
 - A requested crawl, a deleted source or a parked source waking up could deadlock with a crawl in
   the catalogue, which failed one of them with a 500.
 
