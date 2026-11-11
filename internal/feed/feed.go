@@ -70,6 +70,8 @@ type Input struct {
 	Role    string
 	Token   string // The raw token, which only the owner's links contain.
 	BaseURL string
+	// Pace says how fast the read goes, in words.
+	Pace string
 }
 
 // Window returns how many entries a read's feed holds.
@@ -116,7 +118,7 @@ func Build(in Input) (Feed, error) {
 		ID:    tag,
 		Title: in.Source.Title + " — " + in.Read.Name,
 		Description: "A paced replay of " + in.Source.Title + ", from " + in.Source.HomeUrl +
-			". This feed is not the publisher's.",
+			". This feed is not the publisher's." + paceSentence(in.Pace),
 		HomeURL:   in.Source.HomeUrl,
 		Author:    in.Source.Title,
 		Updated:   in.Read.CreatedAt,
@@ -158,4 +160,11 @@ func Build(in Input) (Feed, error) {
 		f.Items = append(f.Items, item)
 	}
 	return f, nil
+}
+
+func paceSentence(pace string) string {
+	if pace == "" {
+		return ""
+	}
+	return " Pace: " + pace + "."
 }

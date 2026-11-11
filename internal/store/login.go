@@ -236,3 +236,19 @@ func (s *Store) ListAudit(ctx context.Context, after int64, limit int32) ([]db.A
 	}
 	return lines, nil
 }
+
+// ChangePassword sets a new password and ends every other session the user has, so
+// that whoever might have known the old one is logged out.
+func (s *Store) ChangePassword(ctx context.Context, userID, keepSession int64, hash string, now time.Time) error {
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		q := s.queries.WithTx(tx)
+		if err := q.SetPassword(ctx, db.SetPasswordParams{ID: userID, PasswordHash: &hash}); err != nil {
+			return err
+		}
+		return q.RevokeOtherSessions(ctx, db.RevokeOtherSessionsParams{At: &now, UserID: userID, Keep: keepSession})
+	})
+	if err != nil {
+		return fmt.Errorf("change password of user %d: %w", userID, err)
+	}
+	return nil
+}

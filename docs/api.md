@@ -99,6 +99,13 @@ password. With `reset` it's for an existing user. `GET /sessions` lists your log
 `DELETE /sessions/{id}` ends one. Someone else's session is a 404, even for an admin. `GET /audit` is
 for admins.
 
+## Users
+
+`GET /users`, `PATCH /users/{id}` and `DELETE /users/{id}` are for admins. A patch is a JSON merge
+patch with `role` and `disabled`. Changing either ends that user's sessions, and disabling stops
+their API tokens but leaves their feed tokens working. Deleting removes their reads and tokens.
+Leaving no active admin, or deleting yourself, is a 409.
+
 ## Importing OPML
 
 `POST /imports/opml` takes an OPML file of at most 5 MiB and creates a paused `feed` source for

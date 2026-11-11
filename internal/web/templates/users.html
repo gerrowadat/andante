@@ -1,0 +1,28 @@
+{{define "content"}}{{with .Data}}
+<h1>Users</h1>
+<table>
+<tr><th>Name</th><th>Role</th><th>State</th><th></th></tr>
+{{range .Users}}<tr>
+  <td>{{.Name}}</td><td>{{.Role}}</td><td>{{if .Disabled}}disabled{{else}}active{{end}}</td>
+  <td>
+    <form class="inline" method="post" action="/users/{{.ID}}"><input type="hidden" name="csrf" value="{{$.CSRF}}">
+      {{if eq .Role "admin"}}<button name="action" value="user">Make a user</button>{{else}}<button name="action" value="admin">Make an admin</button>{{end}}
+      {{if .Disabled}}<button name="action" value="enable">Enable</button>{{else}}<button name="action" value="disable">Disable</button>{{end}}
+    </form>
+    <form class="inline" method="post" action="/users/invite"><input type="hidden" name="csrf" value="{{$.CSRF}}">
+      <input type="hidden" name="name" value="{{.Name}}"><input type="hidden" name="reset" value="1"><button>New password link</button>
+    </form>
+    {{if not .Self}}<a href="/users/{{.ID}}/delete">Delete</a>{{end}}
+  </td>
+</tr>{{end}}
+</table>
+<p class="muted">A new password link lets someone set a new password, and using it logs them out everywhere else. Disabling someone logs them out and stops their API tokens. Their feed links keep working, so that friends on a group read aren't cut off.</p>
+<h2>Invite someone</h2>
+<form method="post" action="/users/invite">
+  <input type="hidden" name="csrf" value="{{$.CSRF}}">
+  <label class="choice">Name <input type="text" name="name" required pattern="[a-z0-9._-]+" title="lower case letters, numbers, dots, dashes and underscores"></label>
+  <label class="choice"><input type="checkbox" name="admin" value="1"> an admin</label>
+  <button>Make a link</button>
+</form>
+{{with .Invite}}<p class="note">Send this to {{.Name}}. It works once, until {{.Expires}}: <span class="url">{{.URL}}</span></p>{{end}}
+{{end}}{{end}}

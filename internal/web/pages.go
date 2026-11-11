@@ -33,11 +33,4 @@ var (
     <p><label>Password <input name="password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required autofocus></label></p>
     <p><button>Set password</button></p>
   </form>`)
-
-	homePage = page(`  <h1>andante</h1>
-  <p>Logged in as {{.Name}}.</p>
-  <form method="post" action="/logout">
-    <input type="hidden" name="csrf" value="{{.CSRF}}">
-    <p><button>Log out</button></p>
-  </form>`)
 )

@@ -6,6 +6,7 @@ package api_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"regexp"
@@ -1884,5 +1885,120 @@ func TestTheAuditLog(t *testing.T) {
 	}
 	if log.JSON200.Items[0].IP == "" {
 		t.Error("no address on an audit line")
+	}
+}
+
+func TestManagingUsers(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	bob := f.user(t, "bob", false)
+
+	// Only admins.
+	if resp, err := bob.client.ListUsersWithResponse(ctx, nil); err != nil || resp.StatusCode() != http.StatusForbidden {
+		t.Errorf("a user listing users: %v %d", err, resp.StatusCode())
+	}
+	role := client.UserPatchRoleAdmin
+	if resp, err := bob.client.UpdateUserWithApplicationMergePatchPlusJSONBodyWithResponse(ctx, bob.actor.UserID, client.UserPatch{Role: &role}); err != nil || resp.StatusCode() != http.StatusForbidden {
+		t.Errorf("a user making themselves admin: %v %d", err, resp.StatusCode())
+	}
+	if resp, err := bob.client.DeleteUserWithResponse(ctx, f.actor.UserID); err != nil || resp.StatusCode() != http.StatusForbidden {
+		t.Errorf("a user deleting an admin: %v %d", err, resp.StatusCode())
+	}
+
+	listed, err := f.client.ListUsersWithResponse(ctx, nil)
+	if err != nil || listed.JSON200 == nil || len(listed.JSON200.Items) != 2 {
+		t.Fatalf("users = %s, %v", listed.Body, err)
+	}
+
+	// The only admin can't stop being one, and nobody deletes themselves.
+	user := client.UserPatchRoleUser
+	if resp, _ := f.client.UpdateUserWithApplicationMergePatchPlusJSONBodyWithResponse(ctx, f.actor.UserID, client.UserPatch{Role: &user}); resp.StatusCode() != http.StatusConflict {
+		t.Errorf("demoting the last admin: %d", resp.StatusCode())
+	}
+	yes := true
+	if resp, _ := f.client.UpdateUserWithApplicationMergePatchPlusJSONBodyWithResponse(ctx, f.actor.UserID, client.UserPatch{Disabled: &yes}); resp.StatusCode() != http.StatusConflict {
+		t.Errorf("disabling the last admin: %d", resp.StatusCode())
+	}
+	if resp, _ := f.client.DeleteUserWithResponse(ctx, f.actor.UserID); resp.StatusCode() != http.StatusConflict {
+		t.Errorf("deleting yourself: %d", resp.StatusCode())
+	}
+	if resp, _ := f.client.DeleteUserWithResponse(ctx, 999); resp.StatusCode() != http.StatusNotFound {
+		t.Errorf("deleting nobody: %d", resp.StatusCode())
+	}
+}
+
+func TestDisablingAUserLeavesTheirFeeds(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	s := f.createSource(t, "s").ID
+	f.addEntries(t, s, 3, true)
+	bob := f.user(t, "bob", false)
+	read, err := bob.client.CreateReadWithResponse(ctx, client.ReadCreate{SourceID: s, Name: "r", Pacing: rrulePacing(t)})
+	if err != nil || read.JSON201 == nil {
+		t.Fatalf("create read: %v %s", err, read.Body)
+	}
+	token, err := bob.client.CreateFeedTokenWithResponse(ctx, read.JSON201.ID, client.FeedTokenCreate{Role: client.Viewer, Label: "a friend"})
+	if err != nil || token.JSON201 == nil {
+		t.Fatalf("create token: %v", err)
+	}
+	session, err := f.store.CreateSession(ctx, bob.actor.UserID, store.Client{IP: "203.0.113.9"}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	yes := true
+	disabled, err := f.client.UpdateUserWithApplicationMergePatchPlusJSONBodyWithResponse(ctx, bob.actor.UserID, client.UserPatch{Disabled: &yes})
+	if err != nil || disabled.JSON200 == nil || !disabled.JSON200.DisabledAt.IsSpecified() || disabled.JSON200.DisabledAt.IsNull() {
+		t.Fatalf("disable: %v %s", err, disabled.Body)
+	}
+	if me, _ := bob.client.GetMeWithResponse(ctx); me.StatusCode() != http.StatusUnauthorized {
+		t.Errorf("a disabled user's API token: %d", me.StatusCode())
+	}
+	if _, err := f.store.LookupSession(ctx, session, time.Now()); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("a disabled user's session: %v", err)
+	}
+	if _, err := f.store.LookupFeedToken(ctx, token.JSON201.Token); err != nil {
+		t.Errorf("a disabled user's feed stopped: %v", err)
+	}
+
+	no := false
+	if resp, _ := f.client.UpdateUserWithApplicationMergePatchPlusJSONBodyWithResponse(ctx, bob.actor.UserID, client.UserPatch{Disabled: &no}); resp.StatusCode() != http.StatusOK {
+		t.Errorf("enable: %d", resp.StatusCode())
+	}
+	if me, _ := bob.client.GetMeWithResponse(ctx); me.StatusCode() != http.StatusOK {
+		t.Errorf("an enabled user's API token: %d", me.StatusCode())
+	}
+
+	// Deleting takes the reads and the feeds with it.
+	if resp, _ := f.client.DeleteUserWithResponse(ctx, bob.actor.UserID); resp.StatusCode() != http.StatusNoContent {
+		t.Fatalf("delete: %d", resp.StatusCode())
+	}
+	if _, err := f.store.LookupFeedToken(ctx, token.JSON201.Token); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("a deleted user's feed: %v", err)
+	}
+	if _, err := f.store.GetRead(ctx, store.Holder, read.JSON201.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("a deleted user's read: %v", err)
+	}
+}
+
+func TestARoleChangeEndsSessions(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	bob := f.user(t, "bob", false)
+	session, err := f.store.CreateSession(ctx, bob.actor.UserID, store.Client{IP: "203.0.113.9"}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin := client.UserPatchRoleAdmin
+	if resp, _ := f.client.UpdateUserWithApplicationMergePatchPlusJSONBodyWithResponse(ctx, bob.actor.UserID, client.UserPatch{Role: &admin}); resp.StatusCode() != http.StatusOK {
+		t.Fatalf("promote: %d", resp.StatusCode())
+	}
+	if _, err := f.store.LookupSession(ctx, session, time.Now()); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("a session outlived a role change: %v", err)
+	}
+	// Two admins now, so one can step down.
+	user := client.UserPatchRoleUser
+	if resp, _ := f.client.UpdateUserWithApplicationMergePatchPlusJSONBodyWithResponse(ctx, f.actor.UserID, client.UserPatch{Role: &user}); resp.StatusCode() != http.StatusOK {
+		t.Errorf("an admin stepping down with another left: %d", resp.StatusCode())
 	}
 }

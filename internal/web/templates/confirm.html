@@ -1,0 +1,8 @@
+{{define "content"}}{{with .Data}}
+<h1>{{.Question}}</h1>
+<p>{{.Detail}}</p>
+<form method="post" action="{{.Action}}">
+  <input type="hidden" name="csrf" value="{{$.CSRF}}">
+  <button>{{.Button}}</button> <a href="{{.Back}}">No, go back</a>
+</form>
+{{end}}{{end}}

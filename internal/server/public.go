@@ -41,6 +41,7 @@ const (
 	maxFormBytes = 4 << 10
 
 	labelNone    = "none"
+	labelPage    = "page"
 	labelUnknown = "unknown"
 )
 
@@ -137,7 +138,11 @@ func (p *public) serveFeed(w http.ResponseWriter, r *http.Request) {
 	if known {
 		label = format.Name
 	}
-	if !found || !known {
+	if !found {
+		p.feedPage(w, r, r.PathValue("file"))
+		return
+	}
+	if !known {
 		p.count(label, labelNone, http.StatusNotFound)
 		http.NotFound(w, r)
 		return
@@ -197,6 +202,7 @@ func (p *public) serveFeed(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	built, err := feed.Build(feed.Input{
 		Read: read, Source: source, Entries: entries, Role: token.Role, Token: raw, BaseURL: p.opts.BaseURL,
+		Pace: schedule.Describe(view.Pacing),
 	})
 	if err != nil {
 		p.fail(w, err)
@@ -313,6 +319,99 @@ func (p *public) confirmNext(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := confirmPage.Execute(w, map[string]string{"Title": read.Name, "CSRF": csrfToken(raw, p.opts.Now())}); err != nil {
 		p.opts.Logger.Warn("could not write the confirmation page", "error", err)
+	}
+}
+
+var feedPage = template.Must(template.New("feed").Parse(`<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{{.Title}}</title></head>
+<body>
+  <h1>{{.Title}}</h1>
+  <p>A paced replay of {{if .Home}}<a href="{{.Home}}" rel="noreferrer">{{.Source}}</a>{{else}}{{.Source}}{{end}}, read as {{.Read}}. This isn't the publisher's own feed.</p>
+  <dl>
+    <dt>Pace</dt><dd>{{.Pace}}</dd>
+    <dt>So far</dt><dd>{{.Released}} of {{.Indexed}} released{{if .Paused}}, paused{{end}}</dd>
+    {{with .Next}}<dt>Next</dt><dd><time datetime="{{.Machine}}">{{.Human}}</time></dd>{{end}}
+  </dl>
+  <h2>Subscribe</h2>
+  <p>Paste one of these into a feed reader or podcast app. Treat them like a password: anyone with one can read this.</p>
+  <ul>
+    <li><a href="{{.Atom}}">Atom</a></li>
+    <li><a href="{{.RSS}}">RSS</a>, for podcast apps</li>
+    <li><a href="{{.JSON}}">JSON Feed</a></li>
+  </ul>
+  {{with .NextNow}}<p><a href="{{.}}">Release the next one now</a></p>{{end}}
+</body>
+</html>
+`))
+
+type when struct{ Machine, Human string }
+
+// feedPage is what someone with a feed URL sees in a browser. It shows only what the
+// feed itself would tell them: the source, the pace and how far along the read is.
+func (p *public) feedPage(w http.ResponseWriter, r *http.Request, raw string) {
+	ctx := r.Context()
+	token, err := p.opts.Store.LookupFeedToken(ctx, raw)
+	if errors.Is(err, store.ErrNotFound) {
+		p.count(labelPage, labelNone, http.StatusNotFound)
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		p.fail(w, err)
+		return
+	}
+	if ok, wait := p.allow(token.ID, p.opts.Now()); !ok {
+		p.count(labelPage, token.Role, http.StatusTooManyRequests)
+		tooMany(w, wait)
+		return
+	}
+	read, err := p.opts.Store.GetRead(ctx, store.Holder, token.ReadID)
+	if err != nil {
+		p.fail(w, err)
+		return
+	}
+	view, _, err := p.opts.Reads.Released(ctx, read, 0)
+	if err != nil {
+		p.fail(w, err)
+		return
+	}
+	source, err := p.opts.Store.GetSource(ctx, read.SourceID)
+	if err != nil {
+		p.fail(w, err)
+		return
+	}
+	start := int(read.StartSeq)
+	data := map[string]any{
+		"Title": source.Title + " — " + read.Name, "Source": source.Title, "Read": read.Name,
+		"Pace": schedule.Describe(view.Pacing), "Paused": view.State == "paused",
+		"Released": max(view.Position-start+1, 0), "Indexed": 0,
+		"Atom": feed.URL(p.opts.BaseURL, raw, "atom"), "RSS": feed.URL(p.opts.BaseURL, raw, "rss"),
+		"JSON": feed.URL(p.opts.BaseURL, raw, "json"),
+	}
+	if view.IndexEnd != nil {
+		data["Indexed"] = max(*view.IndexEnd-start+1, 0)
+	}
+	if webURL(source.HomeUrl) {
+		data["Home"] = source.HomeUrl
+	}
+	if view.NextRelease != nil {
+		at := view.NextRelease.UTC()
+		data["Next"] = when{Machine: at.Format(time.RFC3339), Human: at.Format("Monday 2 January 2006, 15:04 UTC")}
+	}
+	if token.Role == feed.RoleOwner {
+		data["NextNow"] = strings.TrimRight(p.opts.BaseURL, "/") + "/f/" + raw + "/next"
+	}
+
+	// The URL is the credential, and the links on the page lead to other people's sites.
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	p.count(labelPage, token.Role, http.StatusOK)
+	if err := feedPage.Execute(w, data); err != nil {
+		p.opts.Logger.Warn("could not write the feed page", "error", err)
 	}
 }
 

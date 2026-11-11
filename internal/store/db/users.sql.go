@@ -7,7 +7,19 @@ package db
 
 import (
 	"context"
+	"time"
 )
+
+const countActiveAdmins = `-- name: CountActiveAdmins :one
+SELECT count(*) FROM users WHERE role = 'admin' AND disabled_at IS NULL
+`
+
+func (q *Queries) CountActiveAdmins(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countActiveAdmins)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
 
 const countUsers = `-- name: CountUsers :one
 SELECT count(*) FROM users
@@ -18,6 +30,33 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const deleteAPITokensOfUser = `-- name: DeleteAPITokensOfUser :exec
+DELETE FROM api_tokens WHERE user_id = $1
+`
+
+func (q *Queries) DeleteAPITokensOfUser(ctx context.Context, userID int64) error {
+	_, err := q.db.Exec(ctx, deleteAPITokensOfUser, userID)
+	return err
+}
+
+const deleteReadsOfUser = `-- name: DeleteReadsOfUser :exec
+DELETE FROM reads WHERE user_id = $1
+`
+
+func (q *Queries) DeleteReadsOfUser(ctx context.Context, userID int64) error {
+	_, err := q.db.Exec(ctx, deleteReadsOfUser, userID)
+	return err
+}
+
+const deleteUser = `-- name: DeleteUser :exec
+DELETE FROM users WHERE id = $1
+`
+
+func (q *Queries) DeleteUser(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, deleteUser, id)
+	return err
 }
 
 const getUser = `-- name: GetUser :one
@@ -56,6 +95,24 @@ func (q *Queries) GetUserByName(ctx context.Context, name string) (User, error) 
 	return i, err
 }
 
+const getUserForUpdate = `-- name: GetUserForUpdate :one
+SELECT id, name, role, created_at, disabled_at, password_hash FROM users WHERE id = $1 FOR UPDATE
+`
+
+func (q *Queries) GetUserForUpdate(ctx context.Context, id int64) (User, error) {
+	row := q.db.QueryRow(ctx, getUserForUpdate, id)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Role,
+		&i.CreatedAt,
+		&i.DisabledAt,
+		&i.PasswordHash,
+	)
+	return i, err
+}
+
 const insertUser = `-- name: InsertUser :one
 
 INSERT INTO users (name, role) VALUES ($1, $2) RETURNING id, name, role, created_at, disabled_at, password_hash
@@ -82,6 +139,51 @@ func (q *Queries) InsertUser(ctx context.Context, arg InsertUserParams) (User, e
 	return i, err
 }
 
+const listUsers = `-- name: ListUsers :many
+SELECT id, name, role, created_at, disabled_at, password_hash FROM users WHERE id > $1 ORDER BY id LIMIT $2
+`
+
+type ListUsersParams struct {
+	ID    int64
+	Limit int32
+}
+
+func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, error) {
+	rows, err := q.db.Query(ctx, listUsers, arg.ID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []User
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Role,
+			&i.CreatedAt,
+			&i.DisabledAt,
+			&i.PasswordHash,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockUsers = `-- name: LockUsers :exec
+SELECT pg_advisory_xact_lock($1)
+`
+
+func (q *Queries) LockUsers(ctx context.Context, pgAdvisoryXactLock int64) error {
+	_, err := q.db.Exec(ctx, lockUsers, pgAdvisoryXactLock)
+	return err
+}
+
 const secretCheck = `-- name: SecretCheck :one
 SELECT sealed FROM secret_check
 `
@@ -101,4 +203,28 @@ ON CONFLICT (only_row) DO UPDATE SET sealed = excluded.sealed
 func (q *Queries) SetSecretCheck(ctx context.Context, sealed []byte) error {
 	_, err := q.db.Exec(ctx, setSecretCheck, sealed)
 	return err
+}
+
+const updateUser = `-- name: UpdateUser :one
+UPDATE users SET role = $2, disabled_at = $3 WHERE id = $1 RETURNING id, name, role, created_at, disabled_at, password_hash
+`
+
+type UpdateUserParams struct {
+	ID         int64
+	Role       string
+	DisabledAt *time.Time
+}
+
+func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error) {
+	row := q.db.QueryRow(ctx, updateUser, arg.ID, arg.Role, arg.DisabledAt)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Role,
+		&i.CreatedAt,
+		&i.DisabledAt,
+		&i.PasswordHash,
+	)
+	return i, err
 }

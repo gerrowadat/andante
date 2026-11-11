@@ -319,6 +319,22 @@ func (q *Queries) RevokeAllSessions(ctx context.Context, arg RevokeAllSessionsPa
 	return err
 }
 
+const revokeOtherSessions = `-- name: RevokeOtherSessions :exec
+UPDATE sessions SET revoked_at = $1
+WHERE user_id = $2 AND id <> $3 AND revoked_at IS NULL
+`
+
+type RevokeOtherSessionsParams struct {
+	At     *time.Time
+	UserID int64
+	Keep   int64
+}
+
+func (q *Queries) RevokeOtherSessions(ctx context.Context, arg RevokeOtherSessionsParams) error {
+	_, err := q.db.Exec(ctx, revokeOtherSessions, arg.At, arg.UserID, arg.Keep)
+	return err
+}
+
 const revokeSession = `-- name: RevokeSession :execrows
 UPDATE sessions SET revoked_at = coalesce(revoked_at, $1)
 WHERE id = $2 AND user_id = $3

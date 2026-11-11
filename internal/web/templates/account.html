@@ -1,0 +1,33 @@
+{{define "content"}}{{with .Data}}
+<h1>{{$.Me}}</h1>
+<h2>Password</h2>
+<form method="post" action="/account/password">
+  <input type="hidden" name="csrf" value="{{$.CSRF}}">
+  <label>Current password <input type="password" name="current" autocomplete="current-password" required></label>
+  <label>New password <input type="password" name="password" autocomplete="new-password" minlength="12" maxlength="128" required></label>
+  <button>Change it</button>
+</form>
+<h2>Where you're logged in</h2>
+<table>
+<tr><th>From</th><th>Since</th><th>Last seen</th><th></th></tr>
+{{range .Sessions}}<tr>
+  <td>{{.IP}}<br><small>{{.Agent}}</small></td><td>{{.Since}}</td><td>{{.Seen}}</td>
+  <td>{{if .Current}}<span class="muted">this one</span>{{else}}<form class="inline" method="post" action="/account/sessions/{{.ID}}/end"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Log it out</button></form>{{end}}</td>
+</tr>{{end}}
+</table>
+<h2>API tokens</h2>
+<p>For the <code>andante</code> command line, or anything else that uses the API.</p>
+{{with .NewToken}}<p class="note">Here's the new token. It's only shown once: <code>{{.}}</code></p>{{end}}
+<table>
+<tr><th>Label</th><th>Made</th><th>Last used</th><th></th></tr>
+{{range .Tokens}}<tr>
+  <td>{{.Label}}</td><td>{{.Made}}</td><td>{{with .Used}}{{.}}{{else}}<span class="muted">never</span>{{end}}</td>
+  <td>{{if .Revoked}}<span class="muted">revoked</span>{{else}}<form class="inline" method="post" action="/account/tokens/{{.ID}}/revoke"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Revoke</button></form>{{end}}</td>
+</tr>{{end}}
+</table>
+<form method="post" action="/account/tokens">
+  <input type="hidden" name="csrf" value="{{$.CSRF}}">
+  <label class="choice">Label <input type="text" name="label" required placeholder="laptop"></label>
+  <button>Make a token</button>
+</form>
+{{end}}{{end}}

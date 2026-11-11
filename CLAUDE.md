@@ -107,7 +107,8 @@ internal/config/          server flags + env (kong)
 internal/store/           the server's Postgres: migrations/, queries/, db/ (sqlc output)
 internal/catalogue/       the catalogue's store/, api/ and generated client/
 internal/replica/         the server's catalogue client, the sync and demand
-internal/web/             the website: login, sessions, invites
+internal/web/             the website: login and every page, templates/ and static/ embedded
+internal/app/             operations the API and the website share (create a read, delete a source)
 internal/password/        Argon2id hashing and password rules
 internal/clientip/        where a request really came from, for limits and the audit log
 internal/httpapi/         what both APIs share: problems, validation, auth, metrics
@@ -119,6 +120,7 @@ internal/feed/            Atom, RSS 2.0 and JSON Feed rendering, decorators
 internal/api/             API handlers; gen/ is oapi-codegen output
 internal/server/          listeners, middleware, wiring, public feed routes
 pkg/client/               generated API client (public: the CLI and other tools import it)
+pkg/pacing/               pace shorthand (daily, weekdays, days) shared by the CLI and the website
 deploy/compose/           Docker Compose stack: andante and Postgres
 deploy/nomad/             example Nomad job
 deploy/prometheus/        example alert rules and their tests

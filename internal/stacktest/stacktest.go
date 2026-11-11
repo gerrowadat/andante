@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gerrowadat/andante/internal/api"
+	"github.com/gerrowadat/andante/internal/app"
 	catalogueapi "github.com/gerrowadat/andante/internal/catalogue/api"
 	catalogue "github.com/gerrowadat/andante/internal/catalogue/store"
 	"github.com/gerrowadat/andante/internal/clientip"
@@ -40,6 +41,7 @@ type Stack struct {
 	Client          *replica.Client
 	Sync            *replica.Syncer
 	Reads           *reads.Service
+	App             *app.App
 	Registry        *prometheus.Registry
 	URL             string
 
@@ -103,6 +105,7 @@ func NewWith(t *testing.T, opts Options) *Stack {
 	if err != nil {
 		t.Fatal(err)
 	}
+	s.App = &app.App{Store: s.Store, Reads: s.Reads, Catalogue: client, Sync: s.Sync, Logger: slog.New(slog.DiscardHandler)}
 	handler, err := api.New(api.Options{
 		Store: s.Store, Catalogue: client, Sync: s.Sync, Reads: s.Reads, Clients: clients, BaseURL: "https://andante.example/",
 		Registry: s.Registry, Logger: slog.New(slog.DiscardHandler), ProbeTimeout: time.Minute,

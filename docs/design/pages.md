@@ -1,0 +1,126 @@
+# Design: Pages
+
+The website. A logged-in user can do everything the CLI can: browse and add sources, track one at a
+pace, manage a read and its feed links, and look after their account. Admins also get the Users page
+and can edit and delete sources. Login itself is in [`login.md`](login.md). OIDC and TOTP are still
+in [`../proposals/web-ui.md`](../proposals/web-ui.md).
+
+## Pages
+
+| Page | Path | What it does |
+|---|---|---|
+| Home | `/` | Your reads, with the pace, how far along each is and the next release |
+| Browse | `/sources` | Every source, searchable by title and kind, with when it was last checked |
+| Source | `/sources/{id}` | Details, last error, the first entries, your reads of it, a check-now button. Admins can edit and delete it |
+| Track | `/sources/{id}/track` | Pick a pace and a name. Makes a read and an owner feed link, and goes to the read |
+| Read | `/reads/{id}` | The pace in words, position, next release, feed links, pause, resume, skip, jump, change pace, delete |
+| Add | `/add` | Paste an address, wait while andante looks, pick a candidate |
+| Users | `/users` | Invite, make admin, disable, a new password link, delete. Admins only |
+| Account | `/account` | Change password, sessions, API tokens |
+| Feed page | `/f/{token}` | For anyone with a feed link, no login: the source, the pace, the position and the next release |
+
+The code is in `internal/web`: the route table in `pages_app.go`, the handlers in `handlers.go` and
+`add.go`, and the templates and stylesheet embedded from `templates/` and `static/`. The feed page is
+in `internal/server/public.go`, because it's part of the feeds.
+
+## No JavaScript
+
+The pages are server-rendered `html/template`, and every one works with JavaScript off, because
+there is none. The proposal planned on vendoring htmx for the few places that needed it, and in
+the end only one place did: the Add page, which waits on a discovery that takes a few seconds. A
+`<meta http-equiv="refresh">` every three seconds does that job well enough. Dropping htmx means one
+less vendored dependency to keep patched, and a Content-Security-Policy with no `script-src` at all:
+
+```
+default-src 'none'; style-src 'self'; img-src https:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'
+```
+
+`img-src https:` is for source artwork, which is linked from the publisher and never copied, like
+everything else. A test fails if any page it renders has a `<script>` in it.
+
+## Pages and the API Share One Layer
+
+The pages run in the same process as the API, and calling it over HTTP would need an API token for
+every logged-in user. What they share instead is `internal/app`, which
+holds the operations that are more than one store call: creating a read waits for the server's copy
+of the catalogue to catch up and tells the catalogue about the new demand, deleting a source checks
+nobody reads it, and so on. The API handlers and the page handlers both call it, so the rules live
+in one place, and the website can't do anything the API can't. The philosophy's "the API is the
+only way in" now says this.
+
+## Who Can Reach What
+
+Every page is in one table, and each row says whether it's for admins and what kind of thing its
+`{id}` is: a read, a feed token, a session, an API token, a source or a user. One wrapper does the
+checks that are the same everywhere:
+
+- No session: a GET goes to `/login`, and a POST gets a 403.
+- A POST needs the form's CSRF token, which is tied to the session.
+- An admin page gets a 403 for anyone else.
+
+The handlers then look things up as the logged-in user, so that someone else's read, token or
+session is a 404, the same as in the API. `web.Routes()` exports the table, and the tests walk it:
+every route without a login, every form with a bad token, every admin page as a user, and every
+route that owns an ID with another user's ID in it. A new page is covered as soon as it says what it
+owns, and the test fails if the table loses its owners.
+
+## Browse Stays Local
+
+Browse, Source and Home read only the server's copy of the catalogue. A slow or broken catalogue
+can't take them down, and a test closes the catalogue and loads them. Checking for new entries and
+adding a site do talk to the catalogue, and show the error when it's down.
+
+## Adding a Site
+
+Discovery takes a few seconds, sometimes longer, which is too long to hold a form submission open.
+The Add page starts it in the background and sends you to a page that refreshes until it's done.
+The jobs are kept in memory, last an hour, and are private to whoever started them, and each user
+can have three running. A restart loses them, which costs you pasting the address again.
+
+A candidate that's already a source goes straight to that source. Close matches are listed as links
+next to the candidate, with a note to check them first. If nothing turns up, the page asks for the
+address of the very first page, and crawls forward from there.
+
+## Pace
+
+The pace form has presets: one a day, weekdays, chosen days, the original timing, and an RRULE box
+for anything else. The CLI's shorthand for these moved to `pkg/pacing`, so that both use it.
+`schedule.Describe` turns a pace into words ("Every weekday at 07:00 (UTC), 3 at a time"), for the
+Read page, the feed page and the feed's own description (#30).
+
+## The Feed Page
+
+A feed URL with no extension (`/f/{token}`) is a page instead of a feed. It's for a friend who
+opens their link in a browser. It shows the source, the pace, how many entries are out, the next
+release and links to each format, and for an owner link, the "next one now" button. It shows
+nothing the feed doesn't, and nothing about who else reads it. The response has
+`no-referrer`, `no-store` and a CSP of `default-src 'none'`, and a revoked token gets a 404.
+
+## Users
+
+The proposal said little about managing users, so phase 14 added `GET /users`, `PATCH /users/{id}`
+and `DELETE /users/{id}`, for admins, and `andante user list`, `user edit` and `user rm`.
+
+- **Disabling someone** logs them out and stops their API tokens, but their feed links keep working,
+  so that friends on a group read aren't cut off (#40). An admin can stop the links one by one.
+- **Changing a role** ends all of that user's sessions. Phase 13 couldn't change roles, and
+  [`login.md`](login.md) said this would rotate the session. Ending them is simpler, and the
+  change of role is rare.
+- **Deleting someone** removes their reads and tokens. The page asks first, because it can't be
+  undone, and a read can't be handed to anyone else.
+- **There's always an admin.** Demoting, disabling or deleting the last active one is a 409, and
+  nobody can delete themselves.
+
+## Where This Diverged From the Proposal
+
+- **No htmx,** for the reasons above.
+- **Browse is a plain table** of title, kind, state and last checked. The artwork and the first
+  entries are on the Source page, which keeps Browse to one query.
+- **Editing a source is title, kind and paused or running.** Selectors and the rest of the strategy
+  config are still changed through the API or CLI, because a bad selector there is easier to fix
+  with a probe beside you.
+- **Feed links are on the Read page,** not a page of their own.
+- **The presets are one a day, weekdays and chosen days,** in place of "three a week", which is
+  chosen days with three of them.
+- **Close matches are a note, not a separate step.** The candidate's Add button is right below it.
+- **Account has no TOTP or linked logins yet.** They come with phase 16.

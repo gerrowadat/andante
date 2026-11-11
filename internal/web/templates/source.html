@@ -1,0 +1,28 @@
+{{define "content"}}{{with .Data}}
+{{with .Image}}<img class="art" src="{{.}}" alt="">{{end}}
+<h1>{{.Source.Title}}</h1>
+<p>{{if .Home}}<a href="{{.Home}}" rel="noreferrer">{{.Source.HomeUrl}}</a>{{else}}{{.Source.HomeUrl}}{{end}}</p>
+<dl>
+  <dt>Kind</dt><dd>{{.Source.DefaultKind}}</dd>
+  <dt>State</dt><dd>{{.Source.State}}{{if .Parked}}, parked until someone reads it{{end}}</dd>
+  <dt>Last checked</dt><dd>{{with .Checked}}{{.}}{{else}}never{{end}}</dd>
+  {{with .Source.LastError}}<dt>Last error</dt><dd>{{.}}</dd>{{end}}
+</dl>
+<p><a href="/sources/{{.Source.ID}}/track"><b>Track this</b></a> · choose a pace, and get a feed.</p>
+<form method="post" action="/sources/{{.Source.ID}}/crawl"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Check for new entries now</button></form>
+{{with .Mine}}<h2>Your reads of it</h2><ul>{{range .}}<li><a href="/reads/{{.ID}}">{{.Name}}</a></li>{{end}}</ul>{{end}}
+<h2>The first entries</h2>
+{{with .Entries}}<ol>{{range .}}<li>{{if .Url}}<a href="{{.Url}}" rel="noreferrer">{{.Title}}</a>{{else}}{{.Title}}{{end}}{{with .Date}} <small>{{.}}</small>{{end}}</li>{{end}}</ol>
+{{else}}<p class="muted">Nothing indexed yet.</p>{{end}}
+{{if $.Admin}}
+<h2>Change it</h2>
+<form method="post" action="/sources/{{.Source.ID}}/edit">
+  <input type="hidden" name="csrf" value="{{$.CSRF}}">
+  <label>Title <input type="text" name="title" value="{{.Source.Title}}" required class="long"></label>
+  <label>Kind <select name="kind">{{range .Kinds}}<option value="{{.}}"{{if eq . $.Data.Source.DefaultKind}} selected{{end}}>{{.}}</option>{{end}}</select></label>
+  <label>State <select name="state"><option value="indexing"{{if ne .Source.State "paused"}} selected{{end}}>running</option><option value="paused"{{if eq .Source.State "paused"}} selected{{end}}>paused</option></select></label>
+  <button>Save</button>
+</form>
+<p><a href="/sources/{{.Source.ID}}/delete">Delete this source</a></p>
+{{end}}
+{{end}}{{end}}

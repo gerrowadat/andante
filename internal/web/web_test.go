@@ -21,8 +21,8 @@ import (
 
 	"github.com/gerrowadat/andante/internal/clientip"
 	"github.com/gerrowadat/andante/internal/password"
+	"github.com/gerrowadat/andante/internal/stacktest"
 	"github.com/gerrowadat/andante/internal/store"
-	"github.com/gerrowadat/andante/internal/store/storetest"
 	"github.com/gerrowadat/andante/internal/web"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -61,6 +61,7 @@ func (c *countingHasher) Waste(ctx context.Context, given string) error {
 }
 
 type fixture struct {
+	stack    *stacktest.Stack
 	store    *store.Store
 	hasher   *countingHasher
 	registry *prometheus.Registry
@@ -93,6 +94,7 @@ func (f *fixture) serve(t *testing.T, baseURL string, passwordLogin bool) {
 	f.server = httptest.NewServer(web.New(web.Options{
 		Store: f.store, Hasher: f.hasher, Clients: clients, BaseURL: baseURL, PasswordLogin: passwordLogin,
 		Registry: f.registry, Logger: slog.New(slog.DiscardHandler), Now: f.clock,
+		App: f.stack.App, DefaultTimezone: "UTC",
 	}))
 	t.Cleanup(f.server.Close)
 }
@@ -103,7 +105,8 @@ func newFixture(t *testing.T) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := &fixture{store: storetest.New(t), hasher: &countingHasher{Hasher: h}, now: time.Now().UTC().Truncate(time.Second)}
+	stack := stacktest.New(t)
+	f := &fixture{stack: stack, store: stack.Store, hasher: &countingHasher{Hasher: h}, now: time.Now().UTC().Truncate(time.Second)}
 	f.serve(t, "https://andante.example", true)
 	return f
 }
@@ -577,7 +580,7 @@ func TestHeaders(t *testing.T) {
 	for _, path := range []string{"/login", "/", "/invite/nonsense"} {
 		got := f.do(t, http.MethodGet, path, nil, home, "")
 		for name, want := range map[string]string{
-			"Content-Security-Policy":   "default-src 'none'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+			"Content-Security-Policy":   "default-src 'none'; style-src 'self'; img-src https:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
 			"Strict-Transport-Security": "max-age=31536000",
 			"X-Content-Type-Options":    "nosniff",
 			"Referrer-Policy":           "no-referrer",

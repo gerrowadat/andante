@@ -110,14 +110,13 @@ func (h *handler) importOutline(ctx context.Context, outline feed.Outline, resul
 		if attempt > 1 {
 			slug += "-" + strconv.Itoa(attempt)
 		}
-		created, err := h.catalogue.CreateSource(ctx, replica.SourceCreate{
+		created, err := h.app.CreateSource(ctx, replica.SourceCreate{
 			SourceCreate: client.SourceCreate{Slug: slug, Title: title, HomeURL: home, DefaultKind: client.Article, Config: config},
 			State:        statePaused,
 		})
 		var p *httpapi.Error
 		switch {
 		case err == nil:
-			h.caughtUp(ctx)
 			result.Status, result.SourceID = client.OPMLOutlineResultStatusCreated, &created.ID
 			return
 		case !errors.As(err, &p):

@@ -1,0 +1,22 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright (C) 2026 Dave O'Connor */
+:root { color-scheme: light dark; --line: #8884; --muted: #888; }
+body { font: 16px/1.5 system-ui, sans-serif; max-width: 52rem; margin: 0 auto; padding: 0 1rem 3rem; }
+header { display: flex; flex-wrap: wrap; gap: .25rem 1rem; align-items: baseline; border-bottom: 1px solid var(--line); padding: .75rem 0; margin-bottom: 1rem; }
+header .brand { font-weight: bold; margin-right: auto; }
+header form { display: inline; }
+nav a { margin-right: .75rem; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: .35rem .5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+form.inline { display: inline; }
+fieldset { border: 1px solid var(--line); margin: 1rem 0; }
+label { display: block; margin: .4rem 0; }
+label.choice { display: inline; margin-right: 1rem; }
+input[type=text], input[type=url], input[type=password], input[type=number], select { font: inherit; padding: .2rem .3rem; max-width: 100%; }
+input.long { width: 100%; }
+button { font: inherit; padding: .25rem .8rem; cursor: pointer; }
+.muted, small { color: var(--muted); }
+.alert { border-left: 4px solid #c33; padding: .25rem .75rem; }
+.note { border-left: 4px solid #39c; padding: .25rem .75rem; }
+code, .url { overflow-wrap: anywhere; }
+img.art { max-width: 6rem; max-height: 6rem; float: right; margin-left: 1rem; }
