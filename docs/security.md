@@ -30,7 +30,7 @@ dependency needs it.
 ## Logins
 
 How logins work, and why, is in [the design record](design/login.md). `andante audit` shows who did what.
-If an account is compromised, run `andante-server user reset`.
+If an account is compromised, run `andante-server user reset`, which also turns off its two-factor.
 
 ## Where Results Appear
 

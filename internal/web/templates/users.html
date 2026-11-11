@@ -1,9 +1,9 @@
 {{define "content"}}{{with .Data}}
 <h1>Users</h1>
 <table>
-<tr><th>Name</th><th>Role</th><th>State</th><th></th></tr>
+<tr><th>Name</th><th>Role</th><th>State</th><th>Two-factor</th><th></th></tr>
 {{range .Users}}<tr>
-  <td>{{.Name}}</td><td>{{.Role}}</td><td>{{if .Disabled}}disabled{{else}}active{{end}}</td>
+  <td>{{.Name}}</td><td>{{.Role}}</td><td>{{if .Disabled}}disabled{{else}}active{{end}}</td><td>{{if .TwoFactor}}on{{else}}off{{end}}</td>
   <td>
     <form class="inline" method="post" action="/users/{{.ID}}"><input type="hidden" name="csrf" value="{{$.CSRF}}">
       {{if eq .Role "admin"}}<button name="action" value="user">Make a user</button>{{else}}<button name="action" value="admin">Make an admin</button>{{end}}
@@ -12,11 +12,19 @@
     <form class="inline" method="post" action="/users/invite"><input type="hidden" name="csrf" value="{{$.CSRF}}">
       <input type="hidden" name="name" value="{{.Name}}"><input type="hidden" name="reset" value="1"><button>New password link</button>
     </form>
+    {{if .TwoFactor}}<form class="inline" method="post" action="/users/{{.ID}}/two-factor/off"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Turn off two-factor</button></form>{{end}}
     {{if not .Self}}<a href="/users/{{.ID}}/delete">Delete</a>{{end}}
   </td>
 </tr>{{end}}
 </table>
 <p class="muted">A new password link lets someone set a new password, and using it logs them out everywhere else. Disabling someone logs them out and stops their API tokens. Their feed links keep working, so that friends on a group read aren't cut off.</p>
+<h2>Two-factor</h2>
+<form method="post" action="/users/two-factor">
+  <input type="hidden" name="csrf" value="{{$.CSRF}}">
+  <label class="choice"><input type="checkbox" name="require" value="1"{{if .RequireTwoFactor}} checked{{end}}> Everyone who logs in with a password needs two-factor</label>
+  <button>Save</button>
+</form>
+<p class="muted">Someone without it is sent to set it up before they can do anything else. Logins with single sign-on are left to the provider. Turning off someone's two-factor is for when they've lost their phone and their recovery codes.</p>
 <h2>Invite someone</h2>
 <form method="post" action="/users/invite">
   <input type="hidden" name="csrf" value="{{$.CSRF}}">

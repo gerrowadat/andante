@@ -269,6 +269,8 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		Registry: reg, Logger: logger, Now: now,
 		App:             &app.App{Store: st, Reads: readService, Catalogue: catalogue, Sync: syncer, Logger: logger},
 		DefaultTimezone: cfg.DefaultTimezone,
+		Box:             box,
+		OIDC:            oidcOptions(cfg),
 	})
 
 	public := server.NewPublic(server.PublicOptions{
@@ -295,6 +297,16 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	cancel()
 	wg.Wait()
 	return err
+}
+
+func oidcOptions(cfg config.Config) *web.OIDCOptions {
+	if cfg.OIDCIssuer == "" {
+		return nil
+	}
+	return &web.OIDCOptions{
+		Issuer: cfg.OIDCIssuer, ClientID: cfg.OIDCClientID, ClientSecret: cfg.OIDCClientSecret,
+		AllowedDomains: cfg.OIDCAllowedDomain, AllowedGroups: cfg.OIDCAllowedGroup,
+	}
 }
 
 func newLogger(format, level string, w io.Writer) *slog.Logger {

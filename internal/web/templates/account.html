@@ -1,12 +1,22 @@
 {{define "content"}}{{with .Data}}
 <h1>{{$.Me}}</h1>
-<h2>Password</h2>
+{{if .Password}}<h2>Password</h2>
 <form method="post" action="/account/password">
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
   <label>Current password <input type="password" name="current" autocomplete="current-password" required></label>
   <label>New password <input type="password" name="password" autocomplete="new-password" minlength="12" maxlength="128" required></label>
   <button>Change it</button>
 </form>
+<h2>Two-factor</h2>
+{{if .TwoFactor}}<p>On. You have {{.RecoveryLeft}} recovery codes left.</p>
+<form method="post" action="/account/two-factor/off">
+  <input type="hidden" name="csrf" value="{{$.CSRF}}">
+  <label class="choice">A code, or a recovery code <input type="text" name="code" autocomplete="one-time-code" required></label>
+  <button>Turn it off</button>
+</form>
+{{else}}<p>Off. With it on, logging in takes a code from an app on your phone as well as your password.</p>
+<p><a href="/account/two-factor">Set it up</a></p>{{end}}
+{{end}}
 <h2>Where you're logged in</h2>
 <table>
 <tr><th>From</th><th>Since</th><th>Last seen</th><th></th></tr>

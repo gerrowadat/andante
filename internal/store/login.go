@@ -29,6 +29,12 @@ type Session struct {
 	UserID int64
 	Name   string
 	Role   string
+	Method string
+	// HasPassword and HasTOTP say what the user has set up.
+	HasPassword, HasTOTP bool
+	// NeedsTOTP means two-factor is required and this session has to set it up
+	// before it can do anything else.
+	NeedsTOTP bool
 }
 
 // Client is where a request came from.
@@ -46,14 +52,14 @@ func (s *Store) GetUserByName(ctx context.Context, name string) (db.User, error)
 	return user, nil
 }
 
-func insertSession(ctx context.Context, q *db.Queries, userID int64, client Client, now time.Time) (string, error) {
+func insertSession(ctx context.Context, q *db.Queries, userID int64, method string, client Client, now time.Time) (string, error) {
 	raw, err := newToken()
 	if err != nil {
 		return "", err
 	}
 	hash := sha256.Sum256([]byte(raw))
 	_, err = q.InsertSession(ctx, db.InsertSessionParams{
-		UserID: userID, TokenHash: hash[:], Ip: client.IP, UserAgent: client.UserAgent, CreatedAt: now,
+		UserID: userID, TokenHash: hash[:], Ip: client.IP, UserAgent: client.UserAgent, CreatedAt: now, Method: method,
 	})
 	if err != nil {
 		return "", fmt.Errorf("insert session: %w", err)
@@ -61,10 +67,10 @@ func insertSession(ctx context.Context, q *db.Queries, userID int64, client Clie
 	return raw, nil
 }
 
-// CreateSession logs a user in, and returns the cookie's value, which exists nowhere
-// else.
+// CreateSession logs a user in with a password, and returns the cookie's value, which
+// exists nowhere else.
 func (s *Store) CreateSession(ctx context.Context, userID int64, client Client, now time.Time) (string, error) {
-	return insertSession(ctx, s.queries, userID, client, now)
+	return insertSession(ctx, s.queries, userID, MethodPassword, client, now)
 }
 
 // LookupSession returns the live session raw stands for, or ErrNotFound. It notes
@@ -85,7 +91,11 @@ func (s *Store) LookupSession(ctx context.Context, raw string, now time.Time) (S
 			return Session{}, fmt.Errorf("record session use: %w", err)
 		}
 	}
-	return Session{ID: row.ID, UserID: row.UserID, Name: row.Name, Role: row.Role}, nil
+	return Session{
+		ID: row.ID, UserID: row.UserID, Name: row.Name, Role: row.Role, Method: row.Method,
+		HasPassword: row.HasPassword, HasTOTP: row.HasTotp,
+		NeedsTOTP: row.RequireTotp && row.Method == MethodPassword && !row.HasTotp,
+	}, nil
 }
 
 // ListSessions returns up to limit of a user's live sessions with IDs above after.
@@ -174,6 +184,21 @@ func (s *Store) LookupInvite(ctx context.Context, raw string, now time.Time) (db
 // invite is for a new one, ends every other session, and logs them in. Holding the
 // invite's row means two tabs can't both use it.
 func (s *Store) RedeemInvite(ctx context.Context, raw, passwordHash string, client Client, now time.Time) (db.User, string, error) {
+	return s.redeem(ctx, raw, MethodPassword, client, now, func(q *db.Queries, user db.User) error {
+		return q.SetPassword(ctx, db.SetPasswordParams{ID: user.ID, PasswordHash: &passwordHash})
+	})
+}
+
+// RedeemInviteWithIdentity is RedeemInvite for someone who logged in at an OpenID
+// provider: the identity is linked to the user in place of a password. It's
+// ErrConflict if the identity already belongs to someone.
+func (s *Store) RedeemInviteWithIdentity(ctx context.Context, raw string, id Identity, client Client, now time.Time) (db.User, string, error) {
+	return s.redeem(ctx, raw, MethodOIDC, client, now, func(q *db.Queries, user db.User) error {
+		return q.InsertIdentity(ctx, db.InsertIdentityParams{UserID: user.ID, Issuer: id.Issuer, Subject: id.Subject, CreatedAt: now})
+	})
+}
+
+func (s *Store) redeem(ctx context.Context, raw, method string, client Client, now time.Time, set func(*db.Queries, db.User) error) (db.User, string, error) {
 	hash := sha256.Sum256([]byte(raw))
 	var (
 		user    db.User
@@ -193,7 +218,7 @@ func (s *Store) RedeemInvite(ctx context.Context, raw, passwordHash string, clie
 		if err != nil {
 			return err
 		}
-		if err := q.SetPassword(ctx, db.SetPasswordParams{ID: user.ID, PasswordHash: &passwordHash}); err != nil {
+		if err := set(q, user); err != nil {
 			return err
 		}
 		if err := q.RevokeAllSessions(ctx, db.RevokeAllSessionsParams{UserID: user.ID, At: &now}); err != nil {
@@ -202,7 +227,7 @@ func (s *Store) RedeemInvite(ctx context.Context, raw, passwordHash string, clie
 		if err := q.UseInvite(ctx, db.UseInviteParams{ID: invite.ID, UsedAt: &now}); err != nil {
 			return err
 		}
-		session, err = insertSession(ctx, q, user.ID, client, now)
+		session, err = insertSession(ctx, q, user.ID, method, client, now)
 		return err
 	})
 	if err != nil {

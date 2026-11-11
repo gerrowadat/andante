@@ -61,6 +61,14 @@ type FeedToken struct {
 	LastSeenAt  *time.Time
 }
 
+type Identity struct {
+	ID        int64
+	UserID    int64
+	Issuer    string
+	Subject   string
+	CreatedAt time.Time
+}
+
 type Invite struct {
 	ID        int64
 	TokenHash []byte
@@ -101,6 +109,13 @@ type ReadSegment struct {
 	CreatedAt  time.Time
 }
 
+type RecoveryCode struct {
+	ID       int64
+	UserID   int64
+	CodeHash []byte
+	UsedAt   *time.Time
+}
+
 type SecretCheck struct {
 	OnlyRow bool
 	Sealed  []byte
@@ -115,6 +130,12 @@ type Session struct {
 	CreatedAt  time.Time
 	LastSeenAt time.Time
 	RevokedAt  *time.Time
+	Method     string
+}
+
+type Setting struct {
+	OnlyRow     bool
+	RequireTotp bool
 }
 
 type Source struct {
@@ -140,10 +161,13 @@ type SyncState struct {
 }
 
 type User struct {
-	ID           int64
-	Name         string
-	Role         string
-	CreatedAt    time.Time
-	DisabledAt   *time.Time
-	PasswordHash *string
+	ID            int64
+	Name          string
+	Role          string
+	CreatedAt     time.Time
+	DisabledAt    *time.Time
+	PasswordHash  *string
+	TotpSealed    []byte
+	TotpEnabledAt *time.Time
+	TotpLastStep  int64
 }

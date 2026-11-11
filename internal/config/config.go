@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/gerrowadat/andante/internal/clientip"
@@ -35,6 +36,12 @@ type Config struct {
 
 	TrustedProxies []string `name:"trusted-proxies" env:"ANDANTE_TRUSTED_PROXIES" help:"CIDRs of proxies whose X-Forwarded-For to believe."`
 	PasswordLogin  bool     `name:"password-login" env:"ANDANTE_PASSWORD_LOGIN" default:"true" negatable:"" help:"Allow logging in with a password."`
+
+	OIDCIssuer        string   `name:"oidc-issuer" env:"ANDANTE_OIDC_ISSUER" help:"OpenID provider to log in with. Off when unset."`
+	OIDCClientID      string   `name:"oidc-client-id" env:"ANDANTE_OIDC_CLIENT_ID" help:"Client ID at the OpenID provider."`
+	OIDCClientSecret  string   `name:"oidc-client-secret" env:"ANDANTE_OIDC_CLIENT_SECRET" help:"Client secret at the OpenID provider, if it gave one."`
+	OIDCAllowedDomain []string `name:"oidc-allowed-domain" env:"ANDANTE_OIDC_ALLOWED_DOMAIN" help:"Email domains whose people can log in with the provider without an invite."`
+	OIDCAllowedGroup  []string `name:"oidc-allowed-group" env:"ANDANTE_OIDC_ALLOWED_GROUP" help:"Groups whose members can log in with the provider without an invite."`
 
 	CatalogueURL   string        `name:"catalogue-url" env:"ANDANTE_CATALOGUE_URL" required:"" help:"Address of andante-catalogue."`
 	CatalogueToken string        `name:"catalogue-token" env:"ANDANTE_CATALOGUE_TOKEN" required:"" help:"The catalogue's API token."`
@@ -105,10 +112,33 @@ func (c *Config) Validate() error {
 	if c.TestClockOffset < 0 {
 		errs = append(errs, fmt.Errorf("--test-clock-offset cannot be negative, got %s", c.TestClockOffset))
 	}
+	errs = append(errs, c.validateOIDC()...)
 	if c.ReplayMinDatedShare < 0 || c.ReplayMinDatedShare > 1 {
 		errs = append(errs, fmt.Errorf("--replay-min-dated-share must be from 0 to 1, got %v", c.ReplayMinDatedShare))
 	}
 	return errors.Join(errs...)
+}
+
+func (c *Config) validateOIDC() []error {
+	var errs []error
+	if c.OIDCIssuer == "" {
+		if c.OIDCClientID != "" || c.OIDCClientSecret != "" || len(c.OIDCAllowedDomain) > 0 || len(c.OIDCAllowedGroup) > 0 {
+			errs = append(errs, errors.New("the --oidc-* flags need --oidc-issuer"))
+		}
+		return errs
+	}
+	if u, err := url.Parse(c.OIDCIssuer); err != nil || u.Scheme != "https" || u.Host == "" {
+		errs = append(errs, fmt.Errorf("--oidc-issuer must be an https URL, got %q", c.OIDCIssuer))
+	}
+	if c.OIDCClientID == "" {
+		errs = append(errs, errors.New("--oidc-issuer needs --oidc-client-id"))
+	}
+	for _, d := range c.OIDCAllowedDomain {
+		if d == "" || strings.ContainsAny(d, "@/ ") {
+			errs = append(errs, fmt.Errorf("--oidc-allowed-domain takes a domain such as example.com, got %q", d))
+		}
+	}
+	return errs
 }
 
 func validateURL(flag, raw string) error {

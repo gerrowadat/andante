@@ -92,3 +92,43 @@ func (h *handler) DeleteUser(ctx context.Context, r gen.DeleteUserRequestObject)
 	h.audit(ctx, "user.deleted", user.Name)
 	return gen.DeleteUser204Response{}, nil
 }
+
+func (h *handler) settings(ctx context.Context) (client.Settings, error) {
+	on, err := h.store.RequireTOTP(ctx)
+	if err != nil {
+		return client.Settings{}, err
+	}
+	return client.Settings{RequireTwoFactor: on}, nil
+}
+
+func (h *handler) GetSettings(ctx context.Context, _ gen.GetSettingsRequestObject) (gen.GetSettingsResponseObject, error) {
+	if !actorOf(ctx).Admin {
+		return nil, forbidden("only an admin can read the settings")
+	}
+	body, err := h.settings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return gen.GetSettings200JSONResponse(body), nil
+}
+
+func (h *handler) UpdateSettings(ctx context.Context, r gen.UpdateSettingsRequestObject) (gen.UpdateSettingsResponseObject, error) {
+	if !actorOf(ctx).Admin {
+		return nil, forbidden("only an admin can change the settings")
+	}
+	if on := r.Body.RequireTwoFactor; on != nil {
+		if err := h.store.SetRequireTOTP(ctx, *on); err != nil {
+			return nil, err
+		}
+		what := "two-factor.optional"
+		if *on {
+			what = "two-factor.required"
+		}
+		h.audit(ctx, "settings.changed", what)
+	}
+	body, err := h.settings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return gen.UpdateSettings200JSONResponse(body), nil
+}

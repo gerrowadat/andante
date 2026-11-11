@@ -21,16 +21,26 @@ func page(body string) *template.Template {
 var (
 	loginPage = page(`  <h1>Log in</h1>
   {{with .Error}}<p role="alert">{{.}}</p>{{end}}
-  <form method="post" action="/login">
+  {{if .Password}}<form method="post" action="/login">
     <p><label>Username <input name="name" autocomplete="username" required autofocus></label></p>
     <p><label>Password <input name="password" type="password" autocomplete="current-password" required></label></p>
     <p><button>Log in</button></p>
+  </form>{{end}}
+  {{if .OIDC}}<p><a href="/login/oidc">Log in with single sign-on</a></p>{{end}}`)
+
+	codePage = page(`  <h1>Two-factor</h1>
+  {{with .Error}}<p role="alert">{{.}}</p>{{end}}
+  <form method="post" action="/login/code">
+    <p><label>The code from your authenticator app, or a recovery code
+      <input name="code" autocomplete="one-time-code" required autofocus></label></p>
+    <p><button>Log in</button></p>
   </form>`)
 
-	invitePage = page(`  <h1>Set a password for {{.Name}}</h1>
+	invitePage = page(`  <h1>Welcome, {{.Name}}</h1>
   {{with .Error}}<p role="alert">{{.}}</p>{{end}}
-  <form method="post">
-    <p><label>Password <input name="password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required autofocus></label></p>
+  {{if .Password}}<form method="post">
+    <p><label>Choose a password <input name="password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required autofocus></label></p>
     <p><button>Set password</button></p>
-  </form>`)
+  </form>{{end}}
+  {{if .OIDC}}<p><a href="/invite/{{.Token}}/oidc">{{if .Password}}Or use{{else}}Use{{end}} single sign-on</a></p>{{end}}`)
 )

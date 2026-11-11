@@ -2,8 +2,8 @@
 
 The website. A logged-in user can do everything the CLI can: browse and add sources, track one at a
 pace, manage a read and its feed links, and look after their account. Admins also get the Users page
-and can edit and delete sources. Login itself is in [`login.md`](login.md). OIDC and TOTP are still
-in [`../proposals/web-ui.md`](../proposals/web-ui.md).
+and can edit and delete sources. Login itself, with two-factor and OIDC, is in
+[`login.md`](login.md).
 
 ## Pages
 
@@ -123,4 +123,5 @@ and `DELETE /users/{id}`, for admins, and `andante user list`, `user edit` and `
 - **The presets are one a day, weekdays and chosen days,** in place of "three a week", which is
   chosen days with three of them.
 - **Close matches are a note, not a separate step.** The candidate's Add button is right below it.
-- **Account has no TOTP or linked logins yet.** They come with phase 16.
+- **Account has two-factor but no linked logins.** Linking a provider goes through a reset invite.
+  See [`login.md`](login.md).

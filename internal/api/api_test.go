@@ -2002,3 +2002,30 @@ func TestARoleChangeEndsSessions(t *testing.T) {
 		t.Errorf("an admin stepping down with another left: %d", resp.StatusCode())
 	}
 }
+
+func TestSettings(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	bob := f.user(t, "bob", false)
+	on := true
+
+	if got, err := bob.client.GetSettingsWithResponse(ctx); err != nil || got.StatusCode() != http.StatusForbidden {
+		t.Errorf("a user reading them: %v %d", err, got.StatusCode())
+	}
+	if got, err := bob.client.UpdateSettingsWithApplicationMergePatchPlusJSONBodyWithResponse(ctx, client.SettingsPatch{RequireTwoFactor: &on}); err != nil || got.StatusCode() != http.StatusForbidden {
+		t.Errorf("a user changing them: %v %d", err, got.StatusCode())
+	}
+	if got, err := f.client.GetSettingsWithResponse(ctx); err != nil || got.JSON200 == nil || got.JSON200.RequireTwoFactor {
+		t.Errorf("by default: %v %+v", err, got.JSON200)
+	}
+	got, err := f.client.UpdateSettingsWithApplicationMergePatchPlusJSONBodyWithResponse(ctx, client.SettingsPatch{RequireTwoFactor: &on})
+	if err != nil || got.JSON200 == nil || !got.JSON200.RequireTwoFactor {
+		t.Fatalf("require two-factor: %v %d", err, got.StatusCode())
+	}
+	if required, err := f.store.RequireTOTP(ctx); err != nil || !required {
+		t.Errorf("stored = %v, %v", required, err)
+	}
+	if same, err := f.client.UpdateSettingsWithApplicationMergePatchPlusJSONBodyWithResponse(ctx, client.SettingsPatch{}); err != nil || same.JSON200 == nil || !same.JSON200.RequireTwoFactor {
+		t.Errorf("an empty patch changed them: %v", err)
+	}
+}

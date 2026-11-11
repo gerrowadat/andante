@@ -9,7 +9,9 @@ require (
 	github.com/PuerkitoBio/goquery v1.13.0
 	github.com/alecthomas/kong v1.17.0
 	github.com/andybalholm/cascadia v1.3.5
+	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/getkin/kin-openapi v0.152.0
+	github.com/go-jose/go-jose/v4 v4.1.9
 	github.com/jackc/pgx/v5 v5.12.0
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/mmcdole/gofeed v1.5.0
@@ -17,6 +19,7 @@ require (
 	github.com/oapi-codegen/nullable v1.2.0
 	github.com/oapi-codegen/runtime v1.8.0
 	github.com/piprate/json-gold v0.9.1
+	github.com/pquerna/otp v1.5.0
 	github.com/pressly/goose/v3 v3.29.0
 	github.com/prometheus/client_golang v1.25.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
@@ -24,6 +27,7 @@ require (
 	github.com/teambition/rrule-go v1.8.2
 	github.com/temoto/robotstxt v1.1.2
 	golang.org/x/crypto v0.58.0
+	golang.org/x/oauth2 v0.38.0
 	golang.org/x/text v0.43.0
 	golang.org/x/time v0.14.0
 	pgregory.net/rapid v1.3.0
@@ -34,6 +38,7 @@ require (
 	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/boombuler/barcode v1.0.1-0.20190219062509-6c824513bacc // indirect
 	github.com/cayleygraph/quad v1.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/dprotaso/go-yit v0.0.0-20220510233725-9ba8df137936 // indirect

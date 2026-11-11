@@ -706,6 +706,22 @@ func TestLoginCommands(t *testing.T) {
 	}
 }
 
+func TestSettingsCommands(t *testing.T) {
+	h := newHarness(t)
+	if got := h.ok(t, "settings"); !strings.Contains(got, "false") {
+		t.Errorf("settings = %s", got)
+	}
+	if got := h.ok(t, "settings", "set", "--require-two-factor"); !strings.Contains(got, "true") {
+		t.Errorf("set = %s", got)
+	}
+	if got := h.ok(t, "settings", "set"); !strings.Contains(got, "true") {
+		t.Errorf("set with nothing changed = %s", got)
+	}
+	if got := h.ok(t, "settings", "set", "--require-two-factor=false"); !strings.Contains(got, "false") {
+		t.Errorf("set back = %s", got)
+	}
+}
+
 func TestUserCommands(t *testing.T) {
 	h := newHarness(t)
 	_, _ = storetest.User(t, h.store, "bob", false)

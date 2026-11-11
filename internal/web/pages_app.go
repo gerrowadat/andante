@@ -29,17 +29,19 @@ func view(name string) *template.Template {
 }
 
 var (
-	homeView    = view("home")
-	browseView  = view("browse")
-	sourceView  = view("source")
-	trackView   = view("track")
-	readView    = view("read")
-	repaceView  = view("repace")
-	confirmView = view("confirm")
-	addView     = view("add")
-	foundView   = view("found")
-	usersView   = view("users")
-	accountView = view("account")
+	homeView      = view("home")
+	browseView    = view("browse")
+	sourceView    = view("source")
+	trackView     = view("track")
+	readView      = view("read")
+	repaceView    = view("repace")
+	confirmView   = view("confirm")
+	addView       = view("add")
+	foundView     = view("found")
+	usersView     = view("users")
+	accountView   = view("account")
+	twoFactorView = view("two_factor")
+	recoveryView  = view("recovery")
 )
 
 // owns says what a route's ID belongs to, so that a test can try every route with
@@ -67,8 +69,10 @@ type visitor struct {
 type route struct {
 	pattern string
 	admin   bool
-	owns    owns
-	handle  func(*site, http.ResponseWriter, *http.Request, visitor)
+	// setup routes are the only ones open to someone who has to set up two-factor.
+	setup  bool
+	owns   owns
+	handle func(*site, http.ResponseWriter, *http.Request, visitor)
 }
 
 // RouteInfo describes a page, for tests.
@@ -122,6 +126,12 @@ var routes = []route{
 	{pattern: "POST /account/sessions/{id}/end", owns: ownsSession, handle: (*site).endSession},
 	{pattern: "POST /account/tokens", handle: (*site).addAPIToken},
 	{pattern: "POST /account/tokens/{id}/revoke", owns: ownsAPIToken, handle: (*site).revokeAPIToken},
+	{pattern: "GET /account/two-factor", setup: true, handle: (*site).twoFactorSetup},
+	{pattern: "GET /account/two-factor/qr", setup: true, handle: (*site).twoFactorQR},
+	{pattern: "POST /account/two-factor", setup: true, handle: (*site).enableTwoFactor},
+	{pattern: "POST /account/two-factor/off", handle: (*site).disableTwoFactor},
+	{pattern: "POST /users/two-factor", admin: true, handle: (*site).requireTwoFactor},
+	{pattern: "POST /users/{id}/two-factor/off", admin: true, owns: ownsUser, handle: (*site).resetTwoFactor},
 }
 
 func staticHandler() http.Handler {
@@ -180,6 +190,14 @@ func (s *site) guard(rt route) http.HandlerFunc {
 			}
 		}
 		v := visitor{session: session, raw: raw, actor: store.Actor{UserID: session.UserID, Admin: session.Role == store.RoleAdmin, Name: session.Name}}
+		if v.session.NeedsTOTP && !rt.setup {
+			if r.Method == http.MethodGet {
+				http.Redirect(w, r, "/account/two-factor", http.StatusSeeOther)
+				return
+			}
+			http.Error(w, "set up two-factor first", http.StatusForbidden)
+			return
+		}
 		if rt.admin && !v.actor.Admin {
 			http.Error(w, "only an admin can do this", http.StatusForbidden)
 			return

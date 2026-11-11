@@ -8,12 +8,14 @@ UPDATE users SET password_hash = $2 WHERE id = $1;
 UPDATE users SET password_hash = NULL WHERE id = $1;
 
 -- name: InsertSession :one
-INSERT INTO sessions (user_id, token_hash, ip, user_agent, created_at, last_seen_at)
-VALUES ($1, $2, $3, $4, $5, $5)
+INSERT INTO sessions (user_id, token_hash, ip, user_agent, created_at, last_seen_at, method)
+VALUES ($1, $2, $3, $4, $5, $5, $6)
 RETURNING *;
 
 -- name: GetLiveSession :one
-SELECT s.id, s.user_id, s.last_seen_at, u.name, u.role
+SELECT s.id, s.user_id, s.last_seen_at, s.method, u.name, u.role,
+       (u.password_hash IS NOT NULL)::boolean AS has_password, (u.totp_enabled_at IS NOT NULL)::boolean AS has_totp,
+       coalesce((SELECT require_totp FROM settings), false)::boolean AS require_totp
 FROM sessions s JOIN users u ON u.id = s.user_id
 WHERE s.token_hash = sqlc.arg(token_hash) AND s.revoked_at IS NULL AND u.disabled_at IS NULL
   AND s.created_at > sqlc.arg(created_after) AND s.last_seen_at > sqlc.arg(seen_after);

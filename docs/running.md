@@ -117,6 +117,9 @@ andante invite add alex
 The link works once and lasts a week. With an `http://` base URL the session cookie isn't `Secure`, which
 is only good enough for trying it out. An admin can also invite people from the Users page.
 
+With an OpenID provider set up, the login and invite pages have single sign-on as well. See
+[configuration](configuration.md#logging-in-with-a-provider).
+
 ### On the Website
 
 Open the base URL and log in.
@@ -131,7 +134,12 @@ Open the base URL and log in.
    account, and opening the link in a browser shows them what it is and how fast it goes.
 
 Pause, skip, jump and change the pace from the same page. The Account page has your password,
-your logged-in browsers and API tokens for the CLI.
+two-factor, your logged-in browsers and API tokens for the CLI.
+
+Two-factor takes a code from an authenticator app as well as your password. Setting it up gives you
+ten recovery codes, each good for one login without your phone. An admin can require it for
+everyone who logs in with a password, on the Users page or with `andante settings set
+--require-two-factor`, and can turn off someone's if they've lost their phone and their codes.
 
 The rest of this section does the same things with the CLI.
 

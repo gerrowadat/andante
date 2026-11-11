@@ -105,3 +105,42 @@ func (a *app) auditCmd() *cobra.Command {
 	p.add(audit)
 	return audit
 }
+
+func (a *app) settingsCmd() *cobra.Command {
+	showSettings := func(w *table, s *client.Settings) {
+		w.printf("Require two-factor:\t%t\n", s.RequireTwoFactor)
+	}
+	settings := operation(&cobra.Command{
+		Use:   "settings",
+		Short: "Show the site's settings. Admins only.",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			resp, err := a.client.GetSettingsWithResponse(cmd.Context())
+			if err != nil {
+				return err
+			}
+			return a.show(resp.StatusCode(), resp.Body, func(w *table) { showSettings(w, resp.JSON200) })
+		},
+	}, "getSettings")
+
+	var requireTwoFactor bool
+	set := operation(&cobra.Command{
+		Use:   "set",
+		Short: "Change the site's settings. Admins only.",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			var patch client.SettingsPatch
+			if cmd.Flags().Changed("require-two-factor") {
+				patch.RequireTwoFactor = &requireTwoFactor
+			}
+			resp, err := a.client.UpdateSettingsWithApplicationMergePatchPlusJSONBodyWithResponse(cmd.Context(), patch)
+			if err != nil {
+				return err
+			}
+			return a.show(resp.StatusCode(), resp.Body, func(w *table) { showSettings(w, resp.JSON200) })
+		},
+	}, "updateSettings")
+	set.Flags().BoolVar(&requireTwoFactor, "require-two-factor", false, "make everyone who logs in to the website with a password set up two-factor")
+	settings.AddCommand(set)
+	return settings
+}

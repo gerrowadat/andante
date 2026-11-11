@@ -19,6 +19,11 @@ has its own.
 | `--ops-listen` | `ANDANTE_OPS_LISTEN` | `127.0.0.1:8081` | Ops listener (health, metrics) |
 | `--trusted-proxies` | `ANDANTE_TRUSTED_PROXIES` | none | CIDRs of proxies whose `X-Forwarded-For` to believe. Set this behind a proxy, or every login looks like it comes from the proxy |
 | `--password-login` | `ANDANTE_PASSWORD_LOGIN` | on | Allow logging in with a password. `--no-password-login` turns it off |
+| `--oidc-issuer` | `ANDANTE_OIDC_ISSUER` | none | An OpenID provider to log in with, as an `https://` URL. Off when unset |
+| `--oidc-client-id` | `ANDANTE_OIDC_CLIENT_ID` | none | The client ID the provider gave you. Needed with `--oidc-issuer` |
+| `--oidc-client-secret` | `ANDANTE_OIDC_CLIENT_SECRET` | none | The client secret, if the provider gave you one |
+| `--oidc-allowed-domain` | `ANDANTE_OIDC_ALLOWED_DOMAIN` | none | Email domains whose people can log in with the provider without an invite. The email has to be verified |
+| `--oidc-allowed-group` | `ANDANTE_OIDC_ALLOWED_GROUP` | none | Groups, from the ID token's `groups` claim, whose members can log in without an invite |
 | `--catalogue-url` | `ANDANTE_CATALOGUE_URL` | required | Address of `andante-catalogue`, including `/v1` |
 | `--catalogue-token` | `ANDANTE_CATALOGUE_TOKEN` | required | The catalogue's API token |
 | `--demand-interval` | `ANDANTE_DEMAND_INTERVAL` | `30s` | How often to tell the catalogue how far readers have got |
@@ -84,7 +89,8 @@ andante-server user link dave --base-url https://feeds.example.com
 ```
 
 After that, an admin can invite people with `andante invite add`. If an account is lost or compromised,
-this revokes its API tokens, ends its sessions, clears its password and prints a new token:
+this revokes its API tokens, ends its sessions, clears its password and two-factor, and prints a new
+token:
 
 ```sh
 andante-server user reset dave
@@ -93,7 +99,7 @@ andante-server user reset dave
 ## The Secret
 
 `--secret` is the key for the encrypted copy of each feed token, which is what lets a URL be shown
-again. Use `openssl rand -hex 32`. The server refuses to start with a different secret to the one
+again, and for two-factor secrets. Use `openssl rand -hex 32`. The server refuses to start with a different secret to the one
 the database was set up with, so a typo can't quietly break anything.
 
 To change it:
@@ -104,6 +110,23 @@ ANDANTE_NEW_SECRET=... andante-server rotate-secret
 
 If it's lost, `--forget-urls` starts again with a new one. Feed tokens carry on working, because
 they're looked up by hash, but their URLs can't be shown again and `token list` shows a dash.
+Two-factor is turned off for everyone, because a code can't be checked without the secret, so
+anyone who had it has to set it up again.
+
+## Logging In With a Provider
+
+Register andante with your OpenID provider as a web application, with
+`<base-url>/login/oidc/callback` as the redirect URI, and give the server `--oidc-issuer`,
+`--oidc-client-id` and `--oidc-client-secret`. Any provider that does the authorization code flow
+with PKCE works.
+
+Someone the provider logs in gets an account if their verified email is in an
+`--oidc-allowed-domain`, or they're in an `--oidc-allowed-group`. Everyone else needs an invite,
+which offers single sign-on as well as a password. To let an existing user log in with the provider,
+make them a new password link (`andante invite add dave --reset`) and have them use single sign-on on
+it.
+
+`--no-password-login` with a provider leaves single sign-on as the only way in.
 
 ## Startup
 

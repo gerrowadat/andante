@@ -69,6 +69,11 @@ func TestEnvVars(t *testing.T) {
 		"ANDANTE_PROBE_TIMEOUT":          "15s",
 		"ANDANTE_REPLAY_MIN_DATED_SHARE": "0.5",
 		"ANDANTE_FEED_RATE_LIMIT":        "16",
+		"ANDANTE_OIDC_ISSUER":            "https://idp.example",
+		"ANDANTE_OIDC_CLIENT_ID":         "andante",
+		"ANDANTE_OIDC_CLIENT_SECRET":     "shh",
+		"ANDANTE_OIDC_ALLOWED_DOMAIN":    "example.com,example.org",
+		"ANDANTE_OIDC_ALLOWED_GROUP":     "readers",
 	}
 	for k, v := range envs {
 		t.Setenv(k, v)
@@ -85,6 +90,8 @@ func TestEnvVars(t *testing.T) {
 		WriteTimeout: 4 * time.Second, IdleTimeout: 5 * time.Second, ShutdownTimeout: 6 * time.Second,
 		ReadinessTimeout: 7 * time.Second, ProbeTimeout: 15 * time.Second,
 		CatalogueURL: "http://catalogue.env:8082/v1", CatalogueToken: "catalogue-token", DemandInterval: 17 * time.Second, ReplayMinDatedShare: 0.5, FeedRateLimit: 16,
+		OIDCIssuer: "https://idp.example", OIDCClientID: "andante", OIDCClientSecret: "shh",
+		OIDCAllowedDomain: []string{"example.com", "example.org"}, OIDCAllowedGroup: []string{"readers"},
 	}
 	if !reflect.DeepEqual(*got, want) {
 		t.Errorf("got %+v\nwant %+v", *got, want)
@@ -132,6 +139,11 @@ func TestRejected(t *testing.T) {
 		{"zero readiness timeout", []string{db, base, cat, tok, key, "--readiness-timeout=0s"}, "readiness-timeout"},
 		{"share above one", []string{db, base, cat, tok, key, "--replay-min-dated-share=1.5"}, "replay-min-dated-share"},
 		{"zero rate limit", []string{db, base, cat, tok, key, "--feed-rate-limit=0"}, "feed-rate-limit"},
+		{"OIDC with no issuer", []string{db, base, cat, tok, key, "--oidc-client-id=a"}, "oidc-issuer"},
+		{"allowed domain with no issuer", []string{db, base, cat, tok, key, "--oidc-allowed-domain=example.com"}, "oidc-issuer"},
+		{"plain HTTP issuer", []string{db, base, cat, tok, key, "--oidc-issuer=http://idp.example", "--oidc-client-id=a"}, "oidc-issuer"},
+		{"issuer with no client", []string{db, base, cat, tok, key, "--oidc-issuer=https://idp.example"}, "oidc-client-id"},
+		{"an address for a domain", []string{db, base, cat, tok, key, "--oidc-issuer=https://idp.example", "--oidc-client-id=a", "--oidc-allowed-domain=me@example.com"}, "oidc-allowed-domain"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

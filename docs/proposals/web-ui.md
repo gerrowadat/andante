@@ -1,9 +1,10 @@
 # Proposal: Users and a Web UI
 
-Status: accepted, being built. The split into two services, users, login, working out how to read
-a site and the pages have shipped, and are in [`design/architecture.md`](../design/architecture.md),
-[`design/login.md`](../design/login.md), [`design/discovery.md`](../design/discovery.md) and
-[`design/pages.md`](../design/pages.md). What's left is two-factor and OIDC.
+Status: accepted, being built. The split into two services, users, login with two-factor and OIDC,
+working out how to read a site and the pages have shipped, and are in
+[`design/architecture.md`](../design/architecture.md), [`design/login.md`](../design/login.md),
+[`design/discovery.md`](../design/discovery.md) and [`design/pages.md`](../design/pages.md). What's
+left is phase 17.
 
 This adds people and a website to `andante-server`. A user logs in, pastes a site's address or picks from what's already
 indexed, chooses a pace, and gets a feed.
@@ -27,24 +28,7 @@ only grew, so it kept its contract.
 
 ## Login
 
-Passwords, sessions, invites and throttling have shipped. Two things are left.
-
-**Two-factor.** TOTP for password accounts, with single-use recovery codes stored hashed. Admins can
-require it. Passkeys would be a good later addition.
-
-**OIDC.** Authorization code flow with PKCE, `state` and `nonce`, using `coreos/go-oidc`. Any
-compliant provider works. A user is matched on issuer and subject, never on email, because linking
-on an email claim is how accounts get taken over. Someone new needs an invite, or must match
-`--oidc-allowed-domain` or `--oidc-allowed-group`. Two-factor is the provider's job here.
-
-## Configuration
-
-`andante-server` gains these, with `ANDANTE_*` variables:
-
-| Flag | Purpose |
-|---|---|
-| `--oidc-issuer`, `--oidc-client-id`, `--oidc-client-secret` | OIDC, off when unset |
-| `--oidc-allowed-domain`, `--oidc-allowed-group` | Who can sign in without an invite |
+Shipped. Passkeys would be a good later addition.
 
 ## Delivery
 
@@ -61,10 +45,10 @@ Each phase leaves a working system, and each is one PR.
 | 13 | Done: password login, sessions, invites, CSRF, headers, rate limits, audit log |
 | 14 | Done: Home, Browse, reads, feed links, sources, users, the feed page, with per-user tests on every route |
 | 15 | Done: discovery, canonical keys and close matches, through the API and CLI. The Add page moved to phase 14 |
-| 16 | TOTP and OIDC |
+| 16 | Done: TOTP with recovery codes, requiring it, and OIDC |
 | 17 | Compose, Nomad, docs, backups, and a security review before it faces the internet |
 
-Nothing should go public before phase 16.
+Nothing should go public before the security review in phase 17.
 
 ## What Changes in the Docs
 

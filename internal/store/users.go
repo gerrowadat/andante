@@ -112,6 +112,9 @@ func (s *Store) ResetUser(ctx context.Context, name string) (string, error) {
 		if err := q.ClearPassword(ctx, user.ID); err != nil {
 			return err
 		}
+		if err := clearTOTP(ctx, q, user.ID); err != nil {
+			return err
+		}
 		_, raw, err = insertAPIToken(ctx, q, user.ID, "reset")
 		return err
 	})
@@ -175,6 +178,23 @@ func (s *Store) RotateSecret(ctx context.Context, from, to *seal.Box) error {
 				return err
 			}
 		}
+		secrets, err := q.ListSealedTOTP(ctx)
+		if err != nil {
+			return err
+		}
+		for _, row := range secrets {
+			plain, err := from.Open(row.TotpSealed, sealTOTP)
+			if err != nil {
+				return fmt.Errorf("two-factor secret of user %d: %w", row.ID, err)
+			}
+			again, err := to.Seal(plain, sealTOTP)
+			if err != nil {
+				return err
+			}
+			if err := q.ResealTOTP(ctx, db.ResealTOTPParams{ID: row.ID, TotpSealed: again}); err != nil {
+				return err
+			}
+		}
 		return setCheck(ctx, q, to)
 	})
 	if err != nil {
@@ -184,11 +204,18 @@ func (s *Store) RotateSecret(ctx context.Context, from, to *seal.Box) error {
 }
 
 // ForgetSecrets is for a lost secret. Feed tokens carry on working, because they're
-// looked up by hash, but their URLs can't be shown again.
+// looked up by hash, but their URLs can't be shown again. Two-factor is turned off for
+// everyone, because a code can't be checked without the secret.
 func (s *Store) ForgetSecrets(ctx context.Context, to *seal.Box) error {
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		q := s.queries.WithTx(tx)
 		if err := q.ForgetFeedTokenSecrets(ctx); err != nil {
+			return err
+		}
+		if err := q.ForgetTOTP(ctx); err != nil {
+			return err
+		}
+		if err := q.ForgetRecoveryCodes(ctx); err != nil {
 			return err
 		}
 		return setCheck(ctx, q, to)

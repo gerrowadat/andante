@@ -30,7 +30,7 @@ tags:
   - name: exchange
     description: OPML import and export.
   - name: users
-    description: Invites, sessions and the audit log.
+    description: Invites, sessions, settings and the audit log.
   - name: meta
     description: The API's own description.
 # Shared example values, anchored here and aliased below.
@@ -339,6 +339,50 @@ paths:
                     target: ""
                     ip: 203.0.113.9
                 next: null
+        default:
+          $ref: "#/components/responses/Problem"
+  /settings:
+    get:
+      operationId: getSettings
+      tags: [users]
+      summary: Read the site's settings
+      description: Admins only.
+      responses:
+        "200":
+          description: The settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+              example:
+                require_two_factor: false
+        default:
+          $ref: "#/components/responses/Problem"
+    patch:
+      operationId: updateSettings
+      tags: [users]
+      summary: Change the site's settings
+      description: >-
+        Admins only. With require_two_factor, everyone who logs in to the website with a
+        password has to set up two-factor before they can do anything else there. Logins
+        with an OpenID provider are left to the provider, and API tokens aren't affected.
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: "#/components/schemas/SettingsPatch"
+            example:
+              require_two_factor: true
+      responses:
+        "200":
+          description: The settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+              example:
+                require_two_factor: true
         default:
           $ref: "#/components/responses/Problem"
   /sources:
@@ -1101,6 +1145,18 @@ components:
           type: string
           enum: [admin, user]
         disabled:
+          type: boolean
+    Settings:
+      type: object
+      required: [require_two_factor]
+      properties:
+        require_two_factor:
+          type: boolean
+    SettingsPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        require_two_factor:
           type: boolean
     InviteCreate:
       type: object
