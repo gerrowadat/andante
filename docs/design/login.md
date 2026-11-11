@@ -83,8 +83,9 @@ username box.
 
 ## Where This Diverged From the Proposal
 
-- **Rotating on a change of privilege isn't built,** because nothing can change a role yet. The role is
-  read on every request, so a change takes effect at once. Phase 14 adds changing roles, and rotates then.
+- **A change of privilege ends the sessions instead of rotating them.** Phase 13 couldn't change roles.
+  Phase 14 added that, and changing someone's role, or disabling them, ends all their sessions. See
+  [`pages.md`](pages.md).
 - **`andante-server user link` is new.** `user add` makes a user with no password, and they needed some
   way to get one.
 - **`user reset` clears the password as well,** so a compromised password can't be used again.

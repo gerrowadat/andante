@@ -464,6 +464,24 @@ func (e UserRole) Valid() bool {
 	}
 }
 
+// Defines values for UserPatchRole.
+const (
+	UserPatchRoleAdmin UserPatchRole = "admin"
+	UserPatchRoleUser  UserPatchRole = "user"
+)
+
+// Valid indicates whether the value is a known member of the UserPatchRole enum.
+func (e UserPatchRole) Valid() bool {
+	switch e {
+	case UserPatchRoleAdmin:
+		return true
+	case UserPatchRoleUser:
+		return true
+	default:
+		return false
+	}
+}
+
 // APIToken defines model for APIToken.
 type APIToken struct {
 	CreatedAt  time.Time                    `json:"created_at"`
@@ -1080,14 +1098,32 @@ type SourcePatchState string
 
 // User defines model for User.
 type User struct {
-	CreatedAt time.Time `json:"created_at"`
-	ID        int64     `json:"id"`
-	Name      string    `json:"name"`
-	Role      UserRole  `json:"role"`
+	CreatedAt  time.Time                    `json:"created_at"`
+	DisabledAt nullable.Nullable[time.Time] `json:"disabled_at,omitempty"`
+	ID         int64                        `json:"id"`
+	Name       string                       `json:"name"`
+	Role       UserRole                     `json:"role"`
 }
 
 // UserRole defines model for User.Role.
 type UserRole string
+
+// UserList defines model for UserList.
+type UserList struct {
+	Items []User `json:"items"`
+
+	// Next The next page, or null on the last one.
+	Next nullable.Nullable[NextLink] `json:"next"`
+}
+
+// UserPatch defines model for UserPatch.
+type UserPatch struct {
+	Disabled *bool          `json:"disabled,omitempty"`
+	Role     *UserPatchRole `json:"role,omitempty"`
+}
+
+// UserPatchRole defines model for UserPatch.Role.
+type UserPatchRole string
 
 // Version defines model for Version.
 type Version struct {
@@ -1186,6 +1222,15 @@ type ListEntriesParams struct {
 	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
+// ListUsersParams defines parameters for ListUsers.
+type ListUsersParams struct {
+	// Cursor An opaque cursor from a previous page's next link.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+
+	// Limit The most items to return.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
 // CreateAPITokenJSONRequestBody defines body for CreateAPIToken for application/json ContentType.
 type CreateAPITokenJSONRequestBody = APITokenCreate
 
@@ -1218,6 +1263,9 @@ type CreateSourceJSONRequestBody = SourceCreate
 
 // UpdateSourceApplicationMergePatchPlusJSONRequestBody defines body for UpdateSource for application/merge-patch+json ContentType.
 type UpdateSourceApplicationMergePatchPlusJSONRequestBody = SourcePatch
+
+// UpdateUserApplicationMergePatchPlusJSONRequestBody defines body for UpdateUser for application/merge-patch+json ContentType.
+type UpdateUserApplicationMergePatchPlusJSONRequestBody = UserPatch
 
 // AsSkipAdjustment returns the union data inside the Adjustment as a SkipAdjustment
 func (t Adjustment) AsSkipAdjustment() (SkipAdjustment, error) {
@@ -2145,6 +2193,38 @@ type ClientInterface interface {
 	// Corresponds with DELETE /tokens/{id} (the `RevokeFeedToken` operationId).
 	RevokeFeedToken(ctx context.Context, id ID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ListUsers List users
+	//
+	// Admins only. Lists every user, oldest first.
+	//
+	// Corresponds with GET /users (the `ListUsers` operationId).
+	ListUsers(ctx context.Context, params *ListUsersParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteUser Delete a user
+	//
+	// Admins only. Deletes a user with their reads, feed tokens, API tokens and sessions. It can't be undone, and a read can't be handed to someone else. You can't delete yourself, or the last active admin.
+	//
+	// Corresponds with DELETE /users/{id} (the `DeleteUser` operationId).
+	DeleteUser(ctx context.Context, id ID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateUserWithBody Change a user
+	//
+	// Admins only. Changes a user's role, or disables or enables them. Either ends their sessions. Disabling also stops their API tokens, but leaves their feeds running, so that friends on a group read aren't cut off. The last active admin can't be demoted or disabled.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PATCH /users/{id} (the `UpdateUser` operationId).
+	UpdateUserWithBody(ctx context.Context, id ID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateUserWithApplicationMergePatchPlusJSONBody Change a user
+	//
+	// Admins only. Changes a user's role, or disables or enables them. Either ends their sessions. Disabling also stops their API tokens, but leaves their feeds running, so that friends on a group read aren't cut off. The last active admin can't be demoted or disabled.
+	//
+	// Takes a body of the `application/merge-patch+json` content type.
+	//
+	// Corresponds with PATCH /users/{id} (the `UpdateUser` operationId).
+	UpdateUserWithApplicationMergePatchPlusJSONBody(ctx context.Context, id ID, body UpdateUserApplicationMergePatchPlusJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetVersion Get the server's version
 	//
 	// Returns the running server's version. Needs no token.
@@ -2886,6 +2966,78 @@ func (c *Client) ListEntries(ctx context.Context, id ID, params *ListEntriesPara
 // Corresponds with DELETE /tokens/{id} (the `RevokeFeedToken` operationId).
 func (c *Client) RevokeFeedToken(ctx context.Context, id ID, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewRevokeFeedTokenRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListUsers List users
+//
+// Admins only. Lists every user, oldest first.
+//
+// Corresponds with GET /users (the `ListUsers` operationId).
+func (c *Client) ListUsers(ctx context.Context, params *ListUsersParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListUsersRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteUser Delete a user
+//
+// Admins only. Deletes a user with their reads, feed tokens, API tokens and sessions. It can't be undone, and a read can't be handed to someone else. You can't delete yourself, or the last active admin.
+//
+// Corresponds with DELETE /users/{id} (the `DeleteUser` operationId).
+func (c *Client) DeleteUser(ctx context.Context, id ID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteUserRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateUserWithBody Change a user
+//
+// Admins only. Changes a user's role, or disables or enables them. Either ends their sessions. Disabling also stops their API tokens, but leaves their feeds running, so that friends on a group read aren't cut off. The last active admin can't be demoted or disabled.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PATCH /users/{id} (the `UpdateUser` operationId).
+func (c *Client) UpdateUserWithBody(ctx context.Context, id ID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateUserRequestWithBody(c.Server, id, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateUserWithApplicationMergePatchPlusJSONBody Change a user
+//
+// Admins only. Changes a user's role, or disables or enables them. Either ends their sessions. Disabling also stops their API tokens, but leaves their feeds running, so that friends on a group read aren't cut off. The last active admin can't be demoted or disabled.
+//
+// Takes a body of the `application/merge-patch+json` content type.
+//
+// Corresponds with PATCH /users/{id} (the `UpdateUser` operationId).
+func (c *Client) UpdateUserWithApplicationMergePatchPlusJSONBody(ctx context.Context, id ID, body UpdateUserApplicationMergePatchPlusJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateUserRequestWithApplicationMergePatchPlusJSONBody(c.Server, id, body)
 	if err != nil {
 		return nil, err
 	}
@@ -4321,6 +4473,153 @@ func NewRevokeFeedTokenRequest(server string, id ID) (*http.Request, error) {
 	return req, nil
 }
 
+// NewListUsersRequest constructs an http.Request for the ListUsers method
+func NewListUsersRequest(server string, params *ListUsersParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/users")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewDeleteUserRequest constructs an http.Request for the DeleteUser method
+func NewDeleteUserRequest(server string, id ID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/users/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdateUserRequestWithApplicationMergePatchPlusJSONBody calls the generic UpdateUser builder with application/merge-patch+json body
+func NewUpdateUserRequestWithApplicationMergePatchPlusJSONBody(server string, id ID, body UpdateUserApplicationMergePatchPlusJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateUserRequestWithBody(server, id, "application/merge-patch+json", bodyReader)
+}
+
+// NewUpdateUserRequestWithBody constructs an http.Request for the UpdateUser method, with any body, and a specified content type
+func NewUpdateUserRequestWithBody(server string, id ID, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/users/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewGetVersionRequest constructs an http.Request for the GetVersion method
 func NewGetVersionRequest(server string) (*http.Request, error) {
 	var err error
@@ -4760,6 +5059,42 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with DELETE /tokens/{id} (the `RevokeFeedToken` operationId).
 	RevokeFeedTokenWithResponse(ctx context.Context, id ID, reqEditors ...RequestEditorFn) (*RevokeFeedTokenResponse, error)
+
+	// ListUsersWithResponse List users
+	//
+	// Admins only. Lists every user, oldest first.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /users (the `ListUsers` operationId).
+	ListUsersWithResponse(ctx context.Context, params *ListUsersParams, reqEditors ...RequestEditorFn) (*ListUsersResponse, error)
+
+	// DeleteUserWithResponse Delete a user
+	//
+	// Admins only. Deletes a user with their reads, feed tokens, API tokens and sessions. It can't be undone, and a read can't be handed to someone else. You can't delete yourself, or the last active admin.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /users/{id} (the `DeleteUser` operationId).
+	DeleteUserWithResponse(ctx context.Context, id ID, reqEditors ...RequestEditorFn) (*DeleteUserResponse, error)
+
+	// UpdateUserWithBodyWithResponse Change a user
+	//
+	// Admins only. Changes a user's role, or disables or enables them. Either ends their sessions. Disabling also stops their API tokens, but leaves their feeds running, so that friends on a group read aren't cut off. The last active admin can't be demoted or disabled.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /users/{id} (the `UpdateUser` operationId).
+	UpdateUserWithBodyWithResponse(ctx context.Context, id ID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateUserResponse, error)
+
+	// UpdateUserWithApplicationMergePatchPlusJSONBodyWithResponse Change a user
+	//
+	// Admins only. Changes a user's role, or disables or enables them. Either ends their sessions. Disabling also stops their API tokens, but leaves their feeds running, so that friends on a group read aren't cut off. The last active admin can't be demoted or disabled.
+	//
+	// Takes a body of the `application/merge-patch+json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /users/{id} (the `UpdateUser` operationId).
+	UpdateUserWithApplicationMergePatchPlusJSONBodyWithResponse(ctx context.Context, id ID, body UpdateUserApplicationMergePatchPlusJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateUserResponse, error)
 
 	// GetVersionWithResponse Get the server's version
 	//
@@ -6218,6 +6553,150 @@ func (r RevokeFeedTokenResponse) ContentType() string {
 	return ""
 }
 
+// ListUsersResponse200Headers the declared response headers of an HTTP 200 response for ListUsers
+type ListUsersResponse200Headers struct {
+	Link *string
+}
+
+type ListUsersResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *UserList
+	// ApplicationProblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationProblemJSONDefault *Problem
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *ListUsersResponse200Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListUsersResponse) GetJSON200() *UserList {
+	return r.JSON200
+}
+
+// GetApplicationProblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ListUsersResponse) GetApplicationProblemJSONDefault() *Problem {
+	return r.ApplicationProblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListUsersResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListUsersResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListUsersResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListUsersResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteUserResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// ApplicationProblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationProblemJSONDefault *Problem
+}
+
+// GetApplicationProblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r DeleteUserResponse) GetApplicationProblemJSONDefault() *Problem {
+	return r.ApplicationProblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r DeleteUserResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteUserResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteUserResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteUserResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UpdateUserResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *User
+	// ApplicationProblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationProblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r UpdateUserResponse) GetJSON200() *User {
+	return r.JSON200
+}
+
+// GetApplicationProblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r UpdateUserResponse) GetApplicationProblemJSONDefault() *Problem {
+	return r.ApplicationProblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r UpdateUserResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateUserResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateUserResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UpdateUserResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetVersionResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -6879,6 +7358,66 @@ func (c *ClientWithResponses) RevokeFeedTokenWithResponse(ctx context.Context, i
 		return nil, err
 	}
 	return ParseRevokeFeedTokenResponse(rsp)
+}
+
+// ListUsersWithResponse List users
+//
+// Admins only. Lists every user, oldest first.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /users (the `ListUsers` operationId).
+func (c *ClientWithResponses) ListUsersWithResponse(ctx context.Context, params *ListUsersParams, reqEditors ...RequestEditorFn) (*ListUsersResponse, error) {
+	rsp, err := c.ListUsers(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListUsersResponse(rsp)
+}
+
+// DeleteUserWithResponse Delete a user
+//
+// Admins only. Deletes a user with their reads, feed tokens, API tokens and sessions. It can't be undone, and a read can't be handed to someone else. You can't delete yourself, or the last active admin.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /users/{id} (the `DeleteUser` operationId).
+func (c *ClientWithResponses) DeleteUserWithResponse(ctx context.Context, id ID, reqEditors ...RequestEditorFn) (*DeleteUserResponse, error) {
+	rsp, err := c.DeleteUser(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteUserResponse(rsp)
+}
+
+// UpdateUserWithBodyWithResponse Change a user
+//
+// Admins only. Changes a user's role, or disables or enables them. Either ends their sessions. Disabling also stops their API tokens, but leaves their feeds running, so that friends on a group read aren't cut off. The last active admin can't be demoted or disabled.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /users/{id} (the `UpdateUser` operationId).
+func (c *ClientWithResponses) UpdateUserWithBodyWithResponse(ctx context.Context, id ID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateUserResponse, error) {
+	rsp, err := c.UpdateUserWithBody(ctx, id, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateUserResponse(rsp)
+}
+
+// UpdateUserWithApplicationMergePatchPlusJSONBodyWithResponse Change a user
+//
+// Admins only. Changes a user's role, or disables or enables them. Either ends their sessions. Disabling also stops their API tokens, but leaves their feeds running, so that friends on a group read aren't cut off. The last active admin can't be demoted or disabled.
+//
+// Takes a body of the `application/merge-patch+json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /users/{id} (the `UpdateUser` operationId).
+func (c *ClientWithResponses) UpdateUserWithApplicationMergePatchPlusJSONBodyWithResponse(ctx context.Context, id ID, body UpdateUserApplicationMergePatchPlusJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateUserResponse, error) {
+	rsp, err := c.UpdateUserWithApplicationMergePatchPlusJSONBody(ctx, id, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateUserResponse(rsp)
 }
 
 // GetVersionWithResponse Get the server's version
@@ -7946,6 +8485,114 @@ func ParseRevokeFeedTokenResponse(rsp *http.Response) (*RevokeFeedTokenResponse,
 	switch {
 	case rsp.StatusCode == 204:
 		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationProblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListUsersResponse parses an HTTP response from a ListUsersWithResponse call
+func ParseListUsersResponse(rsp *http.Response) (*ListUsersResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListUsersResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest UserList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationProblemJSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers ListUsersResponse200Headers
+		if values := rsp.Header.Values("Link"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Link", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.Link = &value
+		}
+		response.Headers200 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseDeleteUserResponse parses an HTTP response from a DeleteUserWithResponse call
+func ParseDeleteUserResponse(rsp *http.Response) (*DeleteUserResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteUserResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationProblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateUserResponse parses an HTTP response from a UpdateUserWithResponse call
+func ParseUpdateUserResponse(rsp *http.Response) (*UpdateUserResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateUserResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest User
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Problem

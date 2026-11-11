@@ -12,6 +12,7 @@ import (
 
 	"github.com/gerrowadat/andante/api"
 	"github.com/gerrowadat/andante/internal/api/gen"
+	"github.com/gerrowadat/andante/internal/app"
 	"github.com/gerrowadat/andante/internal/buildinfo"
 	"github.com/gerrowadat/andante/internal/clientip"
 	"github.com/gerrowadat/andante/internal/httpapi"
@@ -50,6 +51,7 @@ type Options struct {
 }
 
 type handler struct {
+	app       *app.App
 	store     *store.Store
 	catalogue *replica.Client
 	sync      *replica.Syncer
@@ -82,6 +84,7 @@ func New(opts Options) (http.Handler, error) {
 	}
 
 	h := &handler{
+		app:   &app.App{Store: opts.Store, Reads: opts.Reads, Catalogue: opts.Catalogue, Sync: opts.Sync, Logger: opts.Logger},
 		store: opts.Store, catalogue: opts.Catalogue, sync: opts.Sync, reads: opts.Reads, clients: opts.Clients, baseURL: opts.BaseURL, logger: opts.Logger,
 		specJSON: specJSON,
 	}

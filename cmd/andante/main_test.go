@@ -705,3 +705,22 @@ func TestLoginCommands(t *testing.T) {
 		t.Errorf("audit = %s", got)
 	}
 }
+
+func TestUserCommands(t *testing.T) {
+	h := newHarness(t)
+	_, _ = storetest.User(t, h.store, "bob", false)
+	if got := h.ok(t, "user", "list"); !strings.Contains(got, "bob") || !strings.Contains(got, "admin") {
+		t.Errorf("user list = %s", got)
+	}
+	if got := h.ok(t, "user", "edit", "2", "--disable"); !strings.Contains(got, "Disabled:") || strings.Contains(got, "Disabled:  -") {
+		t.Errorf("user edit --disable = %s", got)
+	}
+	h.ok(t, "user", "edit", "2", "--enable", "--role", "admin")
+	if r := h.run("user", "edit", "2", "--disable", "--enable"); r.err == nil {
+		t.Error("accepted --disable and --enable together")
+	}
+	if r := h.run("user", "rm", "2"); r.err == nil {
+		t.Error("deleted without --yes")
+	}
+	h.ok(t, "user", "rm", "2", "--yes")
+}

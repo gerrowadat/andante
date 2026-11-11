@@ -17,6 +17,7 @@ import (
 
 	"github.com/alecthomas/kong"
 	"github.com/gerrowadat/andante/internal/api"
+	"github.com/gerrowadat/andante/internal/app"
 	"github.com/gerrowadat/andante/internal/buildinfo"
 	"github.com/gerrowadat/andante/internal/clientip"
 	"github.com/gerrowadat/andante/internal/config"
@@ -266,6 +267,8 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	site := web.New(web.Options{
 		Store: st, Hasher: hasher, Clients: clients, BaseURL: cfg.BaseURL, PasswordLogin: cfg.PasswordLogin,
 		Registry: reg, Logger: logger, Now: now,
+		App:             &app.App{Store: st, Reads: readService, Catalogue: catalogue, Sync: syncer, Logger: logger},
+		DefaultTimezone: cfg.DefaultTimezone,
 	})
 
 	public := server.NewPublic(server.PublicOptions{

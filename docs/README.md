@@ -27,13 +27,14 @@ Start at the [project README](../README.md) if you don't know what andante is ye
   - [Delivery](design/delivery.md): CI, security scanning, releases, supply chain.
   - [API](design/api.md): why the API's contract is the way it is.
   - [Login](design/login.md): passwords, sessions, invites, throttling, the audit log.
+  - [Pages](design/pages.md): the website, who can reach what, and the feed page.
   - [Discovery](design/discovery.md): strategies, extraction, politeness, tail mode.
   - [Scheduling](design/scheduling.md): pacing, segments and the arithmetic of a read.
   - [Feeds and sharing](design/feeds-and-sharing.md): output formats, tokens, decorators.
 - [`proposals/`](proposals/): ideas that aren't built:
   - [Discovery](proposals/discovery.md): later strategies, and mid-archive insertions.
   - [Feed links](proposals/feed-links.md): per-read link templates, such as for discussion.
-  - [Users and a web UI](proposals/web-ui.md): logins, per-user reads, and adding a site by its address.
+  - [Users and a web UI](proposals/web-ui.md): what's left, which is two-factor and OIDC.
 
 ## Building It
 

@@ -1,0 +1,9 @@
+{{define "content"}}{{with .Data}}
+<h1>Change the pace of {{.Name}}</h1>
+<p>What's already out stays where it is. Only what comes next follows the new pace.</p>
+<form method="post" action="/reads/{{.ID}}/pace">
+  <input type="hidden" name="csrf" value="{{$.CSRF}}">
+  {{template "pace" .Pace}}
+  <p><button>Change it</button></p>
+</form>
+{{end}}{{end}}

@@ -192,6 +192,83 @@ paths:
                 url: https://andante.example/invite/example-invite
         default:
           $ref: "#/components/responses/Problem"
+  /users:
+    get:
+      operationId: listUsers
+      tags: [users]
+      summary: List users
+      description: Admins only. Lists every user, oldest first.
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: A page of users.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserList"
+              example:
+                items:
+                  - id: 1
+                    name: dave
+                    role: admin
+                    created_at: 2026-11-05T07:00:00Z
+                    disabled_at: null
+                next: null
+        default:
+          $ref: "#/components/responses/Problem"
+  /users/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    patch:
+      operationId: updateUser
+      tags: [users]
+      summary: Change a user
+      description: >-
+        Admins only. Changes a user's role, or disables or enables them. Either ends their
+        sessions. Disabling also stops their API tokens, but leaves their feeds running, so
+        that friends on a group read aren't cut off. The last active admin can't be demoted
+        or disabled.
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: "#/components/schemas/UserPatch"
+            example:
+              disabled: true
+      responses:
+        "200":
+          description: The user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+              example:
+                id: 2
+                name: alex
+                role: user
+                created_at: 2026-11-05T07:00:00Z
+                disabled_at: 2026-11-06T09:00:00Z
+        default:
+          $ref: "#/components/responses/Problem"
+    delete:
+      operationId: deleteUser
+      tags: [users]
+      summary: Delete a user
+      description: >-
+        Admins only. Deletes a user with their reads, feed tokens, API tokens and
+        sessions. It can't be undone, and a read can't be handed to someone else. You
+        can't delete yourself, or the last active admin.
+      responses:
+        "204":
+          description: Deleted.
+        default:
+          $ref: "#/components/responses/Problem"
   /sessions:
     get:
       operationId: listSessions
@@ -1003,6 +1080,28 @@ components:
         created_at:
           type: string
           format: date-time
+        disabled_at:
+          type: [string, "null"]
+          format: date-time
+    UserList:
+      type: object
+      required: [items, next]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/User"
+        next:
+          $ref: "#/components/schemas/NextLink"
+    UserPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        role:
+          type: string
+          enum: [admin, user]
+        disabled:
+          type: boolean
     InviteCreate:
       type: object
       additionalProperties: false

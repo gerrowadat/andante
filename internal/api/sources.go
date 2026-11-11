@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gerrowadat/andante/internal/api/gen"
+	"github.com/gerrowadat/andante/internal/app"
 	"github.com/gerrowadat/andante/internal/replica"
 	"github.com/gerrowadat/andante/internal/store"
 	"github.com/gerrowadat/andante/internal/store/db"
@@ -76,21 +77,22 @@ func (h *handler) ListSources(ctx context.Context, r gen.ListSourcesRequestObjec
 	}, nil
 }
 
-// caughtUp brings the copy up to date after a change to the catalogue, so that the
-// caller can read its own write. The change has already happened, so a failure here
-// only means it shows up a little later.
-func (h *handler) caughtUp(ctx context.Context) {
-	if err := h.sync.CatchUp(ctx); err != nil {
-		h.logger.Warn("could not catch up with the catalogue", "error", err)
+// sourceError turns what the app refuses into problem details.
+func sourceError(err error) error {
+	switch {
+	case errors.Is(err, app.ErrAdminOnly):
+		return forbidden("only an admin can change or delete a source")
+	case errors.Is(err, app.ErrSourceInUse):
+		return newProblem(http.StatusConflict, problemConflict, err.Error())
 	}
+	return err
 }
 
 func (h *handler) CreateSource(ctx context.Context, r gen.CreateSourceRequestObject) (gen.CreateSourceResponseObject, error) {
-	created, err := h.catalogue.CreateSource(ctx, replica.SourceCreate{SourceCreate: *r.Body})
+	created, err := h.app.CreateSource(ctx, replica.SourceCreate{SourceCreate: *r.Body})
 	if err != nil {
 		return nil, err
 	}
-	h.caughtUp(ctx)
 	return gen.CreateSource201JSONResponse(created), nil
 }
 
@@ -110,45 +112,24 @@ func (h *handler) GetSource(ctx context.Context, r gen.GetSourceRequestObject) (
 }
 
 func (h *handler) UpdateSource(ctx context.Context, r gen.UpdateSourceRequestObject) (gen.UpdateSourceResponseObject, error) {
-	if !actorOf(ctx).Admin {
-		return nil, forbidden("only an admin can change a source")
-	}
-	updated, err := h.catalogue.UpdateSource(ctx, r.ID, *r.Body)
+	updated, err := h.app.UpdateSource(ctx, actorOf(ctx), r.ID, *r.Body)
 	if err != nil {
-		return nil, err
+		return nil, sourceError(err)
 	}
-	h.caughtUp(ctx)
 	return gen.UpdateSource200JSONResponse(updated), nil
 }
 
 func (h *handler) DeleteSource(ctx context.Context, r gen.DeleteSourceRequestObject) (gen.DeleteSourceResponseObject, error) {
-	if !actorOf(ctx).Admin {
-		return nil, forbidden("only an admin can delete a source")
+	if err := h.app.DeleteSource(ctx, actorOf(ctx), r.ID); err != nil {
+		return nil, sourceError(err)
 	}
-	reads, err := h.store.CountReads(ctx, r.ID)
-	if err != nil {
-		return nil, err
-	}
-	if reads > 0 {
-		return nil, newProblem(http.StatusConflict, problemConflict, "a read still uses this source")
-	}
-	// The catalogue refuses while it thinks there's demand, which could be left over
-	// from a read that's gone.
-	if err := h.catalogue.SetDemand(ctx, r.ID, nil); err != nil {
-		return nil, err
-	}
-	if err := h.catalogue.DeleteSource(ctx, r.ID); err != nil {
-		return nil, err
-	}
-	h.caughtUp(ctx)
 	return gen.DeleteSource204Response{}, nil
 }
 
 func (h *handler) RequestCrawl(ctx context.Context, r gen.RequestCrawlRequestObject) (gen.RequestCrawlResponseObject, error) {
-	if err := h.catalogue.RequestCrawl(ctx, r.ID); err != nil {
+	if err := h.app.RequestCrawl(ctx, r.ID); err != nil {
 		return nil, err
 	}
-	h.caughtUp(ctx)
 	return gen.RequestCrawl202Response{}, nil
 }
 

@@ -195,7 +195,7 @@ func (h *handler) CreateRead(ctx context.Context, r gen.CreateReadRequestObject)
 			return nil, fmt.Errorf("encode config: %w", err)
 		}
 	}
-	created, err := h.reads.Create(ctx, params)
+	created, err := h.app.CreateRead(ctx, params)
 	if err != nil {
 		return nil, readError(0, err)
 	}
@@ -203,8 +203,6 @@ func (h *handler) CreateRead(ctx context.Context, r gen.CreateReadRequestObject)
 	if err != nil {
 		return nil, err
 	}
-	h.startIfNew(ctx, created.Read.SourceID)
-	h.demandChanged(ctx, created.Read.SourceID)
 	return gen.CreateRead201JSONResponse(body), nil
 }
 
@@ -248,14 +246,9 @@ func (h *handler) UpdateRead(ctx context.Context, r gen.UpdateReadRequestObject)
 }
 
 func (h *handler) DeleteRead(ctx context.Context, r gen.DeleteReadRequestObject) (gen.DeleteReadResponseObject, error) {
-	found, err := h.reads.Get(ctx, actorOf(ctx), r.ID)
-	if err != nil {
+	if err := h.app.DeleteRead(ctx, actorOf(ctx), r.ID); err != nil {
 		return nil, readError(r.ID, err)
 	}
-	if err := h.reads.Delete(ctx, actorOf(ctx), r.ID); err != nil {
-		return nil, readError(r.ID, err)
-	}
-	h.demandChanged(ctx, found.Read.SourceID)
 	return gen.DeleteRead204Response{}, nil
 }
 
@@ -302,7 +295,7 @@ func (h *handler) CreateAdjustment(ctx context.Context, r gen.CreateAdjustmentRe
 	if err != nil {
 		return nil, readError(r.ID, err)
 	}
-	adjusted, err := h.reads.Adjust(ctx, actorOf(ctx), r.ID, adjustment)
+	adjusted, err := h.app.Adjust(ctx, actorOf(ctx), r.ID, adjustment)
 	if err != nil {
 		return nil, readError(r.ID, err)
 	}
@@ -310,7 +303,6 @@ func (h *handler) CreateAdjustment(ctx context.Context, r gen.CreateAdjustmentRe
 	if err != nil {
 		return nil, err
 	}
-	h.demandChanged(ctx, adjusted.Read.SourceID)
 	return gen.CreateAdjustment200JSONResponse(body), nil
 }
 
@@ -352,30 +344,4 @@ func (h *handler) ListSegments(ctx context.Context, r gen.ListSegmentsRequestObj
 		Body:    client.SegmentList{Items: result.items, Next: result.next},
 		Headers: gen.ListSegments200ResponseHeaders{Link: result.link},
 	}, nil
-}
-
-// demandChanged tells the catalogue straight away, so that a new read doesn't wait
-// for the next round. The next round fixes a failure, so a read doesn't depend on it.
-func (h *handler) demandChanged(ctx context.Context, sourceID int64) {
-	if err := h.sync.PushDemand(ctx, sourceID); err != nil {
-		h.logger.Warn("could not report demand", "source", sourceID, "error", err)
-	}
-}
-
-// startIfNew starts a paused source that has never been crawled, which is what an OPML
-// import leaves behind. Only admins can change a source, so otherwise whoever imported
-// it couldn't start it. A read is the decision to follow it. A source that's been
-// crawled was paused on purpose, so it stays paused. The read exists either way, so a
-// failure here is only logged.
-func (h *handler) startIfNew(ctx context.Context, sourceID int64) {
-	source, err := h.store.GetSource(ctx, sourceID)
-	if err != nil || source.State != statePaused || source.LastCrawledAt != nil {
-		return
-	}
-	state := client.SourcePatchStateIndexing
-	if _, err := h.catalogue.UpdateSource(ctx, sourceID, client.SourcePatch{State: &state}); err != nil {
-		h.logger.Warn("could not start a new source", "source", sourceID, "error", err)
-		return
-	}
-	h.caughtUp(ctx)
 }

@@ -1,0 +1,34 @@
+{{define "content"}}{{with .Data}}
+<h1>{{.Address}}</h1>
+{{if not .Done}}
+<p>Looking. This page checks again every few seconds.</p>
+{{else if .Failed}}
+<p class="alert">{{.Failed}}</p>
+{{else if not .Candidates}}
+<p>Nothing obvious turned up.</p>
+{{else}}
+{{range $i, $c := .Candidates}}
+<section>
+  <h2>{{$c.Title}}</h2>
+  <p><small>{{$c.How}} · {{$c.Kind}}</small></p>
+  {{with $c.Existing}}<p class="note">This is already here. <a href="/sources/{{.}}">Go to it</a>, and track it from there.</p>
+  {{else}}
+  {{with $c.Similar}}<p class="note">These look close: {{range .}}<a href="/sources/{{.}}">source {{.}}</a> {{end}}. Check them first.</p>{{end}}
+  {{with $c.Sample}}<p>The first entries:</p><ol>{{range .}}<li>{{.}}</li>{{end}}</ol>{{end}}
+  {{range $c.Warnings}}<p class="muted">{{.}}</p>{{end}}
+  <form method="post" action="/add/{{$.Data.ID}}/{{$i}}"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Add this</button></form>
+  {{end}}
+</section>
+{{end}}
+{{end}}
+{{if .Done}}
+<h2>Not right?</h2>
+<p>Give the address of the very first page, and andante walks forward from there by each page's "next" link.</p>
+<form method="post" action="/add">
+  <input type="hidden" name="csrf" value="{{$.CSRF}}">
+  <input type="hidden" name="first" value="1">
+  <label>First page <input type="url" name="url" required class="long"></label>
+  <button>Try it</button>
+</form>
+{{end}}
+{{end}}{{end}}

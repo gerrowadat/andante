@@ -1,0 +1,17 @@
+{{define "pace"}}
+<fieldset>
+  <legend>Pace</legend>
+  <label class="choice"><input type="radio" name="preset" value="daily"{{if eq .Preset "daily"}} checked{{end}}> One a day</label>
+  <label class="choice"><input type="radio" name="preset" value="weekdays"{{if eq .Preset "weekdays"}} checked{{end}}> Weekdays</label>
+  <label class="choice"><input type="radio" name="preset" value="days"{{if eq .Preset "days"}} checked{{end}}> On these days</label>
+  <label class="choice"><input type="radio" name="preset" value="replay"{{if eq .Preset "replay"}} checked{{end}}> The original timing</label>
+  <label class="choice"><input type="radio" name="preset" value="rrule"{{if eq .Preset "rrule"}} checked{{end}}> An RRULE</label>
+  <label>At <input type="text" name="at" value="{{.At}}" placeholder="07:00" size="6"> <small>for one a day, weekdays and chosen days</small></label>
+  <label>Days <input type="text" name="days" value="{{.Days}}" placeholder="MO,WE,FR" size="12"> <small>for chosen days</small></label>
+  <label>How many at a time <input type="number" name="count" value="{{.Count}}" min="1" max="100"></label>
+  <label>Time zone <input type="text" name="tz" value="{{.TZ}}" size="20"></label>
+  <label>Speed <input type="number" name="speed" value="{{.Speed}}" min="0.1" step="any" size="5"> <small>for the original timing: 7 makes a weekly serial daily</small></label>
+  <label>At most this many days between entries <input type="number" name="max_gap" value="{{.MaxGap}}" min="0" size="5"> <small>for the original timing, so that a long break doesn't stall it</small></label>
+  <label>RRULE <input type="text" name="rrule" value="{{.RRule}}" class="long" placeholder="FREQ=WEEKLY;BYDAY=SA;BYHOUR=9"></label>
+</fieldset>
+{{end}}

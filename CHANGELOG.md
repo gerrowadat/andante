@@ -22,6 +22,13 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Feed URLs can be shown again, through `GET /reads/{id}/tokens` and `andante token list`.
   `andante-server rotate-secret` changes the key.
 
+- The website: browse and add sources, track one at a pace, manage reads and feed links, users and
+  your account. It needs no JavaScript.
+- A feed URL with no extension is a page saying what the read is, how fast it goes and how far along
+  it is. The feed's description says the pace too.
+- `GET /users`, `PATCH /users/{id}` and `DELETE /users/{id}`, and `andante user list`, `user edit`
+  and `user rm`, for admins.
+
 - `andante source discover` and `POST /discoveries` work out how to read a site from its address.
 - A serial can only be added once. `POST /sources` answers 409 with the existing source's ID.
 - Creating a read on a paused source that has never been crawled starts it, so that anyone who imports

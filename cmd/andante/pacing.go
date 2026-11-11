@@ -6,18 +6,13 @@ package main
 import (
 	"errors"
 	"fmt"
-	"regexp"
 	"strconv"
-	"strings"
 
 	"github.com/gerrowadat/andante/pkg/client"
+	"github.com/gerrowadat/andante/pkg/pacing"
 	"github.com/oapi-codegen/runtime/types"
 	"github.com/spf13/cobra"
 )
-
-const weekdays = "MO,TU,WE,TH,FR"
-
-var clockTime = regexp.MustCompile(`^([01]?[0-9]|2[0-3]):([0-5][0-9])$`)
 
 // pacingFlags are the flags that choose a pacing. The shorthand becomes an RRULE
 // here, because the API only takes RRULEs.
@@ -45,22 +40,6 @@ func (p *pacingFlags) add(cmd *cobra.Command) {
 	f.StringVar(&p.defaultGap, "default-gap", "", "gap for undated entries, as an ISO 8601 duration")
 }
 
-func at(raw string) (string, error) {
-	match := clockTime.FindStringSubmatch(raw)
-	if match == nil {
-		return "", fmt.Errorf("%q is not a time, as HH:MM", raw)
-	}
-	hour, err := strconv.Atoi(match[1])
-	if err != nil {
-		return "", err
-	}
-	minute, err := strconv.Atoi(match[2])
-	if err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("BYHOUR=%d;BYMINUTE=%d;BYSECOND=0", hour, minute), nil
-}
-
 func (p *pacingFlags) rule() (string, error) {
 	chosen := 0
 	for _, set := range []bool{p.daily != "", p.weekdays != "", p.days != "", p.rrule != "", p.replay} {
@@ -73,26 +52,14 @@ func (p *pacingFlags) rule() (string, error) {
 	}
 	switch {
 	case p.daily != "":
-		when, err := at(p.daily)
-		if err != nil {
-			return "", err
-		}
-		return "FREQ=DAILY;" + when, nil
+		return pacing.Daily(p.daily)
 	case p.weekdays != "":
-		when, err := at(p.weekdays)
-		if err != nil {
-			return "", err
-		}
-		return "FREQ=WEEKLY;BYDAY=" + weekdays + ";" + when, nil
+		return pacing.Days(pacing.Weekdays, p.weekdays)
 	case p.days != "":
 		if p.at == "" {
 			return "", errors.New("--days needs --at")
 		}
-		when, err := at(p.at)
-		if err != nil {
-			return "", err
-		}
-		return "FREQ=WEEKLY;BYDAY=" + strings.ToUpper(p.days) + ";" + when, nil
+		return pacing.Days(p.days, p.at)
 	}
 	return p.rrule, nil
 }
@@ -130,11 +97,11 @@ func (p *pacingFlags) pacing() (client.Pacing, error) {
 	if p.minGap != "" || p.maxGap != "" || p.defaultGap != "" || p.speed != 1 {
 		return out, errors.New("--speed and the gap flags are for --replay")
 	}
-	pacing := client.RRulePacing{Mode: client.Rrule, Rrule: rule, Timezone: p.timezone}
+	scheduled := client.RRulePacing{Mode: client.Rrule, Rrule: rule, Timezone: p.timezone}
 	if p.count != 0 {
-		pacing.PerRelease = &p.count
+		scheduled.PerRelease = &p.count
 	}
-	return out, out.FromRRulePacing(pacing)
+	return out, out.FromRRulePacing(scheduled)
 }
 
 // describe sums a pacing up for a table.

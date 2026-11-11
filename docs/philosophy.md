@@ -52,8 +52,9 @@ database.
 ## The API Is the Only Way In
 
 The API, described by an OpenAPI document, is the single interface for changing state.
-The CLI is a client of it, and so will any UI be. Nothing writes config by reaching into the
-database. Within a major version the API only grows, and CI enforces this.
+The CLI is a client of it. The website runs in the same process as the API, and calls the same
+operations code (`internal/app`) as its handlers, so it can't do anything the API can't. Nothing
+writes config by reaching into the database. Within a major version the API only grows, and CI enforces this.
 
 ## Open Standards First
 

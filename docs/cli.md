@@ -148,6 +148,21 @@ andante session rm 4                     # log that browser out
 andante audit                            # admins only
 ```
 
+## Users
+
+Admins only.
+
+```sh
+andante user list
+andante user edit 3 --role admin
+andante user edit 3 --disable            # logs them out and stops their API tokens
+andante user edit 3 --enable
+andante user rm 3 --yes                  # their reads and feed links go too
+```
+
+Disabling someone leaves their feed links working, so that friends on a group read aren't cut off.
+`andante token rm` stops them one at a time.
+
 ## The API Itself
 
 ```sh

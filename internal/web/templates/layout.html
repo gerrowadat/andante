@@ -1,0 +1,22 @@
+{{define "layout"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+{{with .Refresh}}<meta http-equiv="refresh" content="{{.}}">{{end}}
+<title>{{.Title}} · andante</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <a class="brand" href="/">andante</a>
+  <nav><a href="/">Your reads</a><a href="/sources">Browse</a><a href="/add">Add</a>{{if .Admin}}<a href="/users">Users</a>{{end}}<a href="/account">{{.Me}}</a></nav>
+  <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{.CSRF}}"><button>Log out</button></form>
+</header>
+<main>
+{{with .Error}}<p class="alert" role="alert">{{.}}</p>{{end}}
+{{with .Notice}}<p class="note" role="status">{{.}}</p>{{end}}
+{{template "content" .}}
+</main>
+</body>
+</html>{{end}}

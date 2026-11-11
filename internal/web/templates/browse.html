@@ -1,0 +1,21 @@
+{{define "content"}}<h1>Browse</h1>
+<form method="get" action="/sources">
+  <label class="choice">Search <input type="text" name="q" value="{{.Data.Query}}"></label>
+  <label class="choice">Kind <select name="kind">
+    <option value="">Any</option>
+    {{range .Data.Kinds}}<option value="{{.}}"{{if eq . $.Data.Kind}} selected{{end}}>{{.}}</option>{{end}}
+  </select></label>
+  <button>Find</button>
+</form>
+{{with .Data.Sources}}
+<table>
+<tr><th>Source</th><th>Kind</th><th>State</th><th>Last checked</th></tr>
+{{range .}}<tr>
+  <td><a href="/sources/{{.ID}}">{{.Title}}</a></td><td>{{.Kind}}</td><td>{{.State}}</td>
+  <td>{{with .Checked}}{{.}}{{else}}<span class="muted">never</span>{{end}}</td>
+</tr>{{end}}
+</table>
+{{with $.Data.Next}}<p><a href="{{.}}">Next page</a></p>{{end}}
+{{else}}
+<p>Nothing matches. You can <a href="/add">add a site</a> by its address.</p>
+{{end}}{{end}}

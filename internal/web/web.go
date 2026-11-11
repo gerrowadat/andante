@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gerrowadat/andante/internal/app"
 	"github.com/gerrowadat/andante/internal/clientip"
 	"github.com/gerrowadat/andante/internal/password"
 	"github.com/gerrowadat/andante/internal/store"
@@ -39,8 +40,9 @@ const (
 	// hashTimeout is how long a login waits for a turn at hashing.
 	hashTimeout = 10 * time.Second
 
-	// securityPolicy lets a page do nothing but post forms to this site.
-	securityPolicy = "default-src 'none'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+	// securityPolicy lets a page do nothing but post forms to this site, use its own
+	// stylesheet, and show a source's artwork, which lives on the publisher's site.
+	securityPolicy = "default-src 'none'; style-src 'self'; img-src https:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 
 	hstsAge = "max-age=31536000"
 
@@ -49,7 +51,10 @@ const (
 
 // Paths are what this package serves. Everything else on the public listener is
 // someone else's.
-var Paths = []string{"/{$}", "/login", "/logout", "/invite/{token}"}
+var Paths = []string{
+	"/{$}", "/login", "/logout", "/invite/{token}", "/static/", "/sources", "/sources/", "/reads/", "/tokens/",
+	"/add", "/add/", "/users", "/users/", "/account", "/account/",
+}
 
 // Hasher hashes and checks passwords.
 type Hasher interface {
@@ -68,6 +73,9 @@ type Options struct {
 	Registry      prometheus.Registerer
 	Logger        *slog.Logger
 	Now           func() time.Time
+	// App is what the pages do. DefaultTimezone fills in the pace form.
+	App             *app.App
+	DefaultTimezone string
 }
 
 type site struct {
@@ -75,6 +83,7 @@ type site struct {
 	secure   bool
 	cookie   string
 	throttle *throttle
+	jobs     *jobs
 	logins   *prometheus.CounterVec
 }
 
@@ -88,6 +97,7 @@ func New(opts Options) http.Handler {
 		secure:   strings.HasPrefix(opts.BaseURL, "https://"),
 		cookie:   cookieName,
 		throttle: newThrottle(),
+		jobs:     newJobs(),
 		logins: promauto.With(opts.Registry).NewCounterVec(prometheus.CounterOpts{
 			Name: "andante_logins_total",
 			Help: "Login attempts, by result.",
@@ -97,7 +107,10 @@ func New(opts Options) http.Handler {
 		s.cookie = securePrefix + cookieName
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", s.home)
+	for _, rt := range routes {
+		mux.HandleFunc(rt.pattern, s.guard(rt))
+	}
+	mux.Handle("GET /static/", staticHandler())
 	mux.HandleFunc("GET /invite/{token}", s.showInvite)
 	mux.HandleFunc("POST /invite/{token}", s.useInvite)
 	mux.HandleFunc("POST /logout", s.logout)
@@ -182,18 +195,6 @@ func csrfFor(raw string) string {
 	mac := hmac.New(sha256.New, []byte(raw))
 	mac.Write([]byte("csrf"))
 	return hex.EncodeToString(mac.Sum(nil))
-}
-
-func (s *site) home(w http.ResponseWriter, r *http.Request) {
-	session, raw, err := s.sessionOf(r)
-	switch {
-	case errors.Is(err, store.ErrNotFound):
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
-	case err != nil:
-		s.fail(w, err)
-	default:
-		s.render(w, http.StatusOK, homePage, map[string]string{"Name": session.Name, "CSRF": csrfFor(raw)})
-	}
 }
 
 func (s *site) showLogin(w http.ResponseWriter, _ *http.Request) {

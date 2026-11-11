@@ -68,6 +68,8 @@ type View struct {
 	NextRelease *time.Time
 	IndexEnd    *int
 	State       string
+	// Pacing is what the read is doing now. A paused read is schedule.Paused.
+	Pacing schedule.Pacing
 }
 
 // CreateParams describe a new read.
@@ -370,7 +372,7 @@ func position(read db.Read, segments []schedule.Segment, idx schedule.Index, now
 	if err != nil {
 		return View{}, err
 	}
-	v := View{Read: read, Position: released, Due: due, State: StateActive}
+	v := View{Read: read, Position: released, Due: due, State: StateActive, Pacing: segments[len(segments)-1].Pacing}
 	if at, ok, err := schedule.NextRelease(segments, now, idx); err != nil {
 		return View{}, err
 	} else if ok {

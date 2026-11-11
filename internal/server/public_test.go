@@ -341,7 +341,7 @@ func TestNotFound(t *testing.T) {
 		t.Errorf("revoked token: %d", resp.StatusCode)
 	}
 	for _, path := range []string{
-		"/f/unknown.atom", "/f/" + viewer, "/f/" + viewer + ".xml", "/f/" + viewer + ".", "/", "/f/",
+		"/f/unknown.atom", "/f/unknown", "/f/" + revoked, "/f/" + viewer + ".xml", "/f/" + viewer + ".", "/", "/f/",
 		"/f/" + revoked + "/next", "/f/unknown/next", "/f/" + viewer + "/next",
 	} {
 		if resp, _ := f.get(t, path); resp.StatusCode != http.StatusNotFound {
@@ -776,5 +776,62 @@ func TestPodcastFromFeedToFeed(t *testing.T) {
 	}
 	if item.ITunesExt == nil || item.ITunesExt.Duration != "3000" || item.ITunesExt.Image != "https://cdn.podcast.example/5.jpg" {
 		t.Errorf("itunes = %+v", item.ITunesExt)
+	}
+}
+
+func TestTheFeedPage(t *testing.T) {
+	f := newFeedFixture(t, 1000)
+	s := f.source(t, "page")
+	f.entries(t, s, 5, "")
+	view := f.read(t, s)
+	viewer, owner := f.token(t, view.Read.ID, feed.RoleViewer), f.token(t, view.Read.ID, feed.RoleOwner)
+
+	resp, body := f.get(t, "/f/"+viewer)
+	if resp.StatusCode != http.StatusOK || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/html") {
+		t.Fatalf("status = %d, type = %q", resp.StatusCode, resp.Header.Get("Content-Type"))
+	}
+	for _, want := range []string{"Comic", "Mornings", "Every day at 07:00 (UTC)", "3 of 5 released", "/f/" + viewer + ".rss"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the page has no %q:\n%s", want, body)
+		}
+	}
+	for _, unwanted := range []string{"next one now", "<script", owner} {
+		if strings.Contains(body, unwanted) {
+			t.Errorf("a viewer's page has %q", unwanted)
+		}
+	}
+	for header, want := range map[string]string{
+		"Referrer-Policy": "no-referrer", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+	} {
+		if got := resp.Header.Get(header); got != want {
+			t.Errorf("%s = %q, want %q", header, got, want)
+		}
+	}
+
+	_, ownerBody := f.get(t, "/f/"+owner)
+	if !strings.Contains(ownerBody, "/f/"+owner+"/next") {
+		t.Errorf("an owner's page has no next-one-now link:\n%s", ownerBody)
+	}
+
+	tokens, err := f.store.ListFeedTokens(t.Context(), store.Holder, view.Read.ID, 0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.store.RevokeFeedToken(t.Context(), store.Holder, tokens[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	if resp, _ := f.get(t, "/f/"+viewer); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("a revoked token's page: %d", resp.StatusCode)
+	}
+}
+
+func TestTheFeedSaysItsPace(t *testing.T) {
+	f := newFeedFixture(t, 1000)
+	s := f.source(t, "page")
+	f.entries(t, s, 3, "")
+	token := f.token(t, f.read(t, s).Read.ID, feed.RoleViewer)
+	_, body := f.get(t, "/f/"+token+".rss")
+	if !strings.Contains(body, "Pace: Every day at 07:00 (UTC).") {
+		t.Errorf("the feed's description has no pace:\n%s", body)
 	}
 }

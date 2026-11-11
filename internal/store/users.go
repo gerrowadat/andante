@@ -206,3 +206,118 @@ func setCheck(ctx context.Context, q *db.Queries, box *seal.Box) error {
 	}
 	return q.SetSecretCheck(ctx, check)
 }
+
+// ErrLastAdmin means a change would leave no active admin, and nobody could then
+// manage users without the command line.
+var ErrLastAdmin = errors.New("there would be no active admin left")
+
+// ErrDeleteSelf means someone tried to delete their own account.
+var ErrDeleteSelf = errors.New("you can't delete yourself")
+
+// usersLockID serialises changes to who's an admin, so that two admins can't each
+// demote the other. It spells "users" in ASCII.
+const usersLockID = 0x7573657273
+
+// ListUsers returns up to limit users with IDs above after.
+func (s *Store) ListUsers(ctx context.Context, after int64, limit int32) ([]db.User, error) {
+	users, err := s.queries.ListUsers(ctx, db.ListUsersParams{ID: after, Limit: limit})
+	if err != nil {
+		return nil, fmt.Errorf("list users: %w", err)
+	}
+	return users, nil
+}
+
+// UserChange is what can change about a user. Nil means leave alone.
+type UserChange struct {
+	Role     *string
+	Disabled *bool
+}
+
+// UpdateUser changes a user's role or disables them, and ends their sessions, so that
+// nothing carries on under the old role. It returns ErrLastAdmin rather than leave no
+// active admin.
+func (s *Store) UpdateUser(ctx context.Context, id int64, change UserChange, now time.Time) (db.User, error) {
+	var updated db.User
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		q := s.queries.WithTx(tx)
+		if err := q.LockUsers(ctx, usersLockID); err != nil {
+			return err
+		}
+		user, err := q.GetUserForUpdate(ctx, id)
+		if err != nil {
+			return err
+		}
+		params := db.UpdateUserParams{ID: id, Role: user.Role, DisabledAt: user.DisabledAt}
+		if change.Role != nil {
+			params.Role = *change.Role
+		}
+		if change.Disabled != nil {
+			switch {
+			case *change.Disabled && user.DisabledAt == nil:
+				params.DisabledAt = &now
+			case !*change.Disabled:
+				params.DisabledAt = nil
+			}
+		}
+		wasAdmin := user.Role == RoleAdmin && user.DisabledAt == nil
+		stillAdmin := params.Role == RoleAdmin && params.DisabledAt == nil
+		if wasAdmin && !stillAdmin {
+			admins, err := q.CountActiveAdmins(ctx)
+			if err != nil {
+				return err
+			}
+			if admins <= 1 {
+				return ErrLastAdmin
+			}
+		}
+		if updated, err = q.UpdateUser(ctx, params); err != nil {
+			return err
+		}
+		if params.Role != user.Role || params.DisabledAt != nil {
+			return q.RevokeAllSessions(ctx, db.RevokeAllSessionsParams{UserID: id, At: &now})
+		}
+		return nil
+	})
+	if err != nil {
+		return db.User{}, fmt.Errorf("update user %d: %w", id, translate(err))
+	}
+	return updated, nil
+}
+
+// DeleteUser deletes a user with everything they own: reads, with their history and
+// feed tokens, API tokens, sessions and invites.
+func (s *Store) DeleteUser(ctx context.Context, actor Actor, id int64) error {
+	if actor.UserID == id {
+		return ErrDeleteSelf
+	}
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		q := s.queries.WithTx(tx)
+		if err := q.LockUsers(ctx, usersLockID); err != nil {
+			return err
+		}
+		user, err := q.GetUserForUpdate(ctx, id)
+		if err != nil {
+			return err
+		}
+		if user.Role == RoleAdmin && user.DisabledAt == nil {
+			admins, err := q.CountActiveAdmins(ctx)
+			if err != nil {
+				return err
+			}
+			if admins <= 1 {
+				return ErrLastAdmin
+			}
+		}
+		if err := q.DeleteReadsOfUser(ctx, id); err != nil {
+			return err
+		}
+		if err := q.DeleteAPITokensOfUser(ctx, id); err != nil {
+			return err
+		}
+		return q.DeleteUser(ctx, id)
+	})
+	if err != nil {
+		return fmt.Errorf("delete user %d: %w", id, translate(err))
+	}
+	return nil
+}

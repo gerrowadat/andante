@@ -61,3 +61,7 @@ INSERT INTO audit_log (at, who, action, target, ip) VALUES ($1, $2, $3, $4, $5);
 
 -- name: ListAudit :many
 SELECT * FROM audit_log WHERE id > $1 ORDER BY id LIMIT $2;
+
+-- name: RevokeOtherSessions :exec
+UPDATE sessions SET revoked_at = sqlc.arg(at)
+WHERE user_id = sqlc.arg(user_id) AND id <> sqlc.arg(keep) AND revoked_at IS NULL;

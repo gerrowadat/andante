@@ -97,9 +97,12 @@ crawl loop takes a Postgres advisory lock.
 The rest is the same either way. You add a **source** (the serial), make a **read** (a
 paced replay of it), and issue a **token** (which gets you a feed URL).
 
+You can do all of it on the website or with the CLI. The website is easier, and the CLI is below it
+for scripting.
+
 ### Log In
 
-The website only does logging in so far, and everything else is the CLI. To set a password:
+To set a password for the first admin:
 
 ```sh
 andante-server user link dave --base-url https://feeds.example.com
@@ -112,7 +115,25 @@ andante invite add alex
 ```
 
 The link works once and lasts a week. With an `http://` base URL the session cookie isn't `Secure`, which
-is only good enough for trying it out.
+is only good enough for trying it out. An admin can also invite people from the Users page.
+
+### On the Website
+
+Open the base URL and log in.
+
+1. **Browse** lists what's already here, because someone may have added the serial you want. If
+   they haven't, **Add** takes the site's address, works out how to read it and shows you the first
+   few entries. If it can't, it asks for the address of the very first page.
+2. **Track this**, on a source's page, asks for a pace (one a day, weekdays, chosen days, the
+   original timing sped up, or an RRULE) and makes a read.
+3. The read's page has your feed link. Paste it into your feed reader or podcast app. Add a link for
+   each friend reading along, so that you can stop one without stopping the rest. They don't need an
+   account, and opening the link in a browser shows them what it is and how fast it goes.
+
+Pause, skip, jump and change the pace from the same page. The Account page has your password,
+your logged-in browsers and API tokens for the CLI.
+
+The rest of this section does the same things with the CLI.
 
 ### Add a Serial
 
