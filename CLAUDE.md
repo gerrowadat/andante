@@ -78,6 +78,23 @@ files are `.go`, `.sh`, `.sql`, `.yml`, `.yaml`, `Makefile` and `Dockerfile`.
 Markdown and generated files (`// Code generated … DO NOT EDIT.`) are exempt.
 CI checks this.
 
+## Keeping the token bill down
+
+Most of the cost of a session is the context re-read on every turn, so fewer turns and a smaller
+context matter more than shorter output.
+
+- While working, run the tests for the package you're changing (`go test ./internal/web`), not the
+  whole suite. Before a push, `scripts/check.sh` once. It prints one line per step and the failure
+  for any that fail, so don't pipe it through `tail` or re-run it to read the output.
+- CI is the backstop. After pushing, run `scripts/ci-wait.sh <pr>` in the background and stop. Don't
+  poll `gh pr checks` or `gh run view`, and don't re-run locally what CI is already running.
+- Read the part of a file you need (`grep -n`, then a line range), and don't re-read a file that's
+  already in context.
+- Start each phase or PR in a fresh session, with a prompt that names the plan doc. A fork carries
+  the whole conversation with it, so use one only when that context is needed.
+- PR descriptions say what changed and why, in a few lines. CI shows what passed, so they don't list
+  tests or checks.
+
 ## Project layout
 
 ```
@@ -107,7 +124,7 @@ deploy/nomad/             example Nomad job
 deploy/prometheus/        example alert rules and their tests
 test/e2e/                 end-to-end suite (build tag e2e)
 testdata/sites/           fixture sites and feeds (comics, podcasts, blogs) for discovery tests
-scripts/                  release.sh, build-dist.sh, license-check.sh, spec-diff.sh
+scripts/                  check.sh, ci-wait.sh, release.sh, build-dist.sh, license-check.sh, spec-diff.sh
 ```
 
 ## Key conventions

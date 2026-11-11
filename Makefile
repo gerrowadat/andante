@@ -86,6 +86,10 @@ lint: ## Run golangci-lint, fetching the pinned version if it is not installed
 	  $(GO) run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_VERSION) run; \
 	fi
 
+.PHONY: check
+check: ## Run every check worth running before a push, quietly (see scripts/check.sh)
+	./scripts/check.sh
+
 .PHONY: fmt
 fmt: ## Format the tree with gofmt
 	gofmt -l -w .
