@@ -4,7 +4,7 @@ Status: accepted, being built. The split into two services, users, login with tw
 working out how to read a site and the pages have shipped, and are in
 [`design/architecture.md`](../design/architecture.md), [`design/login.md`](../design/login.md),
 [`design/discovery.md`](../design/discovery.md) and [`design/pages.md`](../design/pages.md). What's
-left is phase 17.
+left is phase 19.
 
 This adds people and a website to `andante-server`. A user logs in, pastes a site's address or picks from what's already
 indexed, chooses a pace, and gets a feed.
@@ -48,7 +48,7 @@ Each phase leaves a working system, and each is one PR.
 | 16 | Done: TOTP with recovery codes, requiring it, and OIDC |
 | 17 | Compose, Nomad, docs, backups, and a security review before it faces the internet |
 
-Nothing should go public before the security review in phase 17.
+Nothing should go public before the security review in phase 19.
 
 ## What Changes in the Docs
 
