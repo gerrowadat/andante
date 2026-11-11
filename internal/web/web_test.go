@@ -21,8 +21,10 @@ import (
 
 	"github.com/gerrowadat/andante/internal/clientip"
 	"github.com/gerrowadat/andante/internal/password"
+	"github.com/gerrowadat/andante/internal/seal"
 	"github.com/gerrowadat/andante/internal/stacktest"
 	"github.com/gerrowadat/andante/internal/store"
+	"github.com/gerrowadat/andante/internal/store/storetest"
 	"github.com/gerrowadat/andante/internal/web"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -66,6 +68,7 @@ type fixture struct {
 	hasher   *countingHasher
 	registry *prometheus.Registry
 	server   *httptest.Server
+	oidc     *web.OIDCOptions
 	mu       sync.Mutex
 	now      time.Time
 }
@@ -90,11 +93,15 @@ func (f *fixture) serve(t *testing.T, baseURL string, passwordLogin bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	box, err := seal.New(storetest.Secret)
+	if err != nil {
+		t.Fatal(err)
+	}
 	f.registry = prometheus.NewRegistry()
 	f.server = httptest.NewServer(web.New(web.Options{
 		Store: f.store, Hasher: f.hasher, Clients: clients, BaseURL: baseURL, PasswordLogin: passwordLogin,
 		Registry: f.registry, Logger: slog.New(slog.DiscardHandler), Now: f.clock,
-		App: f.stack.App, DefaultTimezone: "UTC",
+		App: f.stack.App, DefaultTimezone: "UTC", Box: box, OIDC: f.oidc,
 	}))
 	t.Cleanup(f.server.Close)
 }
@@ -116,6 +123,8 @@ type answer struct {
 	body   string
 	header http.Header
 	cookie *http.Cookie
+	// cookies is every cookie the answer set, the session's included.
+	cookies map[string]*http.Cookie
 }
 
 func (f *fixture) do(t *testing.T, method, path string, form url.Values, ip, cookie string, headers ...string) answer {
@@ -148,8 +157,9 @@ func (f *fixture) do(t *testing.T, method, path string, form url.Values, ip, coo
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := answer{status: resp.StatusCode, body: string(data), header: resp.Header}
+	got := answer{status: resp.StatusCode, body: string(data), header: resp.Header, cookies: map[string]*http.Cookie{}}
 	for _, c := range resp.Cookies() {
+		got.cookies[c.Name] = c
 		if c.Name == cookieName {
 			got.cookie = c
 		}
@@ -580,7 +590,7 @@ func TestHeaders(t *testing.T) {
 	for _, path := range []string{"/login", "/", "/invite/nonsense"} {
 		got := f.do(t, http.MethodGet, path, nil, home, "")
 		for name, want := range map[string]string{
-			"Content-Security-Policy":   "default-src 'none'; style-src 'self'; img-src https:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+			"Content-Security-Policy":   "default-src 'none'; style-src 'self'; img-src 'self' https:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
 			"Strict-Transport-Security": "max-age=31536000",
 			"X-Content-Type-Options":    "nosniff",
 			"Referrer-Policy":           "no-referrer",
@@ -608,12 +618,23 @@ func TestCrossOriginPostsAreRefused(t *testing.T) {
 
 func TestPasswordLoginCanBeTurnedOff(t *testing.T) {
 	f := newFixture(t)
+	f.user(t, "dave")
 	f.serve(t, "https://andante.example", false)
-	if got := f.do(t, http.MethodGet, "/login", nil, home, ""); got.status != http.StatusNotFound {
-		t.Errorf("GET: %d", got.status)
+	if got := f.do(t, http.MethodGet, "/login", nil, home, ""); got.status != http.StatusOK || strings.Contains(got.body, `type="password"`) {
+		t.Errorf("GET: %d %s", got.status, got.body)
 	}
-	if got := f.login(t, "dave", phrase, home); got.status != http.StatusNotFound {
+	if got := f.login(t, "dave", phrase, home); got.status != http.StatusMethodNotAllowed || got.cookie != nil {
 		t.Errorf("POST: %d", got.status)
+	}
+	_, raw, err := f.store.CreateInvite(t.Context(), "alex", store.RoleUser, false, f.clock())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := f.do(t, http.MethodGet, "/invite/"+raw, nil, home, ""); got.status != http.StatusOK || strings.Contains(got.body, `type="password"`) {
+		t.Errorf("the invite page: %d %s", got.status, got.body)
+	}
+	if got := f.do(t, http.MethodPost, "/invite/"+raw, url.Values{"password": {phrase}}, home, ""); got.status != http.StatusMethodNotAllowed {
+		t.Errorf("setting a password: %d", got.status)
 	}
 }
 

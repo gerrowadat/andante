@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 Dave O'Connor
 
-// Package web is the website: for now, logging in and setting a password. Everything
-// here assumes it's on the internet, even though it shouldn't be yet.
+// Package web is the website: logging in, and every page. Everything here assumes
+// it's on the internet.
 package web
 
 import (
@@ -22,7 +22,9 @@ import (
 	"github.com/gerrowadat/andante/internal/app"
 	"github.com/gerrowadat/andante/internal/clientip"
 	"github.com/gerrowadat/andante/internal/password"
+	"github.com/gerrowadat/andante/internal/seal"
 	"github.com/gerrowadat/andante/internal/store"
+	"github.com/gerrowadat/andante/internal/store/db"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -41,8 +43,9 @@ const (
 	hashTimeout = 10 * time.Second
 
 	// securityPolicy lets a page do nothing but post forms to this site, use its own
-	// stylesheet, and show a source's artwork, which lives on the publisher's site.
-	securityPolicy = "default-src 'none'; style-src 'self'; img-src https:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+	// stylesheet and images, and show a source's artwork, which lives on the publisher's
+	// site.
+	securityPolicy = "default-src 'none'; style-src 'self'; img-src 'self' https:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 
 	hstsAge = "max-age=31536000"
 
@@ -52,7 +55,7 @@ const (
 // Paths are what this package serves. Everything else on the public listener is
 // someone else's.
 var Paths = []string{
-	"/{$}", "/login", "/logout", "/invite/{token}", "/static/", "/sources", "/sources/", "/reads/", "/tokens/",
+	"/{$}", "/login", "/login/", "/logout", "/invite/{token}", "/invite/{token}/oidc", "/static/", "/sources", "/sources/", "/reads/", "/tokens/",
 	"/add", "/add/", "/users", "/users/", "/account", "/account/",
 }
 
@@ -76,6 +79,10 @@ type Options struct {
 	// App is what the pages do. DefaultTimezone fills in the pace form.
 	App             *app.App
 	DefaultTimezone string
+	// Box seals the cookies a login in two steps carries between them.
+	Box *seal.Box
+	// OIDC turns on logging in with an OpenID provider. Nil is off.
+	OIDC *OIDCOptions
 }
 
 type site struct {
@@ -85,6 +92,10 @@ type site struct {
 	throttle *throttle
 	jobs     *jobs
 	logins   *prometheus.CounterVec
+	codes    *prometheus.CounterVec
+	// oidc is nil when logging in with a provider is off.
+	oidc       *oidcLogin
+	oidcLogins *prometheus.CounterVec
 }
 
 // New returns the website's handler.
@@ -102,6 +113,17 @@ func New(opts Options) http.Handler {
 			Name: "andante_logins_total",
 			Help: "Login attempts, by result.",
 		}, []string{"result"}),
+		codes: promauto.With(opts.Registry).NewCounterVec(prometheus.CounterOpts{
+			Name: "andante_two_factor_codes_total",
+			Help: "Two-factor codes given, by result: ok, recovery, wrong or reused.",
+		}, []string{"result"}),
+		oidcLogins: promauto.With(opts.Registry).NewCounterVec(prometheus.CounterOpts{
+			Name: "andante_oidc_logins_total",
+			Help: "Logins with the OpenID provider, by result: ok, created, linked, refused or failed.",
+		}, []string{"result"}),
+	}
+	if opts.OIDC != nil {
+		s.oidc = newOIDCLogin(*opts.OIDC, opts.BaseURL)
 	}
 	if s.secure {
 		s.cookie = securePrefix + cookieName
@@ -112,11 +134,18 @@ func New(opts Options) http.Handler {
 	}
 	mux.Handle("GET /static/", staticHandler())
 	mux.HandleFunc("GET /invite/{token}", s.showInvite)
-	mux.HandleFunc("POST /invite/{token}", s.useInvite)
 	mux.HandleFunc("POST /logout", s.logout)
+	mux.HandleFunc("GET /login", s.showLogin)
 	if opts.PasswordLogin {
-		mux.HandleFunc("GET /login", s.showLogin)
 		mux.HandleFunc("POST /login", s.login)
+		mux.HandleFunc("GET /login/code", s.showCode)
+		mux.HandleFunc("POST /login/code", s.enterCode)
+		mux.HandleFunc("POST /invite/{token}", s.useInvite)
+	}
+	if s.oidc != nil {
+		mux.HandleFunc("GET /login/oidc", s.loginWithOIDC)
+		mux.HandleFunc("GET "+callbackPath, s.oidcCallback)
+		mux.HandleFunc("GET /invite/{token}/oidc", s.inviteWithOIDC)
 	}
 	return http.NewCrossOriginProtection().Handler(s.headers(mux))
 }
@@ -197,43 +226,52 @@ func csrfFor(raw string) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
-func (s *site) showLogin(w http.ResponseWriter, _ *http.Request) {
-	s.render(w, http.StatusOK, loginPage, map[string]string{})
+type loginData struct {
+	Error          string
+	Password, OIDC bool
 }
 
-func (s *site) tooMany(w http.ResponseWriter, wait time.Duration) {
+func (s *site) loginData(problem string) loginData {
+	return loginData{Error: problem, Password: s.opts.PasswordLogin, OIDC: s.oidc != nil}
+}
+
+func (s *site) showLogin(w http.ResponseWriter, _ *http.Request) {
+	s.render(w, http.StatusOK, loginPage, s.loginData(""))
+}
+
+func (s *site) tooMany(w http.ResponseWriter, page *template.Template, wait time.Duration) {
 	s.logins.WithLabelValues("throttled").Inc()
 	w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(wait.Seconds()))))
-	s.render(w, http.StatusTooManyRequests, loginPage, map[string]string{"Error": "Too many tries. Wait a bit and try again."})
+	s.render(w, http.StatusTooManyRequests, page, s.loginData("Too many tries. Wait a bit and try again."))
 }
 
 func (s *site) refuse(ctx context.Context, w http.ResponseWriter, who string, client store.Client) {
 	s.logins.WithLabelValues("failed").Inc()
 	s.audit(ctx, who, "login.failed", "", client)
-	s.render(w, http.StatusUnauthorized, loginPage, map[string]string{"Error": wrongLogin})
+	s.render(w, http.StatusUnauthorized, loginPage, s.loginData(wrongLogin))
 }
 
 // checkPassword does the same work whether or not the account exists and can log in,
 // so that neither the answer nor the time it takes gives anything away.
-func (s *site) checkPassword(ctx context.Context, name, given string) (int64, string, bool, error) {
+// It returns the user, or what to call them in the audit log if there's no such user.
+func (s *site) checkPassword(ctx context.Context, name, given string) (db.User, bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, hashTimeout)
 	defer cancel()
 	user, err := s.opts.Store.GetUserByName(ctx, name)
 	if errors.Is(err, store.ErrNotFound) || (err == nil && user.PasswordHash == nil) {
-		who := "unknown"
-		if err == nil {
-			who = user.Name
+		if err != nil {
+			user = db.User{Name: "unknown"}
 		}
-		return 0, who, false, s.opts.Hasher.Waste(ctx, given)
+		return user, false, s.opts.Hasher.Waste(ctx, given)
 	}
 	if err != nil {
-		return 0, "", false, err
+		return db.User{}, false, err
 	}
 	match, err := s.opts.Hasher.Verify(ctx, given, *user.PasswordHash)
 	if err != nil {
-		return 0, "", false, err
+		return db.User{}, false, err
 	}
-	return user.ID, user.Name, match && user.DisabledAt == nil, nil
+	return user, match && user.DisabledAt == nil, nil
 }
 
 func (s *site) login(w http.ResponseWriter, r *http.Request) {
@@ -247,7 +285,7 @@ func (s *site) login(w http.ResponseWriter, r *http.Request) {
 		name = name[:maxNameLength]
 	}
 	if wait := s.throttle.wait(client.IP, name, now); wait > 0 {
-		s.tooMany(w, wait)
+		s.tooMany(w, loginPage, wait)
 		return
 	}
 	if wait := s.throttle.accountWait(name, now); wait > 0 {
@@ -259,12 +297,12 @@ func (s *site) login(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if !known {
-			s.tooMany(w, wait)
+			s.tooMany(w, loginPage, wait)
 			return
 		}
 	}
 
-	userID, who, ok, err := s.checkPassword(ctx, name, r.PostForm.Get("password"))
+	user, ok, err := s.checkPassword(ctx, name, r.PostForm.Get("password"))
 	if err != nil {
 		s.opts.Logger.Warn("could not check a password", "error", err)
 		http.Error(w, "too busy; try again in a moment", http.StatusServiceUnavailable)
@@ -272,17 +310,36 @@ func (s *site) login(w http.ResponseWriter, r *http.Request) {
 	}
 	if !ok {
 		s.throttle.failed(client.IP, name, now)
-		s.refuse(ctx, w, who, client)
+		s.refuse(ctx, w, user.Name, client)
 		return
 	}
-
-	// A new session each time, so that an ID someone planted before login is no use
-	// afterwards.
-	if cookie, err := r.Cookie(s.cookie); err == nil {
-		if err := s.opts.Store.EndSession(ctx, cookie.Value, now); err != nil {
+	if user.TotpEnabledAt != nil {
+		// The throttle keeps counting until the code is right too.
+		if err := s.setSealed(w, pendingCookie, "pending", &pending{User: user.ID, Name: user.Name, Until: now.Add(pendingLife)}); err != nil {
 			s.fail(w, err)
 			return
 		}
+		http.Redirect(w, r, "/login/code", http.StatusSeeOther)
+		return
+	}
+	s.startSession(w, r, user.ID, user.Name)
+}
+
+// endOldSession ends the session a login was given, so that an ID someone planted
+// before login is no use afterwards.
+func (s *site) endOldSession(r *http.Request) error {
+	if cookie, err := r.Cookie(s.cookie); err == nil {
+		return s.opts.Store.EndSession(r.Context(), cookie.Value, s.opts.Now())
+	}
+	return nil
+}
+
+// startSession finishes a password login.
+func (s *site) startSession(w http.ResponseWriter, r *http.Request, userID int64, name string) {
+	ctx, client, now := r.Context(), s.client(r), s.opts.Now()
+	if err := s.endOldSession(r); err != nil {
+		s.fail(w, err)
+		return
 	}
 	raw, err := s.opts.Store.CreateSession(ctx, userID, client, now)
 	if err != nil {
@@ -291,7 +348,7 @@ func (s *site) login(w http.ResponseWriter, r *http.Request) {
 	}
 	s.throttle.succeeded(client.IP, name)
 	s.logins.WithLabelValues("ok").Inc()
-	s.audit(ctx, who, "login", "", client)
+	s.audit(ctx, name, "login", "", client)
 	s.setSession(w, raw)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
@@ -334,7 +391,7 @@ func (s *site) showInvite(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	s.render(w, http.StatusOK, invitePage, map[string]string{"Name": invite.Name})
+	s.render(w, http.StatusOK, invitePage, s.inviteData(invite.Name, r.PathValue("token"), ""))
 }
 
 func (s *site) useInvite(w http.ResponseWriter, r *http.Request) {
@@ -354,7 +411,7 @@ func (s *site) useInvite(w http.ResponseWriter, r *http.Request) {
 	}
 	chosen := r.PostForm.Get("password")
 	if err := password.Check(chosen, invite.Name); err != nil {
-		s.render(w, http.StatusUnprocessableEntity, invitePage, map[string]string{"Name": invite.Name, "Error": err.Error()})
+		s.render(w, http.StatusUnprocessableEntity, invitePage, s.inviteData(invite.Name, raw, err.Error()))
 		return
 	}
 	hashCtx, cancel := context.WithTimeout(ctx, hashTimeout)
@@ -371,7 +428,7 @@ func (s *site) useInvite(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	case errors.Is(err, store.ErrConflict):
-		s.render(w, http.StatusConflict, invitePage, map[string]string{"Name": invite.Name, "Error": "That name has been taken."})
+		s.render(w, http.StatusConflict, invitePage, s.inviteData(invite.Name, raw, "That name has been taken."))
 		return
 	case err != nil:
 		s.fail(w, err)
@@ -380,4 +437,13 @@ func (s *site) useInvite(w http.ResponseWriter, r *http.Request) {
 	s.audit(ctx, user.Name, "invite.used", user.Name, client)
 	s.setSession(w, session)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+type inviteData struct {
+	Name, Token, Error string
+	Password, OIDC     bool
+}
+
+func (s *site) inviteData(name, token, problem string) inviteData {
+	return inviteData{Name: name, Token: token, Error: problem, Password: s.opts.PasswordLogin, OIDC: s.oidc != nil}
 }

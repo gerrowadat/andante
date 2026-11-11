@@ -28,6 +28,10 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   your account. It needs no JavaScript.
 - A feed URL with no extension is a page saying what the read is, how fast it goes and how far along
   it is. The feed's description says the pace too.
+- Two-factor with TOTP and single-use recovery codes, for password logins. Admins can require it
+  with `PATCH /settings` or `andante settings set`.
+- Logging in with an OpenID provider (`--oidc-*`). People are matched on the provider's issuer and
+  subject, never on email.
 - `GET /users`, `PATCH /users/{id}` and `DELETE /users/{id}`, and `andante user list`, `user edit`
   and `user rm`, for admins.
 

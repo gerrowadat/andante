@@ -70,7 +70,9 @@ func (q *Queries) GetLiveInviteForUpdate(ctx context.Context, arg GetLiveInviteF
 }
 
 const getLiveSession = `-- name: GetLiveSession :one
-SELECT s.id, s.user_id, s.last_seen_at, u.name, u.role
+SELECT s.id, s.user_id, s.last_seen_at, s.method, u.name, u.role,
+       (u.password_hash IS NOT NULL)::boolean AS has_password, (u.totp_enabled_at IS NOT NULL)::boolean AS has_totp,
+       coalesce((SELECT require_totp FROM settings), false)::boolean AS require_totp
 FROM sessions s JOIN users u ON u.id = s.user_id
 WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND u.disabled_at IS NULL
   AND s.created_at > $2 AND s.last_seen_at > $3
@@ -83,11 +85,15 @@ type GetLiveSessionParams struct {
 }
 
 type GetLiveSessionRow struct {
-	ID         int64
-	UserID     int64
-	LastSeenAt time.Time
-	Name       string
-	Role       string
+	ID          int64
+	UserID      int64
+	LastSeenAt  time.Time
+	Method      string
+	Name        string
+	Role        string
+	HasPassword bool
+	HasTotp     bool
+	RequireTotp bool
 }
 
 func (q *Queries) GetLiveSession(ctx context.Context, arg GetLiveSessionParams) (GetLiveSessionRow, error) {
@@ -97,8 +103,12 @@ func (q *Queries) GetLiveSession(ctx context.Context, arg GetLiveSessionParams) 
 		&i.ID,
 		&i.UserID,
 		&i.LastSeenAt,
+		&i.Method,
 		&i.Name,
 		&i.Role,
+		&i.HasPassword,
+		&i.HasTotp,
+		&i.RequireTotp,
 	)
 	return i, err
 }
@@ -184,9 +194,9 @@ func (q *Queries) InsertInvite(ctx context.Context, arg InsertInviteParams) (Inv
 }
 
 const insertSession = `-- name: InsertSession :one
-INSERT INTO sessions (user_id, token_hash, ip, user_agent, created_at, last_seen_at)
-VALUES ($1, $2, $3, $4, $5, $5)
-RETURNING id, user_id, token_hash, ip, user_agent, created_at, last_seen_at, revoked_at
+INSERT INTO sessions (user_id, token_hash, ip, user_agent, created_at, last_seen_at, method)
+VALUES ($1, $2, $3, $4, $5, $5, $6)
+RETURNING id, user_id, token_hash, ip, user_agent, created_at, last_seen_at, revoked_at, method
 `
 
 type InsertSessionParams struct {
@@ -195,6 +205,7 @@ type InsertSessionParams struct {
 	Ip        string
 	UserAgent string
 	CreatedAt time.Time
+	Method    string
 }
 
 func (q *Queries) InsertSession(ctx context.Context, arg InsertSessionParams) (Session, error) {
@@ -204,6 +215,7 @@ func (q *Queries) InsertSession(ctx context.Context, arg InsertSessionParams) (S
 		arg.Ip,
 		arg.UserAgent,
 		arg.CreatedAt,
+		arg.Method,
 	)
 	var i Session
 	err := row.Scan(
@@ -215,6 +227,7 @@ func (q *Queries) InsertSession(ctx context.Context, arg InsertSessionParams) (S
 		&i.CreatedAt,
 		&i.LastSeenAt,
 		&i.RevokedAt,
+		&i.Method,
 	)
 	return i, err
 }
@@ -256,7 +269,7 @@ func (q *Queries) ListAudit(ctx context.Context, arg ListAuditParams) ([]AuditLo
 }
 
 const listLiveSessions = `-- name: ListLiveSessions :many
-SELECT id, user_id, token_hash, ip, user_agent, created_at, last_seen_at, revoked_at FROM sessions
+SELECT id, user_id, token_hash, ip, user_agent, created_at, last_seen_at, revoked_at, method FROM sessions
 WHERE user_id = $1 AND id > $2 AND revoked_at IS NULL
   AND created_at > $3 AND last_seen_at > $4
 ORDER BY id LIMIT $5
@@ -294,6 +307,7 @@ func (q *Queries) ListLiveSessions(ctx context.Context, arg ListLiveSessionsPara
 			&i.CreatedAt,
 			&i.LastSeenAt,
 			&i.RevokedAt,
+			&i.Method,
 		); err != nil {
 			return nil, err
 		}

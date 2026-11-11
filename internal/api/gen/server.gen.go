@@ -86,6 +86,12 @@ type ServerInterface interface {
 	// RevokeSession End a session
 	// (DELETE /sessions/{id})
 	RevokeSession(w http.ResponseWriter, r *http.Request, id ID)
+	// GetSettings Read the site's settings
+	// (GET /settings)
+	GetSettings(w http.ResponseWriter, r *http.Request)
+	// UpdateSettings Change the site's settings
+	// (PATCH /settings)
+	UpdateSettings(w http.ResponseWriter, r *http.Request)
 	// ListSources List sources
 	// (GET /sources)
 	ListSources(w http.ResponseWriter, r *http.Request, params ListSourcesParams)
@@ -748,6 +754,34 @@ func (siw *ServerInterfaceWrapper) RevokeSession(w http.ResponseWriter, r *http.
 	handler.ServeHTTP(w, r)
 }
 
+// GetSettings operation middleware
+func (siw *ServerInterfaceWrapper) GetSettings(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSettings(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateSettings operation middleware
+func (siw *ServerInterfaceWrapper) UpdateSettings(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateSettings(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListSources operation middleware
 func (siw *ServerInterfaceWrapper) ListSources(w http.ResponseWriter, r *http.Request) {
 
@@ -1261,6 +1295,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/sessions", wrapper.ListSessions)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/sessions/{id}", wrapper.RevokeSession)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/audit", wrapper.ListAudit)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/settings", wrapper.GetSettings)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/settings", wrapper.UpdateSettings)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/sources", wrapper.ListSources)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/sources", wrapper.CreateSource)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/sources/{id}", wrapper.DeleteSource)
@@ -2200,6 +2236,83 @@ func (response RevokeSessiondefaultApplicationProblemPlusJSONResponse) VisitRevo
 	return err
 }
 
+type GetSettingsRequestObject struct {
+}
+
+type GetSettingsResponseObject interface {
+	VisitGetSettingsResponse(w http.ResponseWriter) error
+}
+
+type GetSettings200JSONResponse Settings
+
+func (response GetSettings200JSONResponse) VisitGetSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSettingsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetSettingsdefaultApplicationProblemPlusJSONResponse) VisitGetSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateSettingsRequestObject struct {
+	Body *UpdateSettingsApplicationMergePatchPlusJSONRequestBody
+}
+
+type UpdateSettingsResponseObject interface {
+	VisitUpdateSettingsResponse(w http.ResponseWriter) error
+}
+
+type UpdateSettings200JSONResponse Settings
+
+func (response UpdateSettings200JSONResponse) VisitUpdateSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateSettingsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response UpdateSettingsdefaultApplicationProblemPlusJSONResponse) VisitUpdateSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListSourcesRequestObject struct {
 	Params ListSourcesParams
 }
@@ -2744,6 +2857,12 @@ type StrictServerInterface interface {
 	// RevokeSession End a session
 	// (DELETE /sessions/{id})
 	RevokeSession(ctx context.Context, request RevokeSessionRequestObject) (RevokeSessionResponseObject, error)
+	// GetSettings Read the site's settings
+	// (GET /settings)
+	GetSettings(ctx context.Context, request GetSettingsRequestObject) (GetSettingsResponseObject, error)
+	// UpdateSettings Change the site's settings
+	// (PATCH /settings)
+	UpdateSettings(ctx context.Context, request UpdateSettingsRequestObject) (UpdateSettingsResponseObject, error)
 	// ListSources List sources
 	// (GET /sources)
 	ListSources(ctx context.Context, request ListSourcesRequestObject) (ListSourcesResponseObject, error)
@@ -3435,6 +3554,61 @@ func (sh *strictHandler) RevokeSession(w http.ResponseWriter, r *http.Request, i
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(RevokeSessionResponseObject); ok {
 		if err := validResponse.VisitRevokeSessionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetSettings operation middleware
+func (sh *strictHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
+	var request GetSettingsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetSettings(ctx, request.(GetSettingsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetSettings")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetSettingsResponseObject); ok {
+		if err := validResponse.VisitGetSettingsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateSettings operation middleware
+func (sh *strictHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
+	var request UpdateSettingsRequestObject
+
+	var body UpdateSettingsApplicationMergePatchPlusJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateSettings(ctx, request.(UpdateSettingsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateSettings")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateSettingsResponseObject); ok {
+		if err := validResponse.VisitUpdateSettingsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

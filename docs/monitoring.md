@@ -31,6 +31,8 @@ you create. Tokens and read IDs are never labels.
 | `andante_feed_requests_total` | `format`, `role`, `status` | Feed requests |
 | `andante_feed_render_duration_seconds` | | Time to render a feed |
 | `andante_logins_total` | `result` | Login attempts: `ok`, `failed` or `throttled` |
+| `andante_two_factor_codes_total` | `result` | Two-factor codes: `ok`, `recovery`, `wrong` or `reused` |
+| `andante_oidc_logins_total` | `result` | Logins with the OpenID provider: `ok`, `created`, `linked`, `refused` or `failed` |
 | `andante_api_requests_total` | `route`, `status` | Admin API requests |
 
 ## Alerts

@@ -1026,6 +1026,16 @@ type SessionList struct {
 	Next nullable.Nullable[NextLink] `json:"next"`
 }
 
+// Settings defines model for Settings.
+type Settings struct {
+	RequireTwoFactor bool `json:"require_two_factor"`
+}
+
+// SettingsPatch defines model for SettingsPatch.
+type SettingsPatch struct {
+	RequireTwoFactor *bool `json:"require_two_factor,omitempty"`
+}
+
 // SkipAdjustment defines model for SkipAdjustment.
 type SkipAdjustment struct {
 	Count *int32             `json:"count,omitempty"`
@@ -1257,6 +1267,9 @@ type CreateAdjustmentJSONRequestBody = Adjustment
 
 // CreateFeedTokenJSONRequestBody defines body for CreateFeedToken for application/json ContentType.
 type CreateFeedTokenJSONRequestBody = FeedTokenCreate
+
+// UpdateSettingsApplicationMergePatchPlusJSONRequestBody defines body for UpdateSettings for application/merge-patch+json ContentType.
+type UpdateSettingsApplicationMergePatchPlusJSONRequestBody = SettingsPatch
 
 // CreateSourceJSONRequestBody defines body for CreateSource for application/json ContentType.
 type CreateSourceJSONRequestBody = SourceCreate
@@ -2115,6 +2128,31 @@ type ClientInterface interface {
 	// Corresponds with DELETE /sessions/{id} (the `RevokeSession` operationId).
 	RevokeSession(ctx context.Context, id ID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetSettings Read the site's settings
+	//
+	// Admins only.
+	//
+	// Corresponds with GET /settings (the `GetSettings` operationId).
+	GetSettings(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateSettingsWithBody Change the site's settings
+	//
+	// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PATCH /settings (the `UpdateSettings` operationId).
+	UpdateSettingsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateSettingsWithApplicationMergePatchPlusJSONBody Change the site's settings
+	//
+	// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected.
+	//
+	// Takes a body of the `application/merge-patch+json` content type.
+	//
+	// Corresponds with PATCH /settings (the `UpdateSettings` operationId).
+	UpdateSettingsWithApplicationMergePatchPlusJSONBody(ctx context.Context, body UpdateSettingsApplicationMergePatchPlusJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListSources List sources
 	//
 	// Lists every source, oldest first. Sources are shared by all users.
@@ -2788,6 +2826,61 @@ func (c *Client) ListSessions(ctx context.Context, params *ListSessionsParams, r
 // Corresponds with DELETE /sessions/{id} (the `RevokeSession` operationId).
 func (c *Client) RevokeSession(ctx context.Context, id ID, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewRevokeSessionRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetSettings Read the site's settings
+//
+// Admins only.
+//
+// Corresponds with GET /settings (the `GetSettings` operationId).
+func (c *Client) GetSettings(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSettingsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateSettingsWithBody Change the site's settings
+//
+// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PATCH /settings (the `UpdateSettings` operationId).
+func (c *Client) UpdateSettingsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateSettingsRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateSettingsWithApplicationMergePatchPlusJSONBody Change the site's settings
+//
+// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected.
+//
+// Takes a body of the `application/merge-patch+json` content type.
+//
+// Corresponds with PATCH /settings (the `UpdateSettings` operationId).
+func (c *Client) UpdateSettingsWithApplicationMergePatchPlusJSONBody(ctx context.Context, body UpdateSettingsApplicationMergePatchPlusJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateSettingsRequestWithApplicationMergePatchPlusJSONBody(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -4087,6 +4180,73 @@ func NewRevokeSessionRequest(server string, id ID) (*http.Request, error) {
 	return req, nil
 }
 
+// NewGetSettingsRequest constructs an http.Request for the GetSettings method
+func NewGetSettingsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/settings")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdateSettingsRequestWithApplicationMergePatchPlusJSONBody calls the generic UpdateSettings builder with application/merge-patch+json body
+func NewUpdateSettingsRequestWithApplicationMergePatchPlusJSONBody(server string, body UpdateSettingsApplicationMergePatchPlusJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateSettingsRequestWithBody(server, "application/merge-patch+json", bodyReader)
+}
+
+// NewUpdateSettingsRequestWithBody constructs an http.Request for the UpdateSettings method, with any body, and a specified content type
+func NewUpdateSettingsRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/settings")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewListSourcesRequest constructs an http.Request for the ListSources method
 func NewListSourcesRequest(server string, params *ListSourcesParams) (*http.Request, error) {
 	var err error
@@ -4969,6 +5129,33 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with DELETE /sessions/{id} (the `RevokeSession` operationId).
 	RevokeSessionWithResponse(ctx context.Context, id ID, reqEditors ...RequestEditorFn) (*RevokeSessionResponse, error)
+
+	// GetSettingsWithResponse Read the site's settings
+	//
+	// Admins only.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /settings (the `GetSettings` operationId).
+	GetSettingsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSettingsResponse, error)
+
+	// UpdateSettingsWithBodyWithResponse Change the site's settings
+	//
+	// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /settings (the `UpdateSettings` operationId).
+	UpdateSettingsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateSettingsResponse, error)
+
+	// UpdateSettingsWithApplicationMergePatchPlusJSONBodyWithResponse Change the site's settings
+	//
+	// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected.
+	//
+	// Takes a body of the `application/merge-patch+json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /settings (the `UpdateSettings` operationId).
+	UpdateSettingsWithApplicationMergePatchPlusJSONBodyWithResponse(ctx context.Context, body UpdateSettingsApplicationMergePatchPlusJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateSettingsResponse, error)
 
 	// ListSourcesWithResponse List sources
 	//
@@ -6176,6 +6363,102 @@ func (r RevokeSessionResponse) ContentType() string {
 	return ""
 }
 
+type GetSettingsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Settings
+	// ApplicationProblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationProblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetSettingsResponse) GetJSON200() *Settings {
+	return r.JSON200
+}
+
+// GetApplicationProblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r GetSettingsResponse) GetApplicationProblemJSONDefault() *Problem {
+	return r.ApplicationProblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetSettingsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetSettingsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetSettingsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetSettingsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UpdateSettingsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Settings
+	// ApplicationProblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationProblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r UpdateSettingsResponse) GetJSON200() *Settings {
+	return r.JSON200
+}
+
+// GetApplicationProblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r UpdateSettingsResponse) GetApplicationProblemJSONDefault() *Problem {
+	return r.ApplicationProblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r UpdateSettingsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateSettingsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateSettingsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UpdateSettingsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // ListSourcesResponse200Headers the declared response headers of an HTTP 200 response for ListSources
 type ListSourcesResponse200Headers struct {
 	Link *string
@@ -7210,6 +7493,51 @@ func (c *ClientWithResponses) RevokeSessionWithResponse(ctx context.Context, id 
 	return ParseRevokeSessionResponse(rsp)
 }
 
+// GetSettingsWithResponse Read the site's settings
+//
+// Admins only.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /settings (the `GetSettings` operationId).
+func (c *ClientWithResponses) GetSettingsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSettingsResponse, error) {
+	rsp, err := c.GetSettings(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetSettingsResponse(rsp)
+}
+
+// UpdateSettingsWithBodyWithResponse Change the site's settings
+//
+// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /settings (the `UpdateSettings` operationId).
+func (c *ClientWithResponses) UpdateSettingsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateSettingsResponse, error) {
+	rsp, err := c.UpdateSettingsWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateSettingsResponse(rsp)
+}
+
+// UpdateSettingsWithApplicationMergePatchPlusJSONBodyWithResponse Change the site's settings
+//
+// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected.
+//
+// Takes a body of the `application/merge-patch+json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /settings (the `UpdateSettings` operationId).
+func (c *ClientWithResponses) UpdateSettingsWithApplicationMergePatchPlusJSONBodyWithResponse(ctx context.Context, body UpdateSettingsApplicationMergePatchPlusJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateSettingsResponse, error) {
+	rsp, err := c.UpdateSettingsWithApplicationMergePatchPlusJSONBody(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateSettingsResponse(rsp)
+}
+
 // ListSourcesWithResponse List sources
 //
 // Lists every source, oldest first. Sources are shared by all users.
@@ -8207,6 +8535,72 @@ func ParseRevokeSessionResponse(rsp *http.Response) (*RevokeSessionResponse, err
 	switch {
 	case rsp.StatusCode == 204:
 		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationProblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetSettingsResponse parses an HTTP response from a GetSettingsWithResponse call
+func ParseGetSettingsResponse(rsp *http.Response) (*GetSettingsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetSettingsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Settings
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationProblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateSettingsResponse parses an HTTP response from a UpdateSettingsWithResponse call
+func ParseUpdateSettingsResponse(rsp *http.Response) (*UpdateSettingsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateSettingsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Settings
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Problem

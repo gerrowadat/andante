@@ -60,7 +60,7 @@ func (q *Queries) DeleteUser(ctx context.Context, id int64) error {
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, name, role, created_at, disabled_at, password_hash FROM users WHERE id = $1
+SELECT id, name, role, created_at, disabled_at, password_hash, totp_sealed, totp_enabled_at, totp_last_step FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
@@ -73,12 +73,15 @@ func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
 		&i.CreatedAt,
 		&i.DisabledAt,
 		&i.PasswordHash,
+		&i.TotpSealed,
+		&i.TotpEnabledAt,
+		&i.TotpLastStep,
 	)
 	return i, err
 }
 
 const getUserByName = `-- name: GetUserByName :one
-SELECT id, name, role, created_at, disabled_at, password_hash FROM users WHERE name = $1
+SELECT id, name, role, created_at, disabled_at, password_hash, totp_sealed, totp_enabled_at, totp_last_step FROM users WHERE name = $1
 `
 
 func (q *Queries) GetUserByName(ctx context.Context, name string) (User, error) {
@@ -91,12 +94,15 @@ func (q *Queries) GetUserByName(ctx context.Context, name string) (User, error) 
 		&i.CreatedAt,
 		&i.DisabledAt,
 		&i.PasswordHash,
+		&i.TotpSealed,
+		&i.TotpEnabledAt,
+		&i.TotpLastStep,
 	)
 	return i, err
 }
 
 const getUserForUpdate = `-- name: GetUserForUpdate :one
-SELECT id, name, role, created_at, disabled_at, password_hash FROM users WHERE id = $1 FOR UPDATE
+SELECT id, name, role, created_at, disabled_at, password_hash, totp_sealed, totp_enabled_at, totp_last_step FROM users WHERE id = $1 FOR UPDATE
 `
 
 func (q *Queries) GetUserForUpdate(ctx context.Context, id int64) (User, error) {
@@ -109,13 +115,16 @@ func (q *Queries) GetUserForUpdate(ctx context.Context, id int64) (User, error) 
 		&i.CreatedAt,
 		&i.DisabledAt,
 		&i.PasswordHash,
+		&i.TotpSealed,
+		&i.TotpEnabledAt,
+		&i.TotpLastStep,
 	)
 	return i, err
 }
 
 const insertUser = `-- name: InsertUser :one
 
-INSERT INTO users (name, role) VALUES ($1, $2) RETURNING id, name, role, created_at, disabled_at, password_hash
+INSERT INTO users (name, role) VALUES ($1, $2) RETURNING id, name, role, created_at, disabled_at, password_hash, totp_sealed, totp_enabled_at, totp_last_step
 `
 
 type InsertUserParams struct {
@@ -135,12 +144,15 @@ func (q *Queries) InsertUser(ctx context.Context, arg InsertUserParams) (User, e
 		&i.CreatedAt,
 		&i.DisabledAt,
 		&i.PasswordHash,
+		&i.TotpSealed,
+		&i.TotpEnabledAt,
+		&i.TotpLastStep,
 	)
 	return i, err
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, name, role, created_at, disabled_at, password_hash FROM users WHERE id > $1 ORDER BY id LIMIT $2
+SELECT id, name, role, created_at, disabled_at, password_hash, totp_sealed, totp_enabled_at, totp_last_step FROM users WHERE id > $1 ORDER BY id LIMIT $2
 `
 
 type ListUsersParams struct {
@@ -164,6 +176,9 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, e
 			&i.CreatedAt,
 			&i.DisabledAt,
 			&i.PasswordHash,
+			&i.TotpSealed,
+			&i.TotpEnabledAt,
+			&i.TotpLastStep,
 		); err != nil {
 			return nil, err
 		}
@@ -206,7 +221,7 @@ func (q *Queries) SetSecretCheck(ctx context.Context, sealed []byte) error {
 }
 
 const updateUser = `-- name: UpdateUser :one
-UPDATE users SET role = $2, disabled_at = $3 WHERE id = $1 RETURNING id, name, role, created_at, disabled_at, password_hash
+UPDATE users SET role = $2, disabled_at = $3 WHERE id = $1 RETURNING id, name, role, created_at, disabled_at, password_hash, totp_sealed, totp_enabled_at, totp_last_step
 `
 
 type UpdateUserParams struct {
@@ -225,6 +240,9 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 		&i.CreatedAt,
 		&i.DisabledAt,
 		&i.PasswordHash,
+		&i.TotpSealed,
+		&i.TotpEnabledAt,
+		&i.TotpLastStep,
 	)
 	return i, err
 }

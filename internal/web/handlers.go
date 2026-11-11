@@ -603,9 +603,9 @@ func (s *site) revokeToken(w http.ResponseWriter, r *http.Request, v visitor) {
 }
 
 type userRow struct {
-	ID             int64
-	Name, Role     string
-	Disabled, Self bool
+	ID                        int64
+	Name, Role                string
+	Disabled, Self, TwoFactor bool
 }
 
 type inviteNote struct{ Name, Expires, URL string }
@@ -616,12 +616,20 @@ func (s *site) showUsers(w http.ResponseWriter, r *http.Request, v visitor, stat
 		s.fail(w, err)
 		return
 	}
+	required, err := s.opts.Store.RequireTOTP(r.Context())
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
 	data := struct {
-		Users  []userRow
-		Invite *inviteNote
-	}{Invite: invite}
+		Users            []userRow
+		Invite           *inviteNote
+		RequireTwoFactor bool
+	}{Invite: invite, RequireTwoFactor: required}
 	for _, u := range users {
-		data.Users = append(data.Users, userRow{ID: u.ID, Name: u.Name, Role: u.Role, Disabled: u.DisabledAt != nil, Self: u.ID == v.actor.UserID})
+		data.Users = append(data.Users, userRow{
+			ID: u.ID, Name: u.Name, Role: u.Role, Disabled: u.DisabledAt != nil, Self: u.ID == v.actor.UserID, TwoFactor: u.TotpEnabledAt != nil,
+		})
 	}
 	s.show(w, v, status, usersView, pageData{Title: "Users", Error: problem, Data: data})
 }
@@ -769,10 +777,19 @@ func (s *site) showAccount(w http.ResponseWriter, r *http.Request, v visitor, st
 		return
 	}
 	data := struct {
-		Sessions []sessionRow
-		Tokens   []apiTokenRow
-		NewToken string
-	}{NewToken: newToken}
+		Sessions     []sessionRow
+		Tokens       []apiTokenRow
+		NewToken     string
+		Password     bool
+		TwoFactor    bool
+		RecoveryLeft int64
+	}{NewToken: newToken, Password: s.canUseTwoFactor(v), TwoFactor: v.session.HasTOTP}
+	if data.TwoFactor {
+		if data.RecoveryLeft, err = s.opts.Store.RecoveryCodesLeft(ctx, v.actor.UserID); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
 	for _, sess := range sessions {
 		since, seen := sess.CreatedAt, sess.LastSeenAt
 		data.Sessions = append(data.Sessions, sessionRow{ID: sess.ID, IP: sess.Ip, Agent: sess.UserAgent, Since: stamp(&since), Seen: stamp(&seen), Current: sess.ID == v.session.ID})
@@ -790,7 +807,7 @@ func (s *site) account(w http.ResponseWriter, r *http.Request, v visitor) {
 
 func (s *site) changePassword(w http.ResponseWriter, r *http.Request, v visitor) {
 	ctx := r.Context()
-	_, _, ok, err := s.checkPassword(ctx, v.session.Name, r.PostForm.Get("current"))
+	_, ok, err := s.checkPassword(ctx, v.session.Name, r.PostForm.Get("current"))
 	if err != nil {
 		http.Error(w, "too busy; try again in a moment", http.StatusServiceUnavailable)
 		return
