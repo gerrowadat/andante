@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -123,8 +124,14 @@ func (p *Provider) authorize(w http.ResponseWriter, r *http.Request) {
 	}
 	p.codes[code] = grant{who: p.next, nonce: nonce, challenge: q.Get("code_challenge"), redirect: q.Get("redirect_uri")}
 	p.mu.Unlock()
-	back, err := url.Parse(q.Get("redirect_uri"))
-	if err != nil {
+	redirectURI := strings.ReplaceAll(q.Get("redirect_uri"), "\\", "/")
+	back, err := url.Parse(redirectURI)
+	if err != nil || back.Scheme != "https" || back.Hostname() == "" {
+		http.Error(w, "bad redirect_uri", http.StatusBadRequest)
+		return
+	}
+	issuerURL, err := url.Parse(p.Issuer())
+	if err != nil || issuerURL.Hostname() == "" || back.Hostname() != issuerURL.Hostname() {
 		http.Error(w, "bad redirect_uri", http.StatusBadRequest)
 		return
 	}
@@ -132,8 +139,7 @@ func (p *Provider) authorize(w http.ResponseWriter, r *http.Request) {
 	v.Set("code", code)
 	v.Set("state", q.Get("state"))
 	back.RawQuery = v.Encode()
-	// A test provider sends the browser wherever the test asked.
-	http.Redirect(w, r, back.String(), http.StatusFound) //nolint:gosec // See above.
+	http.Redirect(w, r, back.String(), http.StatusFound)
 }
 
 func (p *Provider) token(w http.ResponseWriter, r *http.Request) {
