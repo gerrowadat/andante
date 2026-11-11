@@ -26,6 +26,7 @@ version CI pins. A different local version can disagree with CI.
 | `make lint` | golangci-lint with `.golangci.yml` |
 | `make spec-lint` | Spectral over `api/openapi.yaml`, in Docker as CI runs it |
 | `make spec-diff` | Compares `api/openapi.yaml` with `BASE` (default `origin/main`) and fails on a breaking change |
+| `make check` | Everything CI checks on a pull request, plus a secret scan: one line per step, and the failure for a step that fails. See `scripts/check.sh` |
 | `make fmt` | `gofmt` over the tree |
 | `make generate` | Regenerates both services' sqlc output and oapi-codegen code. Needs a C compiler. CI fails if the result differs |
 | `make docker` | Builds the image for this machine's platform as `andante:dev` |
@@ -59,8 +60,11 @@ same way, but it's private, so it can change with the server that calls it.
 
 ## CI
 
-CI runs on GitHub for every pull request, and there's no local equivalent. The `make` targets
-above cover the same checks one at a time.
+CI runs on GitHub for every pull request. `make check` runs the same checks locally, and
+`scripts/check.sh test lint` runs some of them. `CHECK_SKIP=e2e,spec-lint` leaves steps out.
+
+`scripts/ci-wait.sh <pr>` waits for a pull request's checks without printing anything, then lists
+only the checks that failed and any open code-scanning alerts.
 
 ## License Headers
 
