@@ -258,6 +258,17 @@ type paceForm struct {
 	Count                       int
 	Speed                       float64
 	MaxGap                      int
+	bad                         string
+}
+
+// maxGapDays is the longest gap the replay form takes, a long way short of what
+// would overflow a time.Duration.
+const maxGapDays = 3650
+
+// number reads a whole number that fits the database's int32 columns.
+func number(raw string) (int, bool) {
+	n, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 32)
+	return int(n), err == nil
 }
 
 func (s *site) defaultPace() paceForm {
@@ -268,13 +279,21 @@ func paceFrom(r *http.Request) paceForm {
 	f := r.PostForm
 	p := paceForm{Preset: f.Get("preset"), At: strings.TrimSpace(f.Get("at")), Days: strings.TrimSpace(f.Get("days")),
 		TZ: strings.TrimSpace(f.Get("tz")), RRule: strings.TrimSpace(f.Get("rrule"))}
-	p.Count, _ = strconv.Atoi(f.Get("count"))
+	var ok bool
+	if p.Count, ok = number(f.Get("count")); !ok && f.Get("count") != "" {
+		p.bad = "How many at a time has to be a whole number."
+	}
+	if p.MaxGap, ok = number(f.Get("max_gap")); (!ok && f.Get("max_gap") != "") || p.MaxGap > maxGapDays {
+		p.bad = "The most days between entries has to be a whole number, up to " + strconv.Itoa(maxGapDays) + "."
+	}
 	p.Speed, _ = strconv.ParseFloat(f.Get("speed"), 64)
-	p.MaxGap, _ = strconv.Atoi(f.Get("max_gap"))
 	return p
 }
 
 func (p paceForm) pacing() (schedule.Pacing, error) {
+	if p.bad != "" {
+		return nil, errors.New(p.bad)
+	}
 	if p.Preset == "replay" {
 		if p.Speed <= 0 {
 			return nil, errors.New("the speed must be more than 0")
@@ -464,8 +483,8 @@ func (s *site) skip(w http.ResponseWriter, r *http.Request, v visitor) {
 }
 
 func (s *site) jump(w http.ResponseWriter, r *http.Request, v visitor) {
-	seq, err := strconv.Atoi(r.PostForm.Get("seq"))
-	if err != nil || seq < 0 {
+	seq, ok := number(r.PostForm.Get("seq"))
+	if !ok || seq < 0 {
 		s.showRead(w, r, v, http.StatusUnprocessableEntity, "Give the number of an entry.")
 		return
 	}

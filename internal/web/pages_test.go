@@ -271,8 +271,20 @@ func TestReadingASerial(t *testing.T) {
 	if got := f.post(t, alice, at+"/track", url.Values{"preset": {"daily"}, "at": {"25:00"}, "tz": {"UTC"}}); got.status != http.StatusUnprocessableEntity {
 		t.Errorf("a bad time: %d", got.status)
 	}
+	for _, form := range []url.Values{
+		{"preset": {"daily"}, "at": {"07:00"}, "tz": {"UTC"}, "count": {"4294967297"}},
+		{"preset": {"replay"}, "speed": {"7"}, "max_gap": {"99999999999"}},
+		{"preset": {"replay"}, "speed": {"7"}, "max_gap": {"3651"}},
+	} {
+		if got := f.post(t, alice, at+"/track", form); got.status != http.StatusUnprocessableEntity {
+			t.Errorf("%v: %d", form, got.status)
+		}
+	}
 	read := f.track(t, alice, source)
 	r := "/reads/" + strconv.FormatInt(read, 10)
+	if got := f.post(t, alice, r+"/jump", url.Values{"seq": {"4294967299"}}); got.status != http.StatusUnprocessableEntity {
+		t.Errorf("a jump past int32: %d", got.status)
+	}
 	shown := f.get(t, alice, r)
 	for _, want := range []string{"Every day at 07:00 (UTC)", "1 of 5 released", "/f/"} {
 		if !strings.Contains(shown.body, want) {
