@@ -22,8 +22,6 @@ import (
 	"github.com/go-jose/go-jose/v4"
 )
 
-const callbackURI = "https://andante.example/login/oidc/callback"
-
 // Identity is who the provider says is logging in.
 type Identity struct {
 	Subject           string   `json:"sub"`
@@ -36,6 +34,8 @@ type Identity struct {
 // Provider is a running provider.
 type Provider struct {
 	ClientID, ClientSecret string
+	// RedirectURI is the one callback the client is registered with, as at a real provider.
+	RedirectURI string
 
 	server *httptest.Server
 	key    *rsa.PrivateKey
@@ -63,7 +63,7 @@ func New(t *testing.T) *Provider {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := &Provider{ClientID: "andante", ClientSecret: "shh", key: key, signer: signer, codes: map[string]grant{}}
+	p := &Provider{ClientID: "andante", ClientSecret: "shh", RedirectURI: "https://andante.example/login/oidc/callback", key: key, signer: signer, codes: map[string]grant{}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /.well-known/openid-configuration", p.discovery)
 	mux.HandleFunc("GET /keys", p.keys)
@@ -117,7 +117,7 @@ func (p *Provider) authorize(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad authorization request", http.StatusBadRequest)
 		return
 	}
-	if q.Get("redirect_uri") != callbackURI {
+	if q.Get("redirect_uri") != p.RedirectURI {
 		http.Error(w, "bad redirect_uri", http.StatusBadRequest)
 		return
 	}
@@ -132,8 +132,7 @@ func (p *Provider) authorize(w http.ResponseWriter, r *http.Request) {
 	v := url.Values{}
 	v.Set("code", code)
 	v.Set("state", q.Get("state"))
-	back := url.URL{Scheme: "https", Host: "andante.example", Path: "/login/oidc/callback", RawQuery: v.Encode()}
-	http.Redirect(w, r, back.String(), http.StatusFound)
+	http.Redirect(w, r, p.RedirectURI+"?"+v.Encode(), http.StatusFound)
 }
 
 func (p *Provider) token(w http.ResponseWriter, r *http.Request) {
