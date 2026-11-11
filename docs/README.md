@@ -32,8 +32,10 @@ Start at the [project README](../README.md) if you don't know what andante is ye
   - [Scheduling](design/scheduling.md): pacing, segments and the arithmetic of a read.
   - [Feeds and sharing](design/feeds-and-sharing.md): output formats, tokens, decorators.
 - [`proposals/`](proposals/): ideas that aren't built:
+  - [Bootstrapping](proposals/bootstrap.md): a token for making the first admin without a shell.
   - [Discovery](proposals/discovery.md): later strategies, and mid-archive insertions.
   - [Feed links](proposals/feed-links.md): per-read link templates, such as for discussion.
+  - [Invites](proposals/invites.md): letting users invite people, and links for more than one.
   - [Users and a web UI](proposals/web-ui.md): what's left, which is two-factor and OIDC.
 
 ## Building It

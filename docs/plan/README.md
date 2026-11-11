@@ -52,7 +52,9 @@ phases are on `main`.
 | 14 | [14-pages.md](14-pages.md) | The web UI's pages, with per-user tests on every route |
 | 15 | [15-add-a-site.md](15-add-a-site.md) | Discovery from a site's address, canonical keys, the add flow |
 | 16 | [16-oidc-and-totp.md](16-oidc-and-totp.md) | TOTP and OIDC |
-| 17 | [17-public-release.md](17-public-release.md) | Packaging, docs, end-to-end scenario, security review |
+| 17 | [17-bootstrap.md](17-bootstrap.md) | A bootstrap token for the first admin, `/setup` and `POST /bootstrap` |
+| 18 | [18-invites.md](18-invites.md) | Invites from users, links for more than one person, who invited whom |
+| 19 | [19-public-release.md](19-public-release.md) | Packaging, docs, end-to-end scenario, security review |
 
 Phases 0–2 are plumbing only, so that every feature after them lands into a
 repository that already tests, scans and releases itself.

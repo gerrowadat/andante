@@ -1,4 +1,4 @@
-# Phase 17: Going Public
+# Phase 19: Going Public
 
 Read first: `CLAUDE.md`, `docs/design/`, `docs/philosophy.md`.
 
@@ -22,4 +22,4 @@ The whole thing can be released and put on the internet.
 
 ## Finish
 
-Branch `phase-17-public-release`. PR. Stop.
+Branch `phase-19-public-release`. PR. Stop.
