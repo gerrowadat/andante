@@ -15,13 +15,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/go-jose/go-jose/v4"
 )
+
+const callbackURI = "https://andante.example/login/oidc/callback"
 
 // Identity is who the provider says is logging in.
 type Identity struct {
@@ -116,6 +117,10 @@ func (p *Provider) authorize(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad authorization request", http.StatusBadRequest)
 		return
 	}
+	if q.Get("redirect_uri") != callbackURI {
+		http.Error(w, "bad redirect_uri", http.StatusBadRequest)
+		return
+	}
 	code := rand.Text()
 	p.mu.Lock()
 	nonce := q.Get("nonce")
@@ -124,21 +129,10 @@ func (p *Provider) authorize(w http.ResponseWriter, r *http.Request) {
 	}
 	p.codes[code] = grant{who: p.next, nonce: nonce, challenge: q.Get("code_challenge"), redirect: q.Get("redirect_uri")}
 	p.mu.Unlock()
-	redirectURI := strings.ReplaceAll(q.Get("redirect_uri"), "\\", "/")
-	back, err := url.Parse(redirectURI)
-	if err != nil || back.Scheme != "https" || back.Hostname() == "" {
-		http.Error(w, "bad redirect_uri", http.StatusBadRequest)
-		return
-	}
-	issuerURL, err := url.Parse(p.Issuer())
-	if err != nil || issuerURL.Hostname() == "" || back.Hostname() != issuerURL.Hostname() {
-		http.Error(w, "bad redirect_uri", http.StatusBadRequest)
-		return
-	}
-	v := back.Query()
+	v := url.Values{}
 	v.Set("code", code)
 	v.Set("state", q.Get("state"))
-	back.RawQuery = v.Encode()
+	back := url.URL{Scheme: "https", Host: "andante.example", Path: "/login/oidc/callback", RawQuery: v.Encode()}
 	http.Redirect(w, r, back.String(), http.StatusFound)
 }
 
