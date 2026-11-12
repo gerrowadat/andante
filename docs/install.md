@@ -47,8 +47,8 @@ To run your own build instead of a release, `make docker` and set `ANDANTE_IMAGE
 
 ## With Nomad
 
-You need a cluster and a Postgres with a database for each service, because the job doesn't bring
-its own. [`deploy/nomad/andante.nomad.hcl`](../deploy/nomad/andante.nomad.hcl) runs a task for each
+You need a cluster and a Postgres (15 or newer) with a database for each service, because the job
+doesn't bring its own. [`deploy/nomad/andante.nomad.hcl`](../deploy/nomad/andante.nomad.hcl) runs a task for each
 service in one group, with `/readyz` checks. It takes its secrets from a Nomad Variable, so make
 that first:
 
@@ -75,7 +75,7 @@ will watch it for drift if you run that.
 
 ## With Plain Docker
 
-If you already have a Postgres, bare containers will do, on a network they share:
+If you already have a Postgres, 15 or newer, bare containers will do, on a network they share:
 
 ```sh
 docker network create andante
