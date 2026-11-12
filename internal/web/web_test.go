@@ -177,7 +177,7 @@ func (f *fixture) login(t *testing.T, name, given, ip string) answer {
 // user adds someone who has set a password, and returns their first session.
 func (f *fixture) user(t *testing.T, name string) string {
 	t.Helper()
-	_, raw, err := f.store.CreateInvite(t.Context(), name, store.RoleUser, false, f.clock())
+	_, raw, err := f.store.CreateInvite(t.Context(), store.Holder, store.InviteRequest{Name: name, Role: store.RoleUser}, f.clock())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -489,7 +489,7 @@ func TestSessionsEnd(t *testing.T) {
 func TestInvites(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
-	invite, raw, err := f.store.CreateInvite(ctx, "alex", store.RoleAdmin, false, f.clock())
+	invite, raw, err := f.store.CreateInvite(ctx, store.Holder, store.InviteRequest{Name: "alex", Role: store.RoleAdmin}, f.clock())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -535,14 +535,14 @@ func TestInviteRules(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
 	old := f.user(t, "dave")
-	if _, _, err := f.store.CreateInvite(ctx, "dave", store.RoleUser, false, f.clock()); !errors.Is(err, store.ErrConflict) {
+	if _, _, err := f.store.CreateInvite(ctx, store.Holder, store.InviteRequest{Name: "dave", Role: store.RoleUser}, f.clock()); !errors.Is(err, store.ErrConflict) {
 		t.Errorf("an invite for a taken name: %v", err)
 	}
-	if _, _, err := f.store.CreateInvite(ctx, "nobody", store.RoleUser, true, f.clock()); !errors.Is(err, store.ErrNotFound) {
+	if _, _, err := f.store.CreateInvite(ctx, store.Holder, store.InviteRequest{Name: "nobody", Role: store.RoleUser, Reset: true}, f.clock()); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("a reset for nobody: %v", err)
 	}
 
-	_, raw, err := f.store.CreateInvite(ctx, "dave", store.RoleAdmin, true, f.clock())
+	_, raw, err := f.store.CreateInvite(ctx, store.Holder, store.InviteRequest{Name: "dave", Role: store.RoleAdmin, Reset: true}, f.clock())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -561,7 +561,7 @@ func TestInviteRules(t *testing.T) {
 		t.Errorf("a reset changed the role: %+v, %v", user, err)
 	}
 
-	_, expired, err := f.store.CreateInvite(ctx, "late", store.RoleUser, false, f.clock())
+	_, expired, err := f.store.CreateInvite(ctx, store.Holder, store.InviteRequest{Name: "late", Role: store.RoleUser}, f.clock())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -571,11 +571,11 @@ func TestInviteRules(t *testing.T) {
 	}
 
 	// Two invites for one name, where the first gets there first.
-	_, one, err := f.store.CreateInvite(ctx, "pair", store.RoleUser, false, f.clock())
+	_, one, err := f.store.CreateInvite(ctx, store.Holder, store.InviteRequest{Name: "pair", Role: store.RoleUser}, f.clock())
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, two, err := f.store.CreateInvite(ctx, "pair", store.RoleUser, false, f.clock())
+	_, two, err := f.store.CreateInvite(ctx, store.Holder, store.InviteRequest{Name: "pair", Role: store.RoleUser}, f.clock())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -628,7 +628,7 @@ func TestPasswordLoginCanBeTurnedOff(t *testing.T) {
 	if got := f.login(t, "dave", phrase, home); got.status != http.StatusMethodNotAllowed || got.cookie != nil {
 		t.Errorf("POST: %d", got.status)
 	}
-	_, raw, err := f.store.CreateInvite(t.Context(), "alex", store.RoleUser, false, f.clock())
+	_, raw, err := f.store.CreateInvite(t.Context(), store.Holder, store.InviteRequest{Name: "alex", Role: store.RoleUser}, f.clock())
 	if err != nil {
 		t.Fatal(err)
 	}

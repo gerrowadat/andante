@@ -140,14 +140,18 @@ andante api-token rm 2
 ## Logins
 
 ```sh
-andante invite add alex                  # a single-use link. Admins only
-andante invite add pat --admin
-andante invite add alex --reset          # a new password for an existing user
+andante invite add alex                  # a link for alex, used once
+andante invite add --uses 5 --days 14    # five people, each picking a name
+andante invite add pat --admin           # admins only
+andante invite add alex --reset          # a new password for an existing user. Admins only
+andante invite list                      # yours, or everyone's for an admin
+andante invite rm 3                      # withdraw it
 andante session list
 andante session rm 4                     # log that browser out
 andante audit                            # admins only
 andante settings                         # admins only
 andante settings set --require-two-factor
+andante settings set --who-can-invite users --invite-limit 5
 ```
 
 ## Users

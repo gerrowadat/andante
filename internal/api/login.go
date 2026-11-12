@@ -6,6 +6,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -25,28 +26,91 @@ func (h *handler) audit(ctx context.Context, action, target string) {
 }
 
 func (h *handler) CreateInvite(ctx context.Context, r gen.CreateInviteRequestObject) (gen.CreateInviteResponseObject, error) {
-	if !actorOf(ctx).Admin {
-		return nil, forbidden("only an admin can invite someone")
+	req := store.InviteRequest{Role: store.RoleUser}
+	if r.Body.Name != nil {
+		req.Name = *r.Body.Name
 	}
-	role := client.InviteCreateRoleUser
 	if r.Body.Role != nil {
-		role = *r.Body.Role
+		req.Role = string(*r.Body.Role)
 	}
-	reset := r.Body.Reset != nil && *r.Body.Reset
-	invite, raw, err := h.store.CreateInvite(ctx, r.Body.Name, string(role), reset, time.Now())
+	if r.Body.MaxUses != nil {
+		req.MaxUses = *r.Body.MaxUses
+	}
+	if r.Body.ExpiresAt != nil {
+		req.Expires = *r.Body.ExpiresAt
+	}
+	req.Reset = r.Body.Reset != nil && *r.Body.Reset
+	invite, raw, err := h.store.CreateInvite(ctx, actorOf(ctx), req, time.Now())
 	switch {
+	case errors.Is(err, store.ErrNotAllowed):
+		return nil, forbidden("you can't make that invite")
+	case errors.Is(err, store.ErrInviteLimit):
+		return nil, newProblem(http.StatusConflict, problemConflict, err.Error())
+	case errors.Is(err, store.ErrBadInvite), errors.Is(err, store.ErrBadName):
+		return nil, invalidRequest(err.Error())
 	case errors.Is(err, store.ErrConflict):
-		return nil, newProblem(http.StatusConflict, problemConflict, "there's already a user called "+r.Body.Name)
+		return nil, newProblem(http.StatusConflict, problemConflict, "there's already a user called "+req.Name)
 	case errors.Is(err, store.ErrNotFound):
-		return nil, newProblem(http.StatusConflict, problemConflict, "there's no user called "+r.Body.Name+" to reset")
+		return nil, newProblem(http.StatusConflict, problemConflict, "there's no user called "+req.Name+" to reset")
 	case err != nil:
 		return nil, err
 	}
-	h.audit(ctx, "invite.created", invite.Name)
+	h.audit(ctx, "invite.created", inviteTarget(invite))
 	return gen.CreateInvite201JSONResponse{
-		ID: invite.ID, Name: invite.Name, Role: client.InviteRole(invite.Role), ExpiresAt: invite.ExpiresAt,
-		URL: InviteURL(h.baseURL, raw),
+		ID: invite.ID, Name: invite.Name, Role: client.InviteRole(invite.Role), MaxUses: invite.MaxUses,
+		ExpiresAt: invite.ExpiresAt, URL: InviteURL(h.baseURL, raw),
 	}, nil
+}
+
+// inviteTarget is what the audit log says an invite is for.
+func inviteTarget(i store.Invite) string {
+	if i.Name != "" {
+		return i.Name
+	}
+	return fmt.Sprintf("invite %d", i.ID)
+}
+
+func inviteToAPI(i store.Invite) (client.InviteSummary, error) {
+	out := client.InviteSummary{
+		ID: i.ID, Name: i.Name, Role: client.InviteSummaryRole(i.Role), Reset: i.Reset, MaxUses: i.MaxUses, Uses: i.Uses,
+		CreatedAt: i.CreatedAt, ExpiresAt: i.ExpiresAt,
+	}
+	if i.CreatedBy != "" {
+		out.CreatedBy = &i.CreatedBy
+	}
+	return out, nil
+}
+
+func (h *handler) ListInvites(ctx context.Context, r gen.ListInvitesRequestObject) (gen.ListInvitesResponseObject, error) {
+	p, err := parsePage(r.Params.Cursor, r.Params.Limit, 0)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := h.store.ListInvites(ctx, actorOf(ctx), p.after, p.fetchLimit(), time.Now())
+	if err != nil {
+		return nil, err
+	}
+	key := func(i store.Invite) int64 { return i.ID }
+	result, err := paginate(p, "/invites", rows, key, inviteToAPI)
+	if err != nil {
+		return nil, err
+	}
+	return gen.ListInvites200JSONResponse{
+		Body:    client.InviteList{Items: result.items, Next: result.next},
+		Headers: gen.ListInvites200ResponseHeaders{Link: result.link},
+	}, nil
+}
+
+func (h *handler) DeleteInvite(ctx context.Context, r gen.DeleteInviteRequestObject) (gen.DeleteInviteResponseObject, error) {
+	err := h.store.DeleteInvite(ctx, actorOf(ctx), r.ID)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, notFound("invite", r.ID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	h.audit(ctx, "invite.withdrawn", fmt.Sprintf("invite %d", r.ID))
+	return gen.DeleteInvite204Response{}, nil
 }
 
 // InviteURL is where someone goes to use an invite.

@@ -130,9 +130,10 @@ func nameFor(c claims) string {
 // browser started.
 type oidcFlow struct {
 	State, Nonce, Verifier string
-	// Invite is the raw invite token, when the login is to use one.
-	Invite string
-	Until  time.Time
+	// Invite is the raw invite token, when the login is to use one, and Name is the
+	// name picked for an invite that doesn't have one.
+	Invite, Name string
+	Until        time.Time
 }
 
 func (f *oidcFlow) until() time.Time { return f.Until }
@@ -145,7 +146,7 @@ func random() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-func (s *site) startOIDC(w http.ResponseWriter, r *http.Request, invite string) {
+func (s *site) startOIDC(w http.ResponseWriter, r *http.Request, invite, name string) {
 	_, cfg, err := s.oidc.setup()
 	if err != nil {
 		s.opts.Logger.Warn("could not reach the OpenID provider", "error", err)
@@ -153,7 +154,7 @@ func (s *site) startOIDC(w http.ResponseWriter, r *http.Request, invite string) 
 		s.render(w, http.StatusServiceUnavailable, loginPage, s.loginData("The login provider can't be reached. Try again in a moment."))
 		return
 	}
-	flow := oidcFlow{Verifier: oauth2.GenerateVerifier(), Invite: invite, Until: s.opts.Now().Add(pendingLife)}
+	flow := oidcFlow{Verifier: oauth2.GenerateVerifier(), Invite: invite, Name: name, Until: s.opts.Now().Add(pendingLife)}
 	if flow.State, err = random(); err == nil {
 		flow.Nonce, err = random()
 	}
@@ -168,12 +169,13 @@ func (s *site) startOIDC(w http.ResponseWriter, r *http.Request, invite string) 
 }
 
 func (s *site) loginWithOIDC(w http.ResponseWriter, r *http.Request) {
-	s.startOIDC(w, r, "")
+	s.startOIDC(w, r, "", "")
 }
 
 func (s *site) inviteWithOIDC(w http.ResponseWriter, r *http.Request) {
 	raw := r.PathValue("token")
-	if _, err := s.opts.Store.LookupInvite(r.Context(), raw, s.opts.Now()); err != nil {
+	invite, err := s.opts.Store.LookupInvite(r.Context(), raw, s.opts.Now())
+	if err != nil {
 		if !errors.Is(err, store.ErrNotFound) {
 			s.fail(w, err)
 			return
@@ -181,7 +183,22 @@ func (s *site) inviteWithOIDC(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	s.startOIDC(w, r, raw)
+	name := ""
+	if invite.Name == "" {
+		name = strings.ToLower(strings.TrimSpace(r.URL.Query().Get("name")))
+		problem, status, err := s.pickName(r.Context(), name)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		if problem != "" {
+			data := s.inviteData(raw, "")
+			data.Chosen, data.Error = name, problem
+			s.render(w, status, invitePage, data)
+			return
+		}
+	}
+	s.startOIDC(w, r, raw, name)
 }
 
 // verify finishes the provider's side of a login and says who it was.
@@ -249,18 +266,20 @@ func (s *site) oidcCallback(w http.ResponseWriter, r *http.Request) {
 		result  = "ok"
 	)
 	if flow.Invite != "" {
-		u, raw, err := s.opts.Store.RedeemInviteWithIdentity(ctx, flow.Invite, id, client, now)
+		u, raw, err := s.opts.Store.RedeemInviteWithIdentity(ctx, flow.Invite, flow.Name, id, client, now)
 		switch {
 		case errors.Is(err, store.ErrNotFound):
+			s.inviteUses.WithLabelValues("refused").Inc()
 			refuse(http.StatusNotFound, "refused", "That invite has been used, or it's run out.")
 			return
 		case errors.Is(err, store.ErrConflict):
-			refuse(http.StatusConflict, "refused", "That login already belongs to someone here. Log in with it instead.")
+			refuse(http.StatusConflict, "refused", "That login already belongs to someone here, or the name you picked has just been taken. Log in with it, or use the invite again.")
 			return
 		case err != nil:
 			s.fail(w, err)
 			return
 		}
+		s.inviteUses.WithLabelValues("ok").Inc()
 		s.audit(ctx, u.Name, "invite.used", u.Name, client)
 		user, session, result = u.Name, raw, "linked"
 	} else {

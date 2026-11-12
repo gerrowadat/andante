@@ -220,9 +220,12 @@ paths:
       tags: [users]
       summary: Invite someone, or reset a password
       description: >-
-        Admins only. Returns a single-use link, good for a week, where someone
-        sets a password. With reset it's for an existing user, and ends their
-        sessions when it's used.
+        Returns a link, good for a week unless expires_at says otherwise, where
+        someone sets a password. Without a name, whoever uses it picks their own,
+        and max_uses people can. With reset it's for an existing user, and ends
+        their sessions when it's used. Admins can always invite. Users can when
+        the who_can_invite setting is users, and then only users, never a reset,
+        and only up to invite_limit unused places at once.
       requestBody:
         required: true
         content:
@@ -243,8 +246,60 @@ paths:
                 id: 1
                 name: alex
                 role: user
+                max_uses: 1
                 expires_at: 2026-11-12T07:00:00Z
                 url: https://andante.example/invite/example-invite
+        default:
+          $ref: "#/components/responses/Problem"
+    get:
+      operationId: listInvites
+      tags: [users]
+      summary: List invites
+      description: >-
+        Lists invites that still have uses left, oldest first: your own, or
+        everyone's for an admin. The links themselves were only shown when the
+        invites were made.
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: A page of invites.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InviteList"
+              example:
+                items:
+                  - id: 2
+                    name: ""
+                    role: user
+                    reset: false
+                    max_uses: 3
+                    uses: 1
+                    created_at: 2026-11-05T07:00:00Z
+                    expires_at: 2026-11-12T07:00:00Z
+                    created_by: alex
+                next: null
+        default:
+          $ref: "#/components/responses/Problem"
+  /invites/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    delete:
+      operationId: deleteInvite
+      tags: [users]
+      summary: Withdraw an invite
+      description: >-
+        Withdraws one of your own invites, or anyone's for an admin, so that its
+        link stops working. Accounts it already made are left alone. Someone
+        else's is a 404.
+      responses:
+        "204":
+          description: Withdrawn.
         default:
           $ref: "#/components/responses/Problem"
   /users:
@@ -411,6 +466,8 @@ paths:
                 $ref: "#/components/schemas/Settings"
               example:
                 require_two_factor: false
+                who_can_invite: admins
+                invite_limit: 5
         default:
           $ref: "#/components/responses/Problem"
     patch:
@@ -421,6 +478,8 @@ paths:
         Admins only. With require_two_factor, everyone who logs in to the website with a
         password has to set up two-factor before they can do anything else there. Logins
         with an OpenID provider are left to the provider, and API tokens aren't affected.
+        With who_can_invite set to users, anyone with an account can invite people, up to
+        invite_limit unused places each.
       requestBody:
         required: true
         content:
@@ -438,6 +497,8 @@ paths:
                 $ref: "#/components/schemas/Settings"
               example:
                 require_two_factor: true
+                who_can_invite: admins
+                invite_limit: 5
         default:
           $ref: "#/components/responses/Problem"
   /sources:
@@ -1182,6 +1243,11 @@ components:
         disabled_at:
           type: [string, "null"]
           format: date-time
+        invited_by:
+          type: string
+          description: >-
+            The name of whoever made the invite this account was made with, as
+            it was then. It's missing for an account made any other way.
     UserList:
       type: object
       required: [items, next]
@@ -1203,24 +1269,54 @@ components:
           type: boolean
     Settings:
       type: object
-      required: [require_two_factor]
+      required: [require_two_factor, who_can_invite, invite_limit]
       properties:
         require_two_factor:
           type: boolean
+        who_can_invite:
+          $ref: "#/components/schemas/WhoCanInvite"
+        invite_limit:
+          $ref: "#/components/schemas/InviteLimit"
     SettingsPatch:
       type: object
       additionalProperties: false
       properties:
         require_two_factor:
           type: boolean
+        who_can_invite:
+          $ref: "#/components/schemas/WhoCanInvite"
+        invite_limit:
+          $ref: "#/components/schemas/InviteLimit"
+    WhoCanInvite:
+      type: string
+      enum: [admins, users]
+      description: Who can make invites. With users, what they invite is always a user.
+    InviteLimit:
+      type: integer
+      format: int32
+      minimum: 0
+      description: >-
+        How many unused places a user who isn't an admin can have out at once,
+        counting each use left on each of their invites.
     InviteCreate:
       type: object
       additionalProperties: false
-      required: [name]
       properties:
         name:
           type: string
           pattern: ^[a-z0-9][a-z0-9._-]{0,63}$
+          description: Who it's for. Without one, whoever uses it picks their own name.
+        max_uses:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 100
+          default: 1
+          description: How many people can use it. An invite with a name is for one.
+        expires_at:
+          type: string
+          format: date-time
+          description: When it stops working, at most 30 days away. A week by default.
         role:
           type: string
           enum: [admin, user]
@@ -1255,16 +1351,20 @@ components:
           description: A link, good for a week, where the new admin sets a password.
     Invite:
       type: object
-      required: [id, name, role, expires_at, url]
+      required: [id, name, role, max_uses, expires_at, url]
       properties:
         id:
           type: integer
           format: int64
         name:
           type: string
+          description: Who it's for, or empty if whoever uses it picks.
         role:
           type: string
           enum: [admin, user]
+        max_uses:
+          type: integer
+          format: int32
         expires_at:
           type: string
           format: date-time
@@ -1272,6 +1372,47 @@ components:
           type: string
           format: uri
           description: The link, shown only here.
+    InviteSummary:
+      type: object
+      required: [id, name, role, reset, max_uses, uses, created_at, expires_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+          description: Who it's for, or empty if whoever uses it picks.
+        role:
+          type: string
+          enum: [admin, user]
+        reset:
+          type: boolean
+          description: It's for an existing user, to set a new password.
+        max_uses:
+          type: integer
+          format: int32
+        uses:
+          type: integer
+          format: int32
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        created_by:
+          type: string
+          description: Who made it. It's missing for one the server made.
+    InviteList:
+      type: object
+      required: [items, next]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/InviteSummary"
+        next:
+          $ref: "#/components/schemas/NextLink"
     Session:
       type: object
       required: [id, ip, user_agent, created_at, last_seen_at]

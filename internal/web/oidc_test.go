@@ -125,7 +125,7 @@ func TestAnInviteLinksAProvider(t *testing.T) {
 	f, p := withProvider(t, true)
 	dave := f.person(t, "dave", false)
 	f.serve(t, "https://andante.example", false)
-	_, raw, err := f.store.CreateInvite(t.Context(), "dave", "", true, f.clock())
+	_, raw, err := f.store.CreateInvite(t.Context(), store.Holder, store.InviteRequest{Name: "dave", Reset: true}, f.clock())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +148,7 @@ func TestAnInviteLinksAProvider(t *testing.T) {
 		t.Errorf("a used invite: %d", got.status)
 	}
 
-	_, other, err := f.store.CreateInvite(t.Context(), "alex", store.RoleUser, false, f.clock())
+	_, other, err := f.store.CreateInvite(t.Context(), store.Holder, store.InviteRequest{Name: "alex", Role: store.RoleUser}, f.clock())
 	if err != nil {
 		t.Fatal(err)
 	}

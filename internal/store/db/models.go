@@ -78,13 +78,20 @@ type Identity struct {
 type Invite struct {
 	ID        int64
 	TokenHash []byte
-	Name      string
+	Name      *string
 	Role      string
 	UserID    *int64
 	CreatedAt time.Time
 	ExpiresAt time.Time
-	UsedAt    *time.Time
 	Bootstrap bool
+	MaxUses   int32
+	CreatedBy *int64
+}
+
+type InviteUse struct {
+	InviteID int64
+	UserID   *int64
+	UsedAt   time.Time
 }
 
 type Read struct {
@@ -141,8 +148,10 @@ type Session struct {
 }
 
 type Setting struct {
-	OnlyRow     bool
-	RequireTotp bool
+	OnlyRow      bool
+	RequireTotp  bool
+	WhoCanInvite string
+	InviteLimit  int32
 }
 
 type Source struct {
@@ -177,4 +186,5 @@ type User struct {
 	TotpSealed    []byte
 	TotpEnabledAt *time.Time
 	TotpLastStep  int64
+	InvitedBy     *string
 }

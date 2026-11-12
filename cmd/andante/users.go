@@ -24,9 +24,13 @@ func (a *app) userCmd() *cobra.Command {
 				return err
 			}
 			return a.show(resp.StatusCode(), resp.Body, func(w *table) {
-				w.println("ID\tNAME\tROLE\tDISABLED")
+				w.println("ID\tNAME\tROLE\tDISABLED\tINVITED BY")
 				for _, u := range resp.JSON200.Items {
-					w.printf("%d\t%s\t%s\t%s\n", u.ID, u.Name, u.Role, stamp(u.DisabledAt))
+					by := "-"
+					if u.InvitedBy != nil {
+						by = *u.InvitedBy
+					}
+					w.printf("%d\t%s\t%s\t%s\t%s\n", u.ID, u.Name, u.Role, stamp(u.DisabledAt), by)
 				}
 				a.more(resp.JSON200.Next)
 			})
