@@ -6,10 +6,13 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-12
+
 ### Added
 
 - andante-server can run under a path, such as `https://example.com/feeds`, taken from
-  `--base-url`. The website, the API, feeds, health checks and metrics all move under it.
+  `--base-url`. The website, the API, feeds, and the server's health checks and metrics all move
+  under it. See [deploying](https://github.com/gerrowadat/andante/blob/main/docs/deploying.md#under-a-path).
 
 ## [0.1.0] - 2026-11-12
 
@@ -121,6 +124,7 @@ CLI, a Nomad job and alert rules.
 - Update `golang.org/x/net` to v0.62.0, for GO-2026-6860 and GO-2026-6866 in its
   HTML parser, which reads pages from other people's sites.
 
-[Unreleased]: https://github.com/gerrowadat/andante/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/gerrowadat/andante/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/gerrowadat/andante/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/gerrowadat/andante/compare/v0.0.1...v0.1.0
 [0.0.1]: https://github.com/gerrowadat/andante/releases/tag/v0.0.1
