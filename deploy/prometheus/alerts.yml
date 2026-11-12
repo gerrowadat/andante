@@ -56,3 +56,24 @@ groups:
         annotations:
           summary: "andante has not crawled anything successfully in 24 hours"
           description: "Tail checks should succeed every few hours. Check the crawl loop and the server's network."
+
+      # The throttle slows guessing down, so this is for knowing, not for waking up.
+      - alert: AndanteLoginFailures
+        expr: sum(increase(andante_logins_total{result=~"failed|throttled"}[15m])) > 50
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Lots of logins to andante are failing"
+          description: "More than 50 failed logins every 15 minutes, for 15 minutes. Someone may be guessing passwords. andante audit shows the addresses."
+
+      - alert: AndanteOIDCFailures
+        expr: |
+          sum(rate(andante_oidc_logins_total{result="failed"}[30m]))
+            / sum(rate(andante_oidc_logins_total[30m])) > 0.5
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Logins with the OpenID provider are failing"
+          description: "More than half of them have failed for 30 minutes. Check the provider, and the client ID and secret, in the server's logs."

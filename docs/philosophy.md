@@ -87,9 +87,27 @@ choices:
 If one of these turns out to be wrong for andante, the deviation and the reasoning go in
 `docs/design/`.
 
+## Sources Are Shared, Reads Are Not
+
+andante has users so that several people can share one server and each have their own reads. A
+serial is crawled once however many people read it, which is kinder to the site. Your reads, and
+how far through them you are, are yours. Other users don't see them, though an admin can. You share a read by
+handing out a viewer link, and whoever gets it needs no account.
+
+The website is there so that nobody needs the CLI to get a feed. It does what the API does and no
+more (see above). There's no public sign-up: people come in on an invite, or through an OpenID
+provider you've told andante to trust.
+
+## Safe on the Internet
+
+andante is meant to be put on the public internet behind a TLS proxy, and anything that isn't safe
+there (metrics, health checks, the catalogue) is on a listener of its own. Logins follow the OWASP
+cheat sheets and NIST SP 800-63B rather than anything invented here. See
+[`design/login.md`](design/login.md).
+
 ## Small, and Extensible at the Seams
 
-v1 is small on purpose: no comments, and accounts only so that people can have their own reads. It grows at
+v1 is small on purpose: no comments, no public sign-up, and accounts only so that people can have their own reads. It grows at
 named seams instead: discovery strategies (`Strategy`), page extraction (`Extractor`), entry
 kinds (`page`, `episode`, `article`), pacing modes (`rrule`, `replay`), feed item content
 (`Decorator`), output formats, and per-read options (`reads.config jsonb`). A new feature

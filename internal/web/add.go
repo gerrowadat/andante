@@ -27,7 +27,9 @@ const (
 	// jobLife is how long an answer is kept for someone to come back to.
 	jobLife = time.Hour
 	// jobsEach is how many sites one person can be looking at at once.
-	jobsEach   = 3
+	jobsEach = 3
+	// keptEach is how many answers one person keeps. Past it, the oldest goes.
+	keptEach   = 10
 	refreshSec = 3
 	sampleShow = 5
 )
@@ -54,18 +56,30 @@ func newJobs() *jobs { return &jobs{byID: map[string]*job{}} }
 func (j *jobs) start(owner int64, address string, now time.Time) (*job, bool) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	running := 0
+	running, kept := 0, 0
+	var oldest *job
 	for id, each := range j.byID {
 		if now.Sub(each.started) > jobLife {
 			delete(j.byID, id)
 			continue
 		}
-		if each.owner == owner && !each.done {
+		if each.owner != owner {
+			continue
+		}
+		kept++
+		if !each.done {
 			running++
+		} else if oldest == nil || each.started.Before(oldest.started) {
+			oldest = each
 		}
 	}
 	if running >= jobsEach {
 		return nil, false
+	}
+	// Answers come back fast for a site that isn't there, so without this, one person
+	// could fill the server's memory in the hour they're kept.
+	if kept >= keptEach && oldest != nil {
+		delete(j.byID, oldest.id)
 	}
 	b := make([]byte, 16)
 	_, _ = rand.Read(b)

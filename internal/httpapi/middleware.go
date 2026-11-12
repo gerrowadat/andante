@@ -70,6 +70,24 @@ func WithRequestID(next http.Handler) http.Handler {
 	})
 }
 
+// MaxBody is the most a request can send. An OPML import of a few thousand feeds fits.
+const MaxBody = 1 << 20
+
+// LimitBody refuses a request body over MaxBody, so that nobody, with a token or
+// without, can make the server hold an arbitrary amount in memory.
+func LimitBody(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ContentLength > MaxBody {
+			WriteProblem(w, tooLarge)
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, MaxBody)
+		next.ServeHTTP(w, r)
+	})
+}
+
+var tooLarge = NewProblem(http.StatusRequestEntityTooLarge, TypeBlank, "the request body is over 1 MiB").Problem
+
 type statusRecorder struct {
 	http.ResponseWriter
 	status int
@@ -180,6 +198,11 @@ func (k *Kit) Authenticate(_ context.Context, input *openapi3filter.Authenticati
 
 // ValidationError renders whatever the request validator rejected.
 func (k *Kit) ValidationError(_ context.Context, err error, w http.ResponseWriter, r *http.Request, opts middleware.ErrorHandlerOpts) {
+	var tooBig *http.MaxBytesError
+	if errors.As(err, &tooBig) {
+		WriteProblem(w, tooLarge)
+		return
+	}
 	var unavailable *authUnavailableError
 	if errors.As(err, &unavailable) {
 		k.WriteError(w, r, unavailable.err)
@@ -257,6 +280,10 @@ var englishPrinter = message.NewPrinter(language.English)
 // RequestProblem turns a validation failure into problem details, field by field
 // where the validator says which field.
 func RequestProblem(err error) Problem {
+	var tooBig *http.MaxBytesError
+	if errors.As(err, &tooBig) {
+		return tooLarge
+	}
 	p := NewProblem(http.StatusBadRequest, TypeInvalidRequest, "the request does not match the API description").Problem
 
 	var requestErr *openapi3filter.RequestError

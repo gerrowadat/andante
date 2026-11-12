@@ -52,6 +52,11 @@ services:
       ANDANTE_SECRET: ${ANDANTE_SECRET:?set it in .env}
       ANDANTE_CATALOGUE_URL: http://catalogue:8082/v1
       ANDANTE_CATALOGUE_TOKEN: ${ANDANTE_CATALOGUE_TOKEN:?set it in .env}
+    # Anything else the server takes, such as an OpenID provider or the proxy in front of
+    # it. See andante.env.example.
+    env_file:
+      - path: andante.env
+        required: false
     ports:
       - ${ANDANTE_PUBLIC_PORT:-8080}:8080
       # Loopback only. /metrics and the health checks have no auth.

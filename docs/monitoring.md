@@ -34,6 +34,7 @@ you create. Tokens and read IDs are never labels.
 | `andante_two_factor_codes_total` | `result` | Two-factor codes: `ok`, `recovery`, `wrong` or `reused` |
 | `andante_oidc_logins_total` | `result` | Logins with the OpenID provider: `ok`, `created`, `linked`, `refused` or `failed` |
 | `andante_invite_uses_total` | `result` | Invites used: `ok`, or `refused` when the link was used up, withdrawn or out of date |
+| `andante_sessions` | `method` | Live website sessions, by how they logged in: `password` or `oidc` |
 | `andante_api_requests_total` | `route`, `status` | Admin API requests |
 
 ## Alerts
@@ -48,6 +49,8 @@ you create. Tokens and read IDs are never labels.
 | `AndanteFeedErrors` | More than 5% of feed requests have been a 5xx for 10 minutes | Check `/readyz` and the logs. It's usually the database |
 | `AndanteSyncStale` | The server hasn't been in touch with the catalogue for an hour | Feeds still work, but nothing new is arriving. Check `andante-catalogue` |
 | `AndanteNoSuccessfulCrawl` | Nothing has crawled successfully in 24 hours | Check the logs and the server's network. It also fires when every source is paused |
+| `AndanteLoginFailures` | More than 50 failed logins every 15 minutes, for 15 minutes | Someone may be guessing passwords. The throttle slows them down. `andante audit` shows the addresses, and you can block them at the proxy |
+| `AndanteOIDCFailures` | More than half of the logins with the OpenID provider have failed for 30 minutes | Check the provider, and the client ID and secret, in the server's logs |
 
 A `numeric` source's gaps are 404s, and those count as failures. If one has a lot of gaps,
 raise the threshold for that source.

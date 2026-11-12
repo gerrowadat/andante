@@ -163,6 +163,9 @@ a `next` link, which is `null` on the last page. If there's another page, the sa
 Every response has an `X-Request-ID` header. It echoes the one you sent if that was usable, and
 the server logs carry it for failed requests.
 
+A request body can be up to 1 MiB. Anything bigger gets a 413, before the token is checked. That's
+room for an OPML file of a few thousand feeds.
+
 ## Versioning
 
 Within `/api/v1` changes are additive only. New endpoints and new optional fields can appear, so

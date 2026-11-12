@@ -26,6 +26,7 @@ Start at the [project README](../README.md) if you don't know what andante is ye
   - [Architecture](design/architecture.md): the two services, how they talk, data model, API, listeners.
   - [Delivery](design/delivery.md): CI, security scanning, releases, supply chain.
   - [API](design/api.md): why the API's contract is the way it is.
+  - [Users and a web UI](design/web-ui.md): the decisions behind accounts and the website, and where to find each part.
   - [Login](design/login.md): passwords, sessions, invites, throttling, the audit log.
   - [Pages](design/pages.md): the website, who can reach what, and the feed page.
   - [Bootstrapping](design/bootstrap.md): the token that makes the first admin without a shell.
@@ -36,7 +37,6 @@ Start at the [project README](../README.md) if you don't know what andante is ye
 - [`proposals/`](proposals/): ideas that aren't built:
   - [Discovery](proposals/discovery.md): later strategies, and mid-archive insertions.
   - [Feed links](proposals/feed-links.md): per-read link templates, such as for discussion.
-  - [Users and a web UI](proposals/web-ui.md): what's left, which is two-factor and OIDC.
 
 ## Building It
 

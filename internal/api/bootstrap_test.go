@@ -4,11 +4,13 @@
 package api_test
 
 import (
+	"io"
 	"net/http"
 	"strings"
 	"testing"
 
 	"github.com/gerrowadat/andante/internal/api"
+	"github.com/gerrowadat/andante/internal/httpapi"
 	"github.com/gerrowadat/andante/internal/stacktest"
 	"github.com/gerrowadat/andante/internal/store/storetest"
 	"github.com/gerrowadat/andante/pkg/client"
@@ -81,5 +83,30 @@ func TestBootstrapIsOffWithoutTheService(t *testing.T) {
 	got, err := f.client.BootstrapWithResponse(t.Context(), client.BootstrapRequest{Token: "x", Name: "dave"})
 	if err != nil || got.StatusCode() != http.StatusNotFound {
 		t.Errorf("bootstrap: %v %d", err, got.StatusCode())
+	}
+}
+
+// The limit holds before any token is checked, whether the body says how big it is
+// or not.
+func TestABodyOverTheLimit(t *testing.T) {
+	stack := stacktest.NewWith(t, stacktest.Options{BootstrapToken: strings.Repeat("b", 32)})
+	big := `{"token": "` + strings.Repeat("a", httpapi.MaxBody) + `", "name": "dave"}`
+	for name, body := range map[string]io.Reader{
+		"with a length":    strings.NewReader(big),
+		"without a length": struct{ io.Reader }{strings.NewReader(big)},
+	} {
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, stack.URL+api.BasePath+"/bootstrap", body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusRequestEntityTooLarge || resp.Header.Get("Content-Type") != "application/problem+json" {
+			t.Errorf("%s: %d %s", name, resp.StatusCode, resp.Header.Get("Content-Type"))
+		}
 	}
 }

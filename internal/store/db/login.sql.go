@@ -37,6 +37,44 @@ func (q *Queries) CountInvitePlaces(ctx context.Context, arg CountInvitePlacesPa
 	return column_1, err
 }
 
+const countLiveSessions = `-- name: CountLiveSessions :many
+SELECT s.method, count(*)::bigint AS sessions
+FROM sessions s JOIN users u ON u.id = s.user_id
+WHERE s.revoked_at IS NULL AND u.disabled_at IS NULL
+  AND s.created_at > $1 AND s.last_seen_at > $2
+GROUP BY s.method
+`
+
+type CountLiveSessionsParams struct {
+	CreatedAfter time.Time
+	SeenAfter    time.Time
+}
+
+type CountLiveSessionsRow struct {
+	Method   string
+	Sessions int64
+}
+
+func (q *Queries) CountLiveSessions(ctx context.Context, arg CountLiveSessionsParams) ([]CountLiveSessionsRow, error) {
+	rows, err := q.db.Query(ctx, countLiveSessions, arg.CreatedAfter, arg.SeenAfter)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CountLiveSessionsRow
+	for rows.Next() {
+		var i CountLiveSessionsRow
+		if err := rows.Scan(&i.Method, &i.Sessions); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const deleteInvite = `-- name: DeleteInvite :execrows
 DELETE FROM invites WHERE id = $1 AND ($2::boolean OR created_by = $3)
 `
