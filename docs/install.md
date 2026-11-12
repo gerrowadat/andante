@@ -85,7 +85,7 @@ docker run -d --name catalogue --network andante \
   -e ANDANTE_CATALOGUE_LISTEN=:8082 \
   -e ANDANTE_CATALOGUE_TOKEN="$TOKEN" \
   -e ANDANTE_BASE_URL=https://feeds.example.com \
-  ghcr.io/gerrowadat/andante:0.1.0
+  ghcr.io/gerrowadat/andante:0.1.1
 docker run -d --name andante --network andante \
   -p 8080:8080 -p 127.0.0.1:8081:8081 \
   -e ANDANTE_DATABASE_URL='postgres://.../andante' \
@@ -94,7 +94,7 @@ docker run -d --name andante --network andante \
   -e ANDANTE_SECRET="$SECRET" \
   -e ANDANTE_CATALOGUE_URL=http://catalogue:8082/v1 \
   -e ANDANTE_CATALOGUE_TOKEN="$TOKEN" \
-  ghcr.io/gerrowadat/andante:0.1.0
+  ghcr.io/gerrowadat/andante:0.1.1
 ```
 
 Inside a container the ops listener has to bind to all interfaces to be published, so

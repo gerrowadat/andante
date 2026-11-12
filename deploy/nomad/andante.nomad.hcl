@@ -83,7 +83,7 @@ job "andante" {
       driver = "docker"
 
       config {
-        image      = "ghcr.io/gerrowadat/andante:0.1.0"
+        image      = "ghcr.io/gerrowadat/andante:0.1.1"
         entrypoint = ["/usr/local/bin/andante-catalogue"]
         ports      = ["catalogue"]
       }
@@ -114,7 +114,7 @@ job "andante" {
       driver = "docker"
 
       config {
-        image = "ghcr.io/gerrowadat/andante:0.1.0"
+        image = "ghcr.io/gerrowadat/andante:0.1.1"
         ports = ["public", "ops"]
       }
 
