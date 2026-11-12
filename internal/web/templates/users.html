@@ -5,33 +5,33 @@
 {{range .Users}}<tr>
   <td>{{.Name}}</td><td>{{.Role}}</td><td>{{if .Disabled}}disabled{{else}}active{{end}}</td><td>{{if .TwoFactor}}on{{else}}off{{end}}</td><td>{{.InvitedBy}}</td>
   <td>
-    <form class="inline" method="post" action="/users/{{.ID}}"><input type="hidden" name="csrf" value="{{$.CSRF}}">
+    <form class="inline" method="post" action="{{root}}/users/{{.ID}}"><input type="hidden" name="csrf" value="{{$.CSRF}}">
       {{if eq .Role "admin"}}<button name="action" value="user">Make a user</button>{{else}}<button name="action" value="admin">Make an admin</button>{{end}}
       {{if .Disabled}}<button name="action" value="enable">Enable</button>{{else}}<button name="action" value="disable">Disable</button>{{end}}
     </form>
-    <form class="inline" method="post" action="/users/invite"><input type="hidden" name="csrf" value="{{$.CSRF}}">
+    <form class="inline" method="post" action="{{root}}/users/invite"><input type="hidden" name="csrf" value="{{$.CSRF}}">
       <input type="hidden" name="name" value="{{.Name}}"><input type="hidden" name="reset" value="1"><button>New password link</button>
     </form>
-    {{if .TwoFactor}}<form class="inline" method="post" action="/users/{{.ID}}/two-factor/off"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Turn off two-factor</button></form>{{end}}
-    {{if not .Self}}<a href="/users/{{.ID}}/delete">Delete</a>{{end}}
+    {{if .TwoFactor}}<form class="inline" method="post" action="{{root}}/users/{{.ID}}/two-factor/off"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Turn off two-factor</button></form>{{end}}
+    {{if not .Self}}<a href="{{root}}/users/{{.ID}}/delete">Delete</a>{{end}}
   </td>
 </tr>{{end}}
 </table>
 {{with .Invite}}<p class="note">Send this to {{.Name}}. It works once, until {{.Expires}}: <span class="url">{{.URL}}</span></p>{{end}}
 <p class="muted">A new password link lets someone set a new password, and using it logs them out everywhere else. Disabling someone logs them out and stops their API tokens. Their feed links keep working, so that friends on a group read aren't cut off.</p>
 <h2>Two-factor</h2>
-<form method="post" action="/users/two-factor">
+<form method="post" action="{{root}}/users/two-factor">
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
   <label class="choice"><input type="checkbox" name="require" value="1"{{if .RequireTwoFactor}} checked{{end}}> Everyone who logs in with a password needs two-factor</label>
   <button>Save</button>
 </form>
 <p class="muted">Someone without it is sent to set it up before they can do anything else. Logins with single sign-on are left to the provider. Turning off someone's two-factor is for when they've lost their phone and their recovery codes.</p>
 <h2>Invites</h2>
-<form method="post" action="/users/invite-settings">
+<form method="post" action="{{root}}/users/invite-settings">
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
   <label class="choice"><input type="checkbox" name="users" value="1"{{if .UsersInvite}} checked{{end}}> Everyone can invite people</label>
   <label class="choice">Unused places each <input type="number" name="limit" value="{{.InviteLimit}}" min="0" max="10000"></label>
   <button>Save</button>
 </form>
-<p class="muted">What a user invites is always a user. A place is one use left on one of their links, so a link for three people takes three. Admins have no limit. Make links on the <a href="/invites">invites page</a>, and find whose invites let who in with the invited by column.</p>
+<p class="muted">What a user invites is always a user. A place is one use left on one of their links, so a link for three people takes three. Admins have no limit. Make links on the <a href="{{root}}/invites">invites page</a>, and find whose invites let who in with the invited by column.</p>
 {{end}}{{end}}

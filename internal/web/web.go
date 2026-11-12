@@ -23,6 +23,7 @@ import (
 	"github.com/gerrowadat/andante/internal/bootstrap"
 	"github.com/gerrowadat/andante/internal/clientip"
 	"github.com/gerrowadat/andante/internal/password"
+	"github.com/gerrowadat/andante/internal/rootpath"
 	"github.com/gerrowadat/andante/internal/seal"
 	"github.com/gerrowadat/andante/internal/store"
 	"github.com/gerrowadat/andante/internal/store/db"
@@ -33,9 +34,11 @@ import (
 
 const (
 	cookieName = "andante_session"
-	// securePrefix makes a browser refuse the cookie unless it's Secure, has a Path of
-	// / and has no Domain, so that a subdomain can't set it.
-	securePrefix = "__Host-"
+	// hostPrefix makes a browser refuse the cookie unless it's Secure, has a Path of
+	// / and has no Domain, so that a subdomain can't set it. Under a root path the Path
+	// can't be /, so securePrefix is the most there is: Secure, and nothing else.
+	hostPrefix   = "__Host-"
+	securePrefix = "__Secure-"
 
 	maxFormBytes  = 8 << 10
 	maxNameLength = 64
@@ -92,13 +95,19 @@ type Options struct {
 }
 
 type site struct {
-	opts     Options
-	secure   bool
-	cookie   string
-	throttle *throttle.Throttle
-	jobs     *jobs
-	logins   *prometheus.CounterVec
-	codes    *prometheus.CounterVec
+	opts   Options
+	secure bool
+	cookie string
+	// root is the path of the base URL, which every link on a page starts with, and
+	// cookiePath and cookiePrefix follow from it.
+	root         string
+	cookiePath   string
+	cookiePrefix string
+	views        map[*template.Template]*template.Template
+	throttle     *throttle.Throttle
+	jobs         *jobs
+	logins       *prometheus.CounterVec
+	codes        *prometheus.CounterVec
 	// oidc is nil when logging in with a provider is off.
 	oidc       *oidcLogin
 	oidcLogins *prometheus.CounterVec
@@ -140,9 +149,16 @@ func New(opts Options) http.Handler {
 	if opts.OIDC != nil {
 		s.oidc = newOIDCLogin(*opts.OIDC, opts.BaseURL)
 	}
+	s.root, _ = rootpath.FromBaseURL(opts.BaseURL) // Checked with the server's flags.
+	s.cookiePath = rootpath.Cookie(s.root)
 	if s.secure {
-		s.cookie = securePrefix + cookieName
+		s.cookiePrefix = hostPrefix
+		if s.root != "" {
+			s.cookiePrefix = securePrefix
+		}
+		s.cookie = s.cookiePrefix + cookieName
 	}
+	s.views = rooted(s.root)
 	mux := http.NewServeMux()
 	for _, rt := range routes {
 		mux.HandleFunc(rt.pattern, s.guard(rt))
@@ -202,7 +218,7 @@ func (s *site) fail(w http.ResponseWriter, err error) {
 func (s *site) render(w http.ResponseWriter, status int, page *template.Template, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
-	if err := page.Execute(w, data); err != nil {
+	if err := s.views[page].Execute(w, data); err != nil {
 		s.opts.Logger.Warn("could not write a page", "error", err)
 	}
 }
@@ -218,14 +234,14 @@ func (s *site) setSession(w http.ResponseWriter, raw string) {
 	// Secure is off only for a plain http:// base URL, where a Secure cookie would never
 	// come back. The name has the __Host- prefix whenever it's on.
 	http.SetCookie(w, &http.Cookie{ //nolint:gosec // See above.
-		Name: s.cookie, Value: raw, Path: "/", MaxAge: int(store.SessionAbsolute.Seconds()),
+		Name: s.cookie, Value: raw, Path: s.cookiePath, MaxAge: int(store.SessionAbsolute.Seconds()),
 		Secure: s.secure, HttpOnly: true, SameSite: http.SameSiteLaxMode,
 	})
 }
 
 func (s *site) clearSession(w http.ResponseWriter) {
 	http.SetCookie(w, &http.Cookie{ //nolint:gosec // As in setSession.
-		Name: s.cookie, Path: "/", MaxAge: -1, Secure: s.secure, HttpOnly: true, SameSite: http.SameSiteLaxMode,
+		Name: s.cookie, Path: s.cookiePath, MaxAge: -1, Secure: s.secure, HttpOnly: true, SameSite: http.SameSiteLaxMode,
 	})
 }
 

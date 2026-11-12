@@ -1,6 +1,6 @@
 {{define "content"}}{{with .Data}}
 <h1>{{.Read.Name}}</h1>
-<p>A read of <a href="/sources/{{.Source.ID}}">{{.Source.Title}}</a>.</p>
+<p>A read of <a href="{{root}}/sources/{{.Source.ID}}">{{.Source.Title}}</a>.</p>
 <dl>
   <dt>Pace</dt><dd>{{.Pace}}</dd>
   <dt>So far</dt><dd>{{.Released}} of {{.Indexed}} released{{if ne .State "active"}}, {{.State}}{{end}}</dd>
@@ -14,10 +14,10 @@
   <td>{{.Label}}{{if .Owner}} <small>(can release the next one)</small>{{end}}</td>
   <td>{{if .Revoked}}<span class="muted">stopped</span>{{else if .Page}}<a class="url" href="{{.Page}}">{{.Page}}</a>{{else}}<span class="muted">can't be shown</span>{{end}}</td>
   <td>{{with .Seen}}{{.}}{{else}}<span class="muted">never</span>{{end}}</td>
-  <td>{{if not .Revoked}}<form class="inline" method="post" action="/tokens/{{.ID}}/revoke"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="read" value="{{$.Data.Read.ID}}"><button>Stop</button></form>{{end}}</td>
+  <td>{{if not .Revoked}}<form class="inline" method="post" action="{{root}}/tokens/{{.ID}}/revoke"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="read" value="{{$.Data.Read.ID}}"><button>Stop</button></form>{{end}}</td>
 </tr>{{end}}
 </table>
-<form method="post" action="/reads/{{.Read.ID}}/tokens">
+<form method="post" action="{{root}}/reads/{{.Read.ID}}/tokens">
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
   <label class="choice">A link for <input type="text" name="label" required placeholder="Alex"></label>
   <label class="choice"><input type="checkbox" name="owner" value="1"> can release the next one</label>
@@ -25,16 +25,16 @@
 </form>
 <h2>Change it</h2>
 <p>
-{{if eq .State "paused"}}<form class="inline" method="post" action="/reads/{{.Read.ID}}/resume"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Resume</button></form>
-{{else}}<form class="inline" method="post" action="/reads/{{.Read.ID}}/pause"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Pause</button></form>{{end}}
-<form class="inline" method="post" action="/reads/{{.Read.ID}}/skip"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Release the next one now</button></form>
+{{if eq .State "paused"}}<form class="inline" method="post" action="{{root}}/reads/{{.Read.ID}}/resume"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Resume</button></form>
+{{else}}<form class="inline" method="post" action="{{root}}/reads/{{.Read.ID}}/pause"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Pause</button></form>{{end}}
+<form class="inline" method="post" action="{{root}}/reads/{{.Read.ID}}/skip"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Release the next one now</button></form>
 </p>
-<form method="post" action="/reads/{{.Read.ID}}/jump">
+<form method="post" action="{{root}}/reads/{{.Read.ID}}/jump">
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
   <label class="choice">Release everything up to entry <input type="number" name="seq" min="0" required size="6"></label>
   <button>Jump</button>
 </form>
-<p><a href="/reads/{{.Read.ID}}/pace">Change the pace</a> · <a href="/reads/{{.Read.ID}}/delete">Delete this read</a></p>
+<p><a href="{{root}}/reads/{{.Read.ID}}/pace">Change the pace</a> · <a href="{{root}}/reads/{{.Read.ID}}/delete">Delete this read</a></p>
 <h2>History</h2>
 <table>
 <tr><th>When</th><th>What</th><th>From entry</th></tr>

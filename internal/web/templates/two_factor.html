@@ -1,10 +1,10 @@
 {{define "content"}}{{with .Data}}
 <h1>Set up two-factor</h1>
 <p>Scan this with an authenticator app, or type the key into it by hand.</p>
-<p><img src="/account/two-factor/qr" width="256" height="256" alt="A QR code holding the key below"></p>
+<p><img src="{{root}}/account/two-factor/qr" width="256" height="256" alt="A QR code holding the key below"></p>
 <p>Key: <code>{{.Secret}}</code></p>
 <p class="muted">Or open <a href="{{.URL}}">this link</a> on the phone the app is on.</p>
-<form method="post" action="/account/two-factor">
+<form method="post" action="{{root}}/account/two-factor">
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
   <label class="choice">The code it shows <input type="text" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" required autofocus></label>
   <button>Turn it on</button>

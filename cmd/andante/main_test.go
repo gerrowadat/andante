@@ -9,6 +9,7 @@ import (
 	"flag"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -790,5 +791,19 @@ func TestBootstrap(t *testing.T) {
 	t.Setenv("ANDANTE_BOOTSTRAP_TOKEN", token)
 	if r := bootstrap("", "sam"); r.err == nil {
 		t.Error("a second admin was made")
+	}
+}
+
+// A server under a path of its host takes --url with that path.
+func TestURLWithAPath(t *testing.T) {
+	var got string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.URL.Path
+		http.Error(w, "no", http.StatusUnauthorized)
+	}))
+	t.Cleanup(srv.Close)
+	_ = run("whoami", "--url", srv.URL+"/feedslow/", "--token", "x")
+	if got != "/feedslow/api/v1/me" {
+		t.Errorf("asked for %q", got)
 	}
 }

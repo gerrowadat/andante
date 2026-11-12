@@ -78,6 +78,8 @@ type process struct {
 	dsn    string
 	admin  string
 	public string
+	// root is the path of --base-url, which every route is under.
+	root   string
 	mu     sync.Mutex
 	logs   strings.Builder
 	waited chan error
@@ -177,7 +179,7 @@ func (p *process) waitReady(t *testing.T) {
 	t.Helper()
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
-		if status(p.admin+"/readyz") == http.StatusOK {
+		if status(p.admin+p.root+"/readyz") == http.StatusOK {
 			return
 		}
 		time.Sleep(50 * time.Millisecond)

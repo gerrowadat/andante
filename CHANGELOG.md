@@ -6,6 +6,11 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- andante-server can run under a path, such as `https://example.com/feeds`, taken from
+  `--base-url`. The website, the API, feeds, health checks and metrics all move under it.
+
 ## [0.1.0] - 2026-11-12
 
 andante has accounts and a website, and is split into two services. There's no upgrade from v0.0.1:

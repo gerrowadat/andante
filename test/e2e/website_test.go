@@ -22,7 +22,7 @@ import (
 // browser is someone using the website: it keeps their session, and the CSRF token
 // from the last page it saw, the way a form would.
 type browser struct {
-	address, session, csrf string
+	address, root, cookie, session, csrf string
 }
 
 type visit struct {
@@ -40,7 +40,7 @@ func (b *browser) do(t *testing.T, method, path string, form url.Values) visit {
 		}
 		body = strings.NewReader(form.Encode())
 	}
-	req, err := http.NewRequestWithContext(t.Context(), method, "http://"+b.address+path, body)
+	req, err := http.NewRequestWithContext(t.Context(), method, "http://"+b.address+b.root+path, body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func (b *browser) do(t *testing.T, method, path string, form url.Values) visit {
 	}
 	// The cookie is Secure, and this is plain HTTP, so a cookie jar wouldn't send it.
 	if b.session != "" {
-		req.AddCookie(&http.Cookie{Name: sessionCookie, Value: b.session})
+		req.AddCookie(&http.Cookie{Name: b.cookie, Value: b.session})
 	}
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	resp, err := client.Do(req)
@@ -62,14 +62,41 @@ func (b *browser) do(t *testing.T, method, path string, form url.Values) visit {
 		t.Fatal(err)
 	}
 	for _, c := range resp.Cookies() {
-		if c.Name == sessionCookie && c.MaxAge >= 0 {
+		if c.Name == b.cookie && c.MaxAge >= 0 {
+			if want := cookiePath(b.root); c.Path != want {
+				t.Errorf("%s %s: the session cookie's path is %q, want %q", method, path, c.Path, want)
+			}
 			b.session = c.Value
 		}
 	}
 	if match := csrfField.FindStringSubmatch(string(data)); match != nil {
 		b.csrf = match[1]
 	}
-	return visit{status: resp.StatusCode, body: string(data), location: resp.Header.Get("Location")}
+	// Links and redirects come with the root path, and the tests use paths without
+	// it, the way the handlers see them.
+	location := resp.Header.Get("Location")
+	if strings.HasPrefix(location, "/") {
+		if !strings.HasPrefix(location, b.root+"/") {
+			t.Fatalf("%s %s sent us outside %q, to %q", method, path, b.root, location)
+		}
+		location = strings.TrimPrefix(location, b.root)
+	}
+	// A redirect's body is Go's, with the link it was given, and nobody sees it.
+	if b.root != "" && location == "" {
+		for _, link := range rootedLink.FindAllStringSubmatch(string(data), -1) {
+			if !strings.HasPrefix(link[1], b.root+"/") {
+				t.Errorf("GET %s links to %q, outside %q", path, link[1], b.root)
+			}
+		}
+	}
+	return visit{status: resp.StatusCode, body: strings.ReplaceAll(string(data), `="`+b.root+"/", `="/`), location: location}
+}
+
+func cookiePath(root string) string {
+	if root == "" {
+		return "/"
+	}
+	return root
 }
 
 func (b *browser) get(t *testing.T, path string) visit {
@@ -88,20 +115,46 @@ func (b *browser) post(t *testing.T, path string, form url.Values) string {
 }
 
 var (
-	addThis  = regexp.MustCompile(`action="(/add/[^/"]+/0)"`)
-	feedPage = regexp.MustCompile(`href="https://andante\.example(/f/[^"]+)"`)
+	addThis = regexp.MustCompile(`action="(/add/[^/"]+/0)"`)
+	// rootedLink is a link to one of our own pages.
+	rootedLink = regexp.MustCompile(`(?:href|action|src)="(/[^/"][^"]*)"`)
 )
 
 // The whole of what someone does the first time, through the website alone: set up
-// the first admin, add a comic by its address, track it, and read the feed.
+// the first admin, add a comic by its address, track it, and read the feed. Then the
+// same again with andante under a path of its host, where every link, redirect,
+// cookie and health check has to stay under it.
 func TestFromLoginToAFeed(t *testing.T) {
+	for name, root := range map[string]string{"at the top": "", "under a path": "/feedslow"} {
+		t.Run(name, func(t *testing.T) { fromLoginToAFeed(t, root) })
+	}
+}
+
+func fromLoginToAFeed(t *testing.T, root string) {
 	const token = "a-bootstrap-token-of-at-least-32-characters"
 	catalogue := startCatalogue(t, build(t, "andante-catalogue"), storetest.DSN(t), crawlFlags...)
 	catalogue.waitReady(t)
-	server := startServer(t, buildServer(t), storetest.DSN(t), catalogue.flag(), "--demand-interval=50ms", "--feed-rate-limit=100000", "--bootstrap-token="+token)
+	server := startServer(t, buildServer(t), storetest.DSN(t), catalogue.flag(), "--demand-interval=50ms", "--feed-rate-limit=100000",
+		"--bootstrap-token="+token, "--base-url=https://andante.example"+root)
+	server.root = root
 	server.waitReady(t)
+	for _, path := range []string{"/healthz", "/metrics"} {
+		if got := status(server.admin + root + path); got != http.StatusOK {
+			t.Errorf("%s%s: %d", root, path, got)
+		}
+		if root != "" {
+			if got := status(server.admin + path); got != http.StatusNotFound {
+				t.Errorf("%s outside the root: %d", path, got)
+			}
+		}
+	}
 	site := sitetest.Serve(t, "discover-comic")
-	b := &browser{address: server.public}
+	cookie := "__Host-andante_session"
+	if root != "" {
+		cookie = "__Secure-andante_session"
+	}
+	b := &browser{address: server.public, root: root, cookie: cookie}
+	feedPage := regexp.MustCompile(`href="https://andante\.example` + regexp.QuoteMeta(root) + `(/f/[^"]+)"`)
 
 	if got := b.get(t, "/"); got.status != http.StatusSeeOther {
 		t.Fatalf("home before logging in: %d", got.status)
@@ -150,7 +203,7 @@ func TestFromLoginToAFeed(t *testing.T) {
 	// The read can come before the server has the first page, so it's in the feed
 	// as soon as the next sync brings it.
 	for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(50 * time.Millisecond) {
-		feed := fetchFeed(t, "http://"+server.public+link[1]+".rss")
+		feed := fetchFeed(t, "http://"+server.public+root+link[1]+".rss")
 		if len(feed.Items) == 1 && strings.HasSuffix(feed.Items[0].Link, "/1.html") {
 			return
 		}
