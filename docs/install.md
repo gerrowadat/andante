@@ -143,8 +143,12 @@ alias andante='docker compose exec -T -e ANDANTE_TOKEN andante /usr/local/bin/an
 Under Nomad:
 
 ```sh
-andante() { nomad alloc exec -job andante -task server /usr/local/bin/andante --token "$ANDANTE_TOKEN" "$@"; }
+andante() { nomad alloc exec -i -task server -job andante /usr/local/bin/andante --token "$ANDANTE_TOKEN" "$@"; }
 ```
+
+`-task` goes before `-job`, or `nomad alloc exec` ignores it and asks which task you meant. In the
+container the CLI finds the server from its `ANDANTE_LISTEN` and the path in its `ANDANTE_BASE_URL`,
+so neither alias needs `--url`.
 
 Or use the standalone one from a release archive, or `out/andante` from a source build, with
 `ANDANTE_URL` set to the base URL. It needs an API token in `ANDANTE_TOKEN`, which you get once

@@ -604,10 +604,30 @@ func TestEnvironment(t *testing.T) {
 }
 
 func TestDefaultURL(t *testing.T) {
-	t.Setenv("ANDANTE_URL", "")
-	root := newRootCmd(io.Discard, io.Discard)
-	if got := root.PersistentFlags().Lookup("url").DefValue; got != defaultURL {
-		t.Errorf("--url default = %q", got)
+	tests := []struct {
+		name, url, base, listen, want string
+	}{
+		{"no server beside it", "", "", "", defaultURL},
+		{"server at the top of its host", "", "https://feeds.example.com", "", defaultURL},
+		{"server under a path", "", "https://example.com/feeds/", "", "http://127.0.0.1:8080/feeds"},
+		{"server on another port", "", "https://example.com/feeds", "0.0.0.0:9090", "http://127.0.0.1:9090/feeds"},
+		{"server on every IPv6 address", "", "https://example.com", "[::]:9090", "http://127.0.0.1:9090"},
+		{"server on one address", "", "https://example.com", "10.0.0.5:8080", "http://10.0.0.5:8080"},
+		{"IPv6 loopback", "", "https://example.com", "[::1]:8080", "http://[::1]:8080"},
+		{"listener it can't read", "", "https://example.com/feeds", "8080", defaultURL},
+		{"base URL it can't read", "", "https://example.com/%zz", "", defaultURL},
+		{"ANDANTE_URL wins", "http://andante.example", "https://example.com/feeds", ":9090", "http://andante.example"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("ANDANTE_URL", tt.url)
+			t.Setenv("ANDANTE_BASE_URL", tt.base)
+			t.Setenv("ANDANTE_LISTEN", tt.listen)
+			root := newRootCmd(io.Discard, io.Discard)
+			if got := root.PersistentFlags().Lookup("url").DefValue; got != tt.want {
+				t.Errorf("--url default = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
