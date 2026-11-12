@@ -19,10 +19,7 @@ const (
 )
 
 func (s *site) cookieNamed(name string) string {
-	if s.secure {
-		return securePrefix + name
-	}
-	return name
+	return s.cookiePrefix + name
 }
 
 func (s *site) setSealed(w http.ResponseWriter, name, purpose string, v any) error {
@@ -37,7 +34,7 @@ func (s *site) setSealed(w http.ResponseWriter, name, purpose string, v any) err
 	// As in setSession. Lax, because the provider sends the browser back with a
 	// top-level GET from another site.
 	http.SetCookie(w, &http.Cookie{ //nolint:gosec // See setSession.
-		Name: s.cookieNamed(name), Value: base64.RawURLEncoding.EncodeToString(sealed), Path: "/",
+		Name: s.cookieNamed(name), Value: base64.RawURLEncoding.EncodeToString(sealed), Path: s.cookiePath,
 		MaxAge: int(pendingLife.Seconds()), Secure: s.secure, HttpOnly: true, SameSite: http.SameSiteLaxMode,
 	})
 	return nil
@@ -66,6 +63,6 @@ func (s *site) openSealed(r *http.Request, name, purpose string, v interface{ un
 
 func (s *site) clearSealed(w http.ResponseWriter, name string) {
 	http.SetCookie(w, &http.Cookie{ //nolint:gosec // See setSession.
-		Name: s.cookieNamed(name), Path: "/", MaxAge: -1, Secure: s.secure, HttpOnly: true, SameSite: http.SameSiteLaxMode,
+		Name: s.cookieNamed(name), Path: s.cookiePath, MaxAge: -1, Secure: s.secure, HttpOnly: true, SameSite: http.SameSiteLaxMode,
 	})
 }

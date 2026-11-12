@@ -25,8 +25,8 @@ var staticFiles embed.FS
 
 // view parses a page with the layout and the pace form, which several pages share.
 func view(name string) *template.Template {
-	return template.Must(template.New("layout").ParseFS(templateFiles,
-		"templates/layout.html", "templates/pace.html", "templates/"+name+".html"))
+	return parsed(template.Must(template.New("layout").Funcs(rootFuncs("")).ParseFS(templateFiles,
+		"templates/layout.html", "templates/pace.html", "templates/"+name+".html")))
 }
 
 var (
@@ -170,7 +170,7 @@ func (s *site) show(w http.ResponseWriter, v visitor, status int, t *template.Te
 	p.Me, p.Admin, p.CanInvite, p.CSRF = v.session.Name, v.actor.Admin, v.session.CanInvite, csrfFor(v.raw)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
-	if err := t.ExecuteTemplate(w, "layout", p); err != nil {
+	if err := s.views[t].ExecuteTemplate(w, "layout", p); err != nil {
 		s.opts.Logger.Warn("could not write a page", "error", err)
 	}
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/gerrowadat/andante/internal/api"
 	"github.com/gerrowadat/andante/internal/buildinfo"
 	"github.com/gerrowadat/andante/internal/config"
+	"github.com/gerrowadat/andante/internal/rootpath"
 	"github.com/gerrowadat/andante/internal/web"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
@@ -72,11 +73,13 @@ func New(cfg config.Config, deps Deps) (*Server, error) {
 		}
 		publicHandler = mux
 	}
-	public, err := newListener(cfg, cfg.Listen, publicHandler, logger)
+	// Validate has already checked it.
+	root, _ := rootpath.FromBaseURL(cfg.BaseURL)
+	public, err := newListener(cfg, cfg.Listen, rootpath.Mount(root, publicHandler), logger)
 	if err != nil {
 		return nil, fmt.Errorf("public listener: %w", err)
 	}
-	ops, err := newListener(cfg, cfg.OpsListen, opsMux(cfg, deps), logger)
+	ops, err := newListener(cfg, cfg.OpsListen, rootpath.Mount(root, opsMux(cfg, deps)), logger)
 	if err != nil {
 		_ = public.net.Close()
 		return nil, fmt.Errorf("ops listener: %w", err)

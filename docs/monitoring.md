@@ -10,9 +10,12 @@ both.
 | `/healthz` | 200 while the process runs | Liveness |
 | `/readyz` | 200 once the service's own database answers, within `--readiness-timeout` | Readiness and service checks |
 
+With a path in `--base-url`, such as `https://example.com/feeds`, the server's are under it:
+`/feeds/healthz` and `/feeds/readyz`. The catalogue's stay where they are.
+
 ## Metrics
 
-Scrape `/metrics`. Source slugs are labels, which is fine because they're bounded by what
+Scrape `/metrics`, or `/feeds/metrics` on the server with a path in `--base-url`. Source slugs are labels, which is fine because they're bounded by what
 you create. Tokens and read IDs are never labels.
 
 | Metric | Labels | Meaning |

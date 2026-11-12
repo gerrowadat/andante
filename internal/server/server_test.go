@@ -359,3 +359,23 @@ func TestTheWebsiteIsOnThePublicListener(t *testing.T) {
 		t.Errorf("ops /login = %d, want 404", code)
 	}
 }
+
+// A base URL with a path puts the ops listener under it too. The public listener is
+// covered end to end, in test/e2e.
+func TestARootPathCoversBothListeners(t *testing.T) {
+	cfg := testConfig()
+	cfg.BaseURL = "https://andante.example/feedslow/"
+	s, _ := start(t, cfg, func(context.Context) error { return nil }, io.Discard)
+	ops := "http://" + s.OpsAddr().String()
+	for url, want := range map[string]int{
+		ops + "/feedslow/healthz": http.StatusOK,
+		ops + "/feedslow/readyz":  http.StatusOK,
+		ops + "/feedslow/metrics": http.StatusOK,
+		ops + "/healthz":          http.StatusNotFound,
+		ops + "/metrics":          http.StatusNotFound,
+	} {
+		if code, _ := get(t, url); code != want {
+			t.Errorf("%s = %d, want %d", url, code, want)
+		}
+	}
+}

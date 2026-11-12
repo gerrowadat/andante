@@ -65,6 +65,8 @@ func (c *countingHasher) Waste(ctx context.Context, given string) error {
 }
 
 type fixture struct {
+	// session is the session cookie's name, which depends on the base URL.
+	session  string
 	stack    *stacktest.Stack
 	store    *store.Store
 	hasher   *countingHasher
@@ -90,6 +92,10 @@ func (f *fixture) advance(d time.Duration) {
 
 func (f *fixture) serve(t *testing.T, baseURL string, passwordLogin bool) {
 	t.Helper()
+	f.session = cookieName
+	if strings.Count(baseURL, "/") > 2 {
+		f.session = "__Secure-andante_session"
+	}
 	// Everything in these tests comes through a proxy, which is how each one gets to
 	// choose where a request comes from.
 	clients, err := clientip.New([]string{"127.0.0.0/8"})
@@ -145,7 +151,7 @@ func (f *fixture) do(t *testing.T, method, path string, form url.Values, ip, coo
 	}
 	req.Header.Set("X-Forwarded-For", ip)
 	if cookie != "" {
-		req.AddCookie(&http.Cookie{Name: cookieName, Value: cookie})
+		req.AddCookie(&http.Cookie{Name: f.session, Value: cookie})
 	}
 	for i := 0; i < len(headers); i += 2 {
 		req.Header.Set(headers[i], headers[i+1])
@@ -163,7 +169,7 @@ func (f *fixture) do(t *testing.T, method, path string, form url.Values, ip, coo
 	got := answer{status: resp.StatusCode, body: string(data), header: resp.Header, cookies: map[string]*http.Cookie{}}
 	for _, c := range resp.Cookies() {
 		got.cookies[c.Name] = c
-		if c.Name == cookieName {
+		if c.Name == f.session {
 			got.cookie = c
 		}
 	}
@@ -717,5 +723,51 @@ func TestStaticFilesWithoutAListing(t *testing.T) {
 	}
 	if got := f.do(t, http.MethodGet, "/static/style.css", nil, home, ""); got.status != http.StatusOK {
 		t.Errorf("the stylesheet: %d", got.status)
+	}
+}
+
+// Under a root path, every link on a page starts with it, and the session cookie is
+// kept to it. __Host- needs a Path of /, so the cookie is __Secure- instead.
+func TestARootPathReachesLinksAndCookies(t *testing.T) {
+	f := newFixture(t)
+	f.serve(t, "https://andante.example/feedslow", true)
+	f.user(t, "dave")
+
+	login := f.do(t, http.MethodGet, "/login", nil, home, "")
+	if !strings.Contains(login.body, `action="/feedslow/login"`) {
+		t.Errorf("login page: %s", login.body)
+	}
+	in := f.login(t, "dave", phrase, home)
+	c := in.cookies["__Secure-andante_session"]
+	if in.status != http.StatusSeeOther || c == nil {
+		t.Fatalf("login: %d %v", in.status, in.cookies)
+	}
+	if !c.Secure || !c.HttpOnly || c.Path != "/feedslow" || c.Domain != "" {
+		t.Errorf("cookie = %+v", c)
+	}
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, f.server.URL+"/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("X-Forwarded-For", home)
+	req.AddCookie(&http.Cookie{Name: c.Name, Value: c.Value})
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := string(body)
+	for _, want := range []string{`href="/feedslow/static/style.css"`, `href="/feedslow/sources"`, `action="/feedslow/logout"`} {
+		if !strings.Contains(page, want) {
+			t.Errorf("home has no %s: %s", want, page)
+		}
+	}
+	if strings.Contains(page, `href="/sources"`) {
+		t.Errorf("home links outside the root: %s", page)
 	}
 }

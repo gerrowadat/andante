@@ -134,6 +134,8 @@ func TestRejected(t *testing.T) {
 		{"relative base URL", []string{db, cat, tok, key, "--base-url=/feeds"}, "base-url"},
 		{"base URL with no host", []string{db, cat, tok, key, "--base-url=https://"}, "base-url"},
 		{"non-http base URL", []string{db, cat, tok, key, "--base-url=ftp://andante.example"}, "base-url"},
+		{"base URL with a query", []string{db, cat, tok, key, "--base-url=https://andante.example/feeds?x=1"}, "base-url"},
+		{"base URL with an odd path", []string{db, cat, tok, key, "--base-url=https://andante.example/a%20b"}, "base-url"},
 		{"unparseable base URL", []string{db, cat, tok, key, "--base-url=http://[::1"}, "base-url"},
 		{"unknown time zone", []string{db, base, cat, tok, key, "--default-timezone=Mars/Olympus"}, "default-timezone"},
 		{"unknown log format", []string{db, base, cat, tok, key, "--log-format=xml"}, "log-format"},

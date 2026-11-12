@@ -14,7 +14,7 @@ has its own.
 | Flag | Env | Default | Purpose |
 |---|---|---|---|
 | `--database-url` | `ANDANTE_DATABASE_URL` | required | Postgres DSN |
-| `--base-url` | `ANDANTE_BASE_URL` | required | Public URL used in feed links; absolute http(s) |
+| `--base-url` | `ANDANTE_BASE_URL` | required | Public URL used in feed links; absolute http(s). A path, such as `https://example.com/feeds`, puts both listeners under it. See [deploying](deploying.md#under-a-path) |
 | `--listen` | `ANDANTE_LISTEN` | `:8080` | Public listener (feeds and the API) |
 | `--ops-listen` | `ANDANTE_OPS_LISTEN` | `127.0.0.1:8081` | Ops listener (health, metrics) |
 | `--trusted-proxies` | `ANDANTE_TRUSTED_PROXIES` | none | CIDRs of proxies whose `X-Forwarded-For` to believe. Set this behind a proxy, or every login looks like it comes from the proxy |

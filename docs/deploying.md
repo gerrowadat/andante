@@ -29,6 +29,31 @@ Set `--base-url` to the address readers will use, because feed links are built f
 A new database has no admin. [Bootstrapping](bootstrap.md) covers making one.
 [Configuration](configuration.md) has every setting.
 
+## Under a Path
+
+To run andante at `https://example.com/feeds` instead of on a host of its own, put the path in
+`--base-url`. Everything the server serves moves under it, on both listeners: the website, the API,
+feeds, and `/feeds/healthz`, `/feeds/readyz` and `/feeds/metrics`. Anything outside it is a 404.
+Point Prometheus and any health checks at the new paths, and the CLI's `ANDANTE_URL` at
+`https://example.com/feeds`.
+
+The proxy has to pass the path through as it is, without taking `/feeds` off. In nginx that's a
+`proxy_pass` with no path of its own:
+
+```nginx
+location /feeds/ {
+    proxy_pass http://127.0.0.1:8080;
+}
+```
+
+In Caddy, use `handle /feeds/*`, because `handle_path` strips it. The catalogue doesn't move, since
+nothing but the server talks to it.
+
+Browsers don't separate paths on one host. Anything else served from `example.com` is the same
+origin as andante, and a script there can use the website as whoever is logged in. Only put andante
+under a path of a host whose other content you trust. The session cookie is also `__Secure-` and not
+`__Host-` there, because a `__Host-` cookie can only have a path of `/`.
+
 ## Exposing Only the Feeds
 
 Publish the public listener and nothing else. Either of these works without opening a port

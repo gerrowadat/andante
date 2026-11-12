@@ -1,7 +1,7 @@
 {{define "content"}}
 <h1>Add a site</h1>
 <p>Paste a site's address, or its feed's. andante works out how to read it, which can take a minute or two, because it only asks a site for one page every few seconds.</p>
-<form method="post" action="/add">
+<form method="post" action="{{root}}/add">
   <input type="hidden" name="csrf" value="{{.CSRF}}">
   <label>Address <input type="url" name="url" required class="long" placeholder="https://comic.example/"></label>
   <button>Look</button>

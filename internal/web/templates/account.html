@@ -1,7 +1,7 @@
 {{define "content"}}{{with .Data}}
 <h1>{{$.Me}}</h1>
 {{if .Password}}<h2>Password</h2>
-<form method="post" action="/account/password">
+<form method="post" action="{{root}}/account/password">
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
   <label>Current password <input type="password" name="current" autocomplete="current-password" required></label>
   <label>New password <input type="password" name="password" autocomplete="new-password" minlength="12" maxlength="128" required></label>
@@ -9,20 +9,20 @@
 </form>
 <h2>Two-factor</h2>
 {{if .TwoFactor}}<p>On. You have {{.RecoveryLeft}} recovery codes left.</p>
-<form method="post" action="/account/two-factor/off">
+<form method="post" action="{{root}}/account/two-factor/off">
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
   <label class="choice">A code, or a recovery code <input type="text" name="code" autocomplete="one-time-code" required></label>
   <button>Turn it off</button>
 </form>
 {{else}}<p>Off. With it on, logging in takes a code from an app on your phone as well as your password.</p>
-<p><a href="/account/two-factor">Set it up</a></p>{{end}}
+<p><a href="{{root}}/account/two-factor">Set it up</a></p>{{end}}
 {{end}}
 <h2>Where you're logged in</h2>
 <table>
 <tr><th>From</th><th>Since</th><th>Last seen</th><th></th></tr>
 {{range .Sessions}}<tr>
   <td>{{.IP}}<br><small>{{.Agent}}</small></td><td>{{.Since}}</td><td>{{.Seen}}</td>
-  <td>{{if .Current}}<span class="muted">this one</span>{{else}}<form class="inline" method="post" action="/account/sessions/{{.ID}}/end"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Log it out</button></form>{{end}}</td>
+  <td>{{if .Current}}<span class="muted">this one</span>{{else}}<form class="inline" method="post" action="{{root}}/account/sessions/{{.ID}}/end"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Log it out</button></form>{{end}}</td>
 </tr>{{end}}
 </table>
 <h2>API tokens</h2>
@@ -32,10 +32,10 @@
 <tr><th>Label</th><th>Made</th><th>Last used</th><th></th></tr>
 {{range .Tokens}}<tr>
   <td>{{.Label}}</td><td>{{.Made}}</td><td>{{with .Used}}{{.}}{{else}}<span class="muted">never</span>{{end}}</td>
-  <td>{{if .Revoked}}<span class="muted">revoked</span>{{else}}<form class="inline" method="post" action="/account/tokens/{{.ID}}/revoke"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Revoke</button></form>{{end}}</td>
+  <td>{{if .Revoked}}<span class="muted">revoked</span>{{else}}<form class="inline" method="post" action="{{root}}/account/tokens/{{.ID}}/revoke"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Revoke</button></form>{{end}}</td>
 </tr>{{end}}
 </table>
-<form method="post" action="/account/tokens">
+<form method="post" action="{{root}}/account/tokens">
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
   <label class="choice">Label <input type="text" name="label" required placeholder="laptop"></label>
   <button>Make a token</button>

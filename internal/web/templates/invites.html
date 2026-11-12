@@ -5,12 +5,12 @@
 <tr><th>For</th><th>Role</th><th>Used</th><th>Until</th>{{if $.Admin}}<th>Made by</th>{{end}}<th></th></tr>
 {{range .Invites}}<tr>
   <td>{{if .Name}}{{.Name}}{{if .Reset}} (new password){{end}}{{else}}whoever uses it{{end}}</td><td>{{.Role}}</td><td>{{.Uses}} of {{.MaxUses}}</td><td>{{.Expires}}</td>{{if $.Admin}}<td>{{or .CreatedBy "the server"}}</td>{{end}}
-  <td><form class="inline" method="post" action="/invites/{{.ID}}/withdraw"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Withdraw</button></form></td>
+  <td><form class="inline" method="post" action="{{root}}/invites/{{.ID}}/withdraw"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Withdraw</button></form></td>
 </tr>{{end}}
 </table>
-{{with .More}}<p><a href="/invites?after={{.}}">More</a></p>{{end}}{{else}}<p>{{if $.Admin}}There are no invites out.{{else}}You have no invites out.{{end}}</p>{{end}}
+{{with .More}}<p><a href="{{root}}/invites?after={{.}}">More</a></p>{{end}}{{else}}<p>{{if $.Admin}}There are no invites out.{{else}}You have no invites out.{{end}}</p>{{end}}
 {{if $.CanInvite}}<h2>Invite someone</h2>
-<form method="post" action="/invites">
+<form method="post" action="{{root}}/invites">
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
   <label class="choice">Name <input type="text" name="name" pattern="[a-z0-9][a-z0-9._-]*" title="lower case letters, numbers, dots, dashes and underscores"></label>
   <label class="choice">People <input type="number" name="uses" value="1" min="1" max="100"></label>

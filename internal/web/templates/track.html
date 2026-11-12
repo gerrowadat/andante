@@ -1,6 +1,6 @@
 {{define "content"}}{{with .Data}}
 <h1>Track {{.Source.Title}}</h1>
-<form method="post" action="/sources/{{.Source.ID}}/track">
+<form method="post" action="{{root}}/sources/{{.Source.ID}}/track">
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
   <label>Name it <input type="text" name="name" value="{{.Name}}" required></label>
   {{template "pace" .Pace}}

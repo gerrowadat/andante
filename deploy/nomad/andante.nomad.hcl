@@ -53,6 +53,7 @@ job "andante" {
       provider = "nomad"
       port     = "ops"
 
+      # With a path in ANDANTE_BASE_URL, such as /feeds, this is /feeds/readyz.
       check {
         name     = "ready"
         type     = "http"
