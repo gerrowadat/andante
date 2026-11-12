@@ -139,6 +139,61 @@ paths:
                 date: 2026-11-05T07:00:00Z
         default:
           $ref: "#/components/responses/Problem"
+  /bootstrap:
+    post:
+      operationId: bootstrap
+      tags: [users]
+      summary: Make the first admin
+      description: >-
+        Needs no API token, because the bootstrap token is the authentication.
+        It's --bootstrap-token, or the one the server logs while there's no
+        admin. Makes a new admin and returns their first API token and a link
+        where they set a password. Works only while there's no active admin,
+        and is a 404 otherwise. The name has to be free: this never takes
+        over an existing account. Wrong tokens are throttled by address.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BootstrapRequest"
+            example:
+              token: example-bootstrap-token
+              name: dave
+      responses:
+        "201":
+          description: The new admin.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BootstrapResult"
+              example:
+                user:
+                  id: 1
+                  name: dave
+                  role: admin
+                  created_at: 2026-11-05T07:00:00Z
+                token: example-api-token
+                password_url: https://andante.example/invite/example-invite
+        "429":
+          description: Too many wrong tokens from this address.
+          headers:
+            Retry-After:
+              description: Seconds to wait.
+              schema:
+                type: integer
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              example:
+                type: about:blank
+                title: Too Many Requests
+                status: 429
+                detail: too many wrong tokens from this address; wait and try again
+        default:
+          $ref: "#/components/responses/Problem"
   /me:
     get:
       operationId: getMe
@@ -1174,6 +1229,30 @@ components:
           type: boolean
           default: false
           description: This is for an existing user, to set a new password.
+    BootstrapRequest:
+      type: object
+      additionalProperties: false
+      required: [token, name]
+      properties:
+        token:
+          type: string
+          description: The bootstrap token.
+        name:
+          type: string
+          pattern: ^[a-z0-9][a-z0-9._-]{0,63}$
+    BootstrapResult:
+      type: object
+      required: [user, token]
+      properties:
+        user:
+          $ref: "#/components/schemas/User"
+        token:
+          type: string
+          description: The new admin's first API token, shown only here.
+        password_url:
+          type: string
+          format: uri
+          description: A link, good for a week, where the new admin sets a password.
     Invite:
       type: object
       required: [id, name, role, expires_at, url]

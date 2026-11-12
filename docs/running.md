@@ -41,11 +41,15 @@ on loopback, and they should stay that way.
 Postgres only creates the catalogue's database on an empty volume. If you ran an older version of
 this stack, start again with `docker compose down -v`.
 
-There are no users yet, so add yourself. This prints your API token:
+There's no admin yet, so the server logs the address of its setup page and a bootstrap token:
 
 ```sh
-docker compose exec -T andante /usr/local/bin/andante-server user add dave --admin
+docker compose logs andante | grep bootstrap
 ```
+
+Open the setup page, paste the token, pick a username, and set a password on the page it sends you
+to. That's you logged in as the admin. The token lasts a day, and restarting the server after that
+makes a new one. For the CLI, make yourself an API token on the Account page.
 
 The image has the CLI in it, so with that token an alias gets you going:
 
@@ -79,10 +83,12 @@ Edit `datacenters`, both `ANDANTE_BASE_URL`s and the image tags in the job, then
 nomad job run deploy/nomad/andante.nomad.hcl
 ```
 
-Then add yourself, which prints your API token. The CLI is in the image here too:
+Then find the setup page and bootstrap token in the server's log, and set yourself up as for Compose.
+To use a token of your own, put `bootstrap_token="$(openssl rand -hex 32)"` in the Variable and pass
+it to the server as `ANDANTE_BOOTSTRAP_TOKEN`. The CLI is in the image here too:
 
 ```sh
-nomad alloc exec -job andante -task server /usr/local/bin/andante-server user add dave --admin
+nomad alloc logs -stderr -job andante server | grep bootstrap
 export ANDANTE_TOKEN=<your token>
 andante() { nomad alloc exec -job andante -task server /usr/local/bin/andante --token "$ANDANTE_TOKEN" "$@"; }
 andante whoami
@@ -102,13 +108,14 @@ for scripting.
 
 ### Log In
 
-To set a password for the first admin:
+The first admin comes from the setup page above. If you made yourself with `andante-server user add`
+instead, this prints a link to set a password:
 
 ```sh
 andante-server user link dave --base-url https://feeds.example.com
 ```
 
-Run that the same way as `user add`, and open the link it prints. To invite someone else:
+To invite someone else:
 
 ```sh
 andante invite add alex

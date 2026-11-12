@@ -9,8 +9,8 @@ domains and groups are the nearest thing to one.
 
 ## Accounts
 
-The first admin comes from `andante-server user add --admin`, and `andante-server user link` prints a
-link for them to set a password. After that, an admin makes a single-use link with `POST /invites`. It
+The first admin comes from the bootstrap token at `/setup` (see [bootstrap.md](bootstrap.md)), or
+from `andante-server user add --admin` and `andante-server user link` on the command line. After that, an admin makes a single-use link with `POST /invites`. It
 lasts a week, and it's only ever stored hashed. There's no email, so someone has to pass the link on
 themselves.
 

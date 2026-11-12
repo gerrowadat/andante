@@ -17,7 +17,7 @@ import (
 	"github.com/gerrowadat/andante/internal/store/storetest"
 )
 
-const wantMigrations = 3
+const wantMigrations = 4
 
 func appliedMigrations(t *testing.T, s *store.Store) int {
 	t.Helper()
@@ -72,7 +72,7 @@ func TestConcurrentMigrationsApplyOnce(t *testing.T) {
 
 func TestSchemaHasEveryTable(t *testing.T) {
 	s := storetest.New(t)
-	for _, table := range []string{"sources", "entries", "reads", "read_segments", "feed_tokens", "api_tokens", "recovery_codes", "identities", "settings"} {
+	for _, table := range []string{"sources", "entries", "reads", "read_segments", "feed_tokens", "api_tokens", "recovery_codes", "identities", "settings", "bootstrap_token"} {
 		var exists bool
 		err := s.Pool().QueryRow(t.Context(), "SELECT to_regclass($1) IS NOT NULL", table).Scan(&exists)
 		if err != nil {

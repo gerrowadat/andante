@@ -78,7 +78,7 @@ func (s *site) enterCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx, client, now := r.Context(), s.client(r), s.opts.Now()
-	if wait := s.throttle.wait(client.IP, p.Name, now); wait > 0 {
+	if wait := s.throttle.Wait(client.IP, p.Name, now); wait > 0 {
 		s.tooMany(w, codePage, wait)
 		return
 	}
@@ -89,7 +89,7 @@ func (s *site) enterCode(w http.ResponseWriter, r *http.Request) {
 	}
 	if !ok {
 		s.codes.WithLabelValues("wrong").Inc()
-		s.throttle.failed(client.IP, p.Name, now)
+		s.throttle.Failed(client.IP, p.Name, now)
 		s.logins.WithLabelValues("failed").Inc()
 		s.audit(ctx, p.Name, "login.code.failed", "", client)
 		s.render(w, http.StatusUnauthorized, codePage, map[string]string{"Error": wrongCode})

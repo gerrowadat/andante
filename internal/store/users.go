@@ -82,15 +82,6 @@ func (s *Store) GetUser(ctx context.Context, id int64) (db.User, error) {
 	return user, nil
 }
 
-// CountUsers returns how many users there are.
-func (s *Store) CountUsers(ctx context.Context) (int64, error) {
-	count, err := s.queries.CountUsers(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("count users: %w", err)
-	}
-	return count, nil
-}
-
 // ResetUser is for an account that's lost or compromised. It revokes all of a user's
 // API tokens, ends their sessions, clears their password and issues a new token. It's
 // what the command line is for, and no API reaches it.
@@ -195,6 +186,11 @@ func (s *Store) RotateSecret(ctx context.Context, from, to *seal.Box) error {
 				return err
 			}
 		}
+		// A bootstrap token the server made is only a convenience, and the next start
+		// makes another.
+		if err := q.DeleteBootstrapToken(ctx); err != nil {
+			return err
+		}
 		return setCheck(ctx, q, to)
 	})
 	if err != nil {
@@ -216,6 +212,9 @@ func (s *Store) ForgetSecrets(ctx context.Context, to *seal.Box) error {
 			return err
 		}
 		if err := q.ForgetRecoveryCodes(ctx); err != nil {
+			return err
+		}
+		if err := q.DeleteBootstrapToken(ctx); err != nil {
 			return err
 		}
 		return setCheck(ctx, q, to)

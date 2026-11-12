@@ -36,6 +36,15 @@ var (
     <p><button>Log in</button></p>
   </form>`)
 
+	setupPage = page(`  <h1>Set up andante</h1>
+  <p>There's no admin yet. The bootstrap token is in the server's log, or it's what --bootstrap-token was set to.</p>
+  {{with .Error}}<p role="alert">{{.}}</p>{{end}}
+  <form method="post" action="/setup">
+    <p><label>Bootstrap token <input name="token" type="password" autocomplete="off" required autofocus></label></p>
+    <p><label>Your username <input name="name" value="{{.Name}}" autocomplete="username" maxlength="64" required></label></p>
+    <p><button>Carry on</button></p>
+  </form>`)
+
 	invitePage = page(`  <h1>Welcome, {{.Name}}</h1>
   {{with .Error}}<p role="alert">{{.}}</p>{{end}}
   {{if .Password}}<form method="post">

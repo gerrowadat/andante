@@ -35,6 +35,7 @@ type Config struct {
 	ReadinessTimeout  time.Duration `name:"readiness-timeout" env:"ANDANTE_READINESS_TIMEOUT" default:"2s" help:"Time allowed for the /readyz check."`
 
 	TrustedProxies []string `name:"trusted-proxies" env:"ANDANTE_TRUSTED_PROXIES" help:"CIDRs of proxies whose X-Forwarded-For to believe."`
+	BootstrapToken string   `name:"bootstrap-token" env:"ANDANTE_BOOTSTRAP_TOKEN" help:"Token for making the first admin at /setup, at least 32 characters. Unset, the server makes one and logs it while there's no admin."`
 	PasswordLogin  bool     `name:"password-login" env:"ANDANTE_PASSWORD_LOGIN" default:"true" negatable:"" help:"Allow logging in with a password."`
 
 	OIDCIssuer        string   `name:"oidc-issuer" env:"ANDANTE_OIDC_ISSUER" help:"OpenID provider to log in with. Off when unset."`
@@ -53,6 +54,10 @@ type Config struct {
 
 	TestClockOffset time.Duration `name:"test-clock-offset" env:"ANDANTE_TEST_CLOCK_OFFSET" help:"For the end-to-end suite only: run reads and feeds this far ahead of the real clock."`
 }
+
+// MinBootstrapTokenLength is the shortest --bootstrap-token accepted, which is what
+// openssl rand -hex 16 makes.
+const MinBootstrapTokenLength = 32
 
 // Validate checks what the flags' types cannot. kong calls it after parsing.
 func (c *Config) Validate() error {
@@ -97,6 +102,9 @@ func (c *Config) Validate() error {
 		errs = append(errs, errors.New("--secret is required"))
 	} else if len(c.Secret) < seal.MinSecretLength {
 		errs = append(errs, fmt.Errorf("--secret must be at least %d characters", seal.MinSecretLength))
+	}
+	if c.BootstrapToken != "" && len(c.BootstrapToken) < MinBootstrapTokenLength {
+		errs = append(errs, fmt.Errorf("--bootstrap-token must be at least %d characters", MinBootstrapTokenLength))
 	}
 	if c.CatalogueURL == "" {
 		errs = append(errs, errors.New("--catalogue-url is required"))

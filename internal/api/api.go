@@ -13,6 +13,7 @@ import (
 	"github.com/gerrowadat/andante/api"
 	"github.com/gerrowadat/andante/internal/api/gen"
 	"github.com/gerrowadat/andante/internal/app"
+	"github.com/gerrowadat/andante/internal/bootstrap"
 	"github.com/gerrowadat/andante/internal/buildinfo"
 	"github.com/gerrowadat/andante/internal/clientip"
 	"github.com/gerrowadat/andante/internal/httpapi"
@@ -48,6 +49,8 @@ type Options struct {
 	Logger    *slog.Logger
 	// ProbeTimeout bounds POST /probes. It outlasts --write-timeout on purpose.
 	ProbeTimeout time.Duration
+	// Bootstrap makes the first admin. Nil makes POST /bootstrap a 404.
+	Bootstrap *bootstrap.Service
 }
 
 type handler struct {
@@ -61,6 +64,7 @@ type handler struct {
 	logger    *slog.Logger
 	specJSON  []byte
 	kit       *httpapi.Kit
+	bootstrap *bootstrap.Service
 }
 
 // New returns the API. Mount it at BasePath.
@@ -86,7 +90,7 @@ func New(opts Options) (http.Handler, error) {
 	h := &handler{
 		app:   &app.App{Store: opts.Store, Reads: opts.Reads, Catalogue: opts.Catalogue, Sync: opts.Sync, Logger: opts.Logger},
 		store: opts.Store, catalogue: opts.Catalogue, sync: opts.Sync, reads: opts.Reads, clients: opts.Clients, baseURL: opts.BaseURL, logger: opts.Logger,
-		specJSON: specJSON,
+		specJSON: specJSON, bootstrap: opts.Bootstrap,
 	}
 	kit := &httpapi.Kit{
 		Logger: opts.Logger, Router: router, Valid: h.authenticate,

@@ -12,8 +12,8 @@ Send an API token as a bearer token (RFC 6750):
 curl -H "Authorization: Bearer $ANDANTE_TOKEN" http://127.0.0.1:8080/api/v1/sources
 ```
 
-Every token belongs to a user, and `GET /me` says who. The first one comes from
-[`andante-server user add`](configuration.md#users). Make more with `POST /api-tokens`. The raw
+Every token belongs to a user, and `GET /me` says who. The first one comes from `POST /bootstrap`
+or [`andante-server user add`](configuration.md#users). Make more with `POST /api-tokens`. The raw
 token only appears in that response. Revoking one that's already revoked succeeds. Your last
 active token can't be revoked, because you'd be locked out until someone ran `andante-server user
 reset`.
@@ -91,6 +91,14 @@ matches part of a title or slug, and `kind`.
 
 Reads and tokens are yours. Someone else's is a 404, so that an ID tells you nothing. `GET /reads` means
 your reads. An admin can reach anyone's, and `GET /reads?all=true` lists them all.
+
+## The First Admin
+
+`POST /bootstrap` needs no API token. It takes the bootstrap token and a name, makes a new admin,
+and returns their first API token and a link to set a password. It only works while there's no
+active admin, and is a 404 otherwise. A wrong token is a 401, a name that's taken is a 409, and too
+many wrong tokens from one address is a 429 with `Retry-After`. See
+[Users](configuration.md#users) for where the token comes from.
 
 ## Invites, Sessions and the Audit Log
 

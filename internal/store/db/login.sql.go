@@ -20,7 +20,7 @@ func (q *Queries) ClearPassword(ctx context.Context, id int64) error {
 }
 
 const getLiveInvite = `-- name: GetLiveInvite :one
-SELECT id, token_hash, name, role, user_id, created_at, expires_at, used_at FROM invites WHERE token_hash = $1 AND used_at IS NULL AND expires_at > $2
+SELECT id, token_hash, name, role, user_id, created_at, expires_at, used_at, bootstrap FROM invites WHERE token_hash = $1 AND used_at IS NULL AND expires_at > $2
 `
 
 type GetLiveInviteParams struct {
@@ -40,12 +40,13 @@ func (q *Queries) GetLiveInvite(ctx context.Context, arg GetLiveInviteParams) (I
 		&i.CreatedAt,
 		&i.ExpiresAt,
 		&i.UsedAt,
+		&i.Bootstrap,
 	)
 	return i, err
 }
 
 const getLiveInviteForUpdate = `-- name: GetLiveInviteForUpdate :one
-SELECT id, token_hash, name, role, user_id, created_at, expires_at, used_at FROM invites WHERE token_hash = $1 AND used_at IS NULL AND expires_at > $2 FOR UPDATE
+SELECT id, token_hash, name, role, user_id, created_at, expires_at, used_at, bootstrap FROM invites WHERE token_hash = $1 AND used_at IS NULL AND expires_at > $2 FOR UPDATE
 `
 
 type GetLiveInviteForUpdateParams struct {
@@ -65,6 +66,7 @@ func (q *Queries) GetLiveInviteForUpdate(ctx context.Context, arg GetLiveInviteF
 		&i.CreatedAt,
 		&i.ExpiresAt,
 		&i.UsedAt,
+		&i.Bootstrap,
 	)
 	return i, err
 }
@@ -158,7 +160,7 @@ func (q *Queries) InsertAudit(ctx context.Context, arg InsertAuditParams) error 
 const insertInvite = `-- name: InsertInvite :one
 INSERT INTO invites (token_hash, name, role, user_id, created_at, expires_at)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, token_hash, name, role, user_id, created_at, expires_at, used_at
+RETURNING id, token_hash, name, role, user_id, created_at, expires_at, used_at, bootstrap
 `
 
 type InsertInviteParams struct {
@@ -189,6 +191,7 @@ func (q *Queries) InsertInvite(ctx context.Context, arg InsertInviteParams) (Inv
 		&i.CreatedAt,
 		&i.ExpiresAt,
 		&i.UsedAt,
+		&i.Bootstrap,
 	)
 	return i, err
 }

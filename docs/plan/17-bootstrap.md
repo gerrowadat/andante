@@ -1,6 +1,6 @@
 # Phase 17: Bootstrapping
 
-Read first: `CLAUDE.md`, `docs/proposals/bootstrap.md`, `docs/design/login.md`. Check the
+Read first: `CLAUDE.md`, `docs/design/bootstrap.md`, `docs/design/login.md`. Check the
 `maintainer-question` issues linked from the proposal for answers.
 
 ## Goal

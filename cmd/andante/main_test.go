@@ -740,3 +740,33 @@ func TestUserCommands(t *testing.T) {
 	}
 	h.ok(t, "user", "rm", "2", "--yes")
 }
+
+func TestBootstrap(t *testing.T) {
+	token := strings.Repeat("b", 32)
+	stack := stacktest.NewWith(t, stacktest.Options{BootstrapToken: token})
+	bootstrap := func(stdin string, args ...string) result {
+		var stdout, stderr bytes.Buffer
+		root := newRootCmd(&stdout, &stderr)
+		root.SetIn(strings.NewReader(stdin))
+		root.SetArgs(append([]string{"bootstrap", "--url", stack.URL}, args...))
+		err := root.Execute()
+		return result{stdout.String(), stderr.String(), err}
+	}
+	if r := bootstrap(""); r.err == nil {
+		t.Error("no name, and it carried on")
+	}
+	if r := bootstrap("", "dave"); r.err == nil || !strings.Contains(r.err.Error(), "ANDANTE_BOOTSTRAP_TOKEN") {
+		t.Errorf("no token = %v", r.err)
+	}
+	if r := bootstrap("guess\n", "dave"); r.err == nil {
+		t.Error("a wrong token worked")
+	}
+	r := bootstrap(token+"\n", "dave")
+	if r.err != nil || !strings.Contains(r.stdout, "API token:") || !strings.Contains(r.stdout, "https://andante.example/invite/") {
+		t.Fatalf("bootstrap: %v\n%s%s", r.err, r.stdout, r.stderr)
+	}
+	t.Setenv("ANDANTE_BOOTSTRAP_TOKEN", token)
+	if r := bootstrap("", "sam"); r.err == nil {
+		t.Error("a second admin was made")
+	}
+}

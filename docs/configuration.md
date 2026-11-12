@@ -18,6 +18,7 @@ has its own.
 | `--listen` | `ANDANTE_LISTEN` | `:8080` | Public listener (feeds and the API) |
 | `--ops-listen` | `ANDANTE_OPS_LISTEN` | `127.0.0.1:8081` | Ops listener (health, metrics) |
 | `--trusted-proxies` | `ANDANTE_TRUSTED_PROXIES` | none | CIDRs of proxies whose `X-Forwarded-For` to believe. Set this behind a proxy, or every login looks like it comes from the proxy |
+| `--bootstrap-token` | `ANDANTE_BOOTSTRAP_TOKEN` | none | A token for making the first admin at `/setup`, at least 32 characters. Unset, the server makes one and logs it while there's no admin. See [Users](#users) |
 | `--password-login` | `ANDANTE_PASSWORD_LOGIN` | on | Allow logging in with a password. `--no-password-login` turns it off |
 | `--oidc-issuer` | `ANDANTE_OIDC_ISSUER` | none | An OpenID provider to log in with, as an `https://` URL. Off when unset |
 | `--oidc-client-id` | `ANDANTE_OIDC_CLIENT_ID` | none | The client ID the provider gave you. Needed with `--oidc-issuer` |
@@ -72,16 +73,32 @@ fit together is in [sources](sources.md).
 
 ## Users
 
-There are no users on a new database, and the server logs a warning until there's one. Add the first
-from the command line, with the same `--database-url` or `ANDANTE_DATABASE_URL` as the server. It
-prints that user's API token:
+There's no admin on a new database. While that's the case, the server logs a warning on every start
+with the address of the setup page, `/setup` under `--base-url`. Go there, give it the bootstrap
+token and the name you want, and it hands you on to the invite page, where you pick a password or
+sign in with the provider. That account is the first admin.
+
+The bootstrap token is `--bootstrap-token` if you set it (`openssl rand -hex 32` makes a good one).
+If you didn't, the server makes one and puts it in the same log line. A token the server made lasts
+24 hours, and restarting the server after that makes a new one. Once there's an admin the token
+does nothing, and the server logs that `--bootstrap-token` can come out.
+
+The token never takes over an account that's already there, so pick a name nobody has. Wrong tokens
+are throttled like wrong passwords. Without a browser, `andante bootstrap dave` does the same over
+the API and prints the new admin's API token, with the token in `ANDANTE_BOOTSTRAP_TOKEN` or on
+standard input.
+
+An admin can change sources and reach everyone's reads. Other users only have their own reads and
+tokens.
+
+The command line does the same, with the same `--database-url` or `ANDANTE_DATABASE_URL` as the
+server, if you'd rather. This makes a user and prints their API token:
 
 ```sh
 andante-server user add dave --admin
 ```
 
-An admin can change sources and reach everyone's reads. Without `--admin`, a user only has their own
-reads and tokens. A user starts with no password, so this prints a single-use link to set one. It lasts
+A user made that way starts with no password, so this prints a single-use link to set one. It lasts
 a week:
 
 ```sh

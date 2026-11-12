@@ -25,7 +25,8 @@ Each login can take 64 MiB, and two run at once, so leave room for that. The Nom
 
 Set `--base-url` to the address readers will use, because feed links are built from it.
 
-A new database has no users, so run `andante-server user add <name> --admin` for your first API token.
+A new database has no admin. The server logs where its setup page is, with a bootstrap token to give
+it, or set your own with `--bootstrap-token`.
 [Configuration](configuration.md) has that and every other setting.
 
 ## Nomad
