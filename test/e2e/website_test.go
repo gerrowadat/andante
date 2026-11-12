@@ -98,7 +98,7 @@ func TestFromLoginToAFeed(t *testing.T) {
 	const token = "a-bootstrap-token-of-at-least-32-characters"
 	catalogue := startCatalogue(t, build(t, "andante-catalogue"), storetest.DSN(t), crawlFlags...)
 	catalogue.waitReady(t)
-	server := startServer(t, buildServer(t), storetest.DSN(t), catalogue.flag(), "--demand-interval=50ms", "--bootstrap-token="+token)
+	server := startServer(t, buildServer(t), storetest.DSN(t), catalogue.flag(), "--demand-interval=50ms", "--feed-rate-limit=100000", "--bootstrap-token="+token)
 	server.waitReady(t)
 	site := sitetest.Serve(t, "discover-comic")
 	b := &browser{address: server.public}
