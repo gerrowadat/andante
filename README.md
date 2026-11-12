@@ -13,48 +13,40 @@ You get a normal feed (Atom, RSS 2.0 or JSON Feed) for whatever feed reader or p
 you already use. Feeds are shareable, so a few friends can read or listen along
 together. Going back to the start is a new read.
 
-> Status: alpha. The features are built and tested, and v0.0.1 is the first release. Expect
-> rough edges.
+> Status: alpha. v0.1.0 is the first release with accounts and a website. Expect rough edges.
 
 ## Quick Start
 
-The real instructions are in [running andante](docs/running.md), with Docker Compose or
-Nomad. The short version, from the image:
+The real instructions are in [installing](docs/install.md), with Docker Compose, Nomad or a
+binary. The short version, from the image:
 
 ```sh
 cd deploy/compose
 cp env.example .env && $EDITOR .env
 docker compose up -d --wait
-alias andante='docker compose exec -T andante /usr/local/bin/andante'
+docker compose logs andante | grep bootstrap
 ```
 
-To run from source instead, you need Go and Docker. This starts Postgres and the server,
-which logs a generated API token once:
+That last line is the address of the setup page and a token for it. Open it, pick a name and a
+password, and you're the admin. [Bootstrapping](docs/bootstrap.md) has the details, and how to let
+other people in.
+
+To run from source instead, you need Go and Docker. `make build && make run` starts Postgres and
+both services on `http://localhost:8080`, and logs the setup page the same way.
+
+Then, on the website, **Add** a serial from its address, **Track this** at a pace, and paste the
+feed link into your feed reader or podcast app. The same from the CLI, with an API token from the
+Account page:
 
 ```sh
-make build
-make run
-```
-
-Then, in another terminal:
-
-```sh
-export ANDANTE_TOKEN=<the token from the log>
-alias andante=out/andante
-```
-
-Either way, add a serial and subscribe to it:
-
-```sh
-andante source probe https://pod.example/rss --strategy feed --kind episode
+andante source discover https://pod.example/     # what it found, saving nothing
 andante source add https://pod.example/rss --strategy feed --slug my-podcast --title 'My Podcast' \
   --home-url https://pod.example/ --kind episode
 andante read create my-podcast --replay --speed 7
 andante token add 1 --label me --owner
 ```
 
-Paste the feed URL into your feed reader or podcast app. The URL is built from the base
-URL, so a reader on another machine needs a real address. See
+The feed URL is built from the base URL, so a reader on another machine needs a real address. See
 [deploying](docs/deploying.md).
 
 ## How It Works
@@ -71,12 +63,13 @@ URL, so a reader on another machine needs a real address. See
 
 ## Documentation
 
-- [Running andante](docs/running.md): Docker Compose or Nomad, and how to use it
+- [Installing](docs/install.md): Docker Compose, Nomad, a binary or from source
+- [Bootstrapping](docs/bootstrap.md): the first admin, and letting people in
+- [Using andante](docs/using.md): adding a serial, pacing it, subscribing
+- [Deploying](docs/deploying.md): what to expose, and backups
 - [Design philosophy](docs/philosophy.md)
-- [Documentation index](docs/README.md)
-- [Deploying](docs/deploying.md)
 - [FAQ](docs/faq.md)
-- [Build plan](docs/plan/README.md)
+- [Documentation index](docs/README.md)
 
 ## License
 

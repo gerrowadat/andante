@@ -1,6 +1,6 @@
 # Phase 18: Invites
 
-Read first: `CLAUDE.md`, `docs/proposals/invites.md`, `docs/design/login.md`. Check the
+Read first: `CLAUDE.md`, `docs/design/invites.md`, `docs/design/login.md`. Check the
 `maintainer-question` issues linked from the proposal for answers.
 
 ## Goal

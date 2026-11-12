@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (C) 2026 Dave O'Connor
 #
-# andante's two services and a Postgres to keep them in. See docs/running.md.
+# andante's two services and a Postgres to keep them in. See docs/install.md.
 #
 # Needs a .env next to this file, from env.example. The repository root's
 # compose.yaml is different: that one is only a database for development.
@@ -24,7 +24,7 @@ services:
       retries: 10
 
   catalogue:
-    image: ${ANDANTE_IMAGE:-ghcr.io/gerrowadat/andante:0.0.1}
+    image: ${ANDANTE_IMAGE:-ghcr.io/gerrowadat/andante:0.1.0}
     entrypoint: [/usr/local/bin/andante-catalogue]
     restart: unless-stopped
     depends_on:
@@ -40,7 +40,7 @@ services:
       - 127.0.0.1:${ANDANTE_CATALOGUE_PORT:-8082}:8082
 
   andante:
-    image: ${ANDANTE_IMAGE:-ghcr.io/gerrowadat/andante:0.0.1}
+    image: ${ANDANTE_IMAGE:-ghcr.io/gerrowadat/andante:0.1.0}
     restart: unless-stopped
     depends_on:
       postgres:

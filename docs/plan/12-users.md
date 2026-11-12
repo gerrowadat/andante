@@ -1,6 +1,6 @@
 # Phase 12: Users
 
-Read first: `CLAUDE.md`, `docs/proposals/web-ui.md`, `docs/design/architecture.md`.
+Read first: `CLAUDE.md`, `docs/design/web-ui.md`, `docs/design/architecture.md`.
 
 ## Goal
 

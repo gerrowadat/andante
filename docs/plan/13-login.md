@@ -1,6 +1,6 @@
 # Phase 13: Login
 
-Read first: `CLAUDE.md`, the login section of `docs/proposals/web-ui.md`, and the OWASP authentication
+Read first: `CLAUDE.md`, the login section of `docs/design/web-ui.md`, and the OWASP authentication
 and session management cheat sheets.
 
 ## Goal

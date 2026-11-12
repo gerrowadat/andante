@@ -1,6 +1,6 @@
 # Phase 14: Pages
 
-Read first: `CLAUDE.md`, the pages and stack sections of `docs/proposals/web-ui.md`.
+Read first: `CLAUDE.md`, the pages and stack sections of `docs/design/web-ui.md`.
 
 ## Goal
 

@@ -6,7 +6,7 @@ you can do with the API directly.
 ## Install
 
 It's in every [release archive](releasing.md) and in the container image, alongside
-`andante-server`. To use the one in the image, see [running andante](running.md). From source:
+`andante-server`. To use the one in the image, see [installing](install.md#the-cli). From source:
 
 ```sh
 make build   # out/andante

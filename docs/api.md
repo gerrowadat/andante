@@ -1,6 +1,6 @@
-# Admin API
+# API
 
-The API is the only way to change andante's state. It's on the main listener alongside the feeds,
+The API is the only way to change andante's state. It's on the public listener alongside the feeds,
 under `/api/v1`. The contract is [`api/openapi.yaml`](../api/openapi.yaml), which a running server
 also serves at `GET /api/v1/openapi.json` without a token.
 
