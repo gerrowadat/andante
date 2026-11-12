@@ -127,7 +127,9 @@ make build
 make run
 ```
 
-The base URL is `http://localhost:8080`. [Development](development.md) has the rest of the make
+The base URL is `http://localhost:8080`. The server's `--secret` is a fixed one from the Makefile,
+which is fine for trying it out. Set `DEV_SECRET` to change it, and keep using the same one, because
+the server won't start against a database set up with a different secret. [Development](development.md) has the rest of the make
 targets.
 
 ## The CLI

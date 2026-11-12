@@ -36,9 +36,12 @@ both services on `http://localhost:8080`, and logs the setup page the same way.
 
 Then, on the website, **Add** a serial from its address, **Track this** at a pace, and paste the
 feed link into your feed reader or podcast app. The same from the CLI, with an API token from the
-Account page:
+Account page and the CLI that's in the image (or `out/andante` from a source build, with
+`ANDANTE_URL` set). [Installing](docs/install.md#the-cli) has the details:
 
 ```sh
+export ANDANTE_TOKEN=<your token>
+alias andante='docker compose exec -T -e ANDANTE_TOKEN andante /usr/local/bin/andante'
 andante source discover https://pod.example/     # what it found, saving nothing
 andante source add https://pod.example/rss --strategy feed --slug my-podcast --title 'My Podcast' \
   --home-url https://pod.example/ --kind episode

@@ -33,11 +33,16 @@ The CLI does the same over the API, and prints the new admin's API token and a l
 password:
 
 ```sh
-export ANDANTE_BOOTSTRAP_TOKEN=<the token>
 andante bootstrap dave
 ```
 
-It also takes the token on standard input, which keeps it out of your shell history.
+It reads the token from standard input, so paste it when it waits. Or set it in
+`ANDANTE_BOOTSTRAP_TOKEN`, but the Compose and Nomad aliases in [installing](install.md#the-cli)
+don't pass that into the container, so pipe it in there instead:
+
+```sh
+printf '%s\n' "$BOOTSTRAP_TOKEN" | andante bootstrap dave
+```
 
 ### From the Database
 
