@@ -110,6 +110,21 @@ func (s *Store) ListSessions(ctx context.Context, actor Actor, after int64, limi
 	return sessions, nil
 }
 
+// CountSessions returns how many sessions are live, by how they logged in.
+func (s *Store) CountSessions(ctx context.Context, now time.Time) (map[string]int64, error) {
+	rows, err := s.queries.CountLiveSessions(ctx, db.CountLiveSessionsParams{
+		CreatedAfter: now.Add(-SessionAbsolute), SeenAfter: now.Add(-SessionIdle),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("count sessions: %w", err)
+	}
+	counts := make(map[string]int64, len(rows))
+	for _, row := range rows {
+		counts[row.Method] = row.Sessions
+	}
+	return counts, nil
+}
+
 // RevokeSession ends one of a user's own sessions. Someone else's is ErrNotFound, and
 // that goes for admins too.
 func (s *Store) RevokeSession(ctx context.Context, actor Actor, id int64, now time.Time) error {

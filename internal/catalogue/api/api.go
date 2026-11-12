@@ -124,7 +124,7 @@ func New(opts Options) (http.Handler, error) {
 		Name: "andante_catalogue_requests_total",
 		Help: "Catalogue API requests, by route pattern and status.",
 	}, []string{"route", "status"})
-	return httpapi.WithRequestID(httpapi.CountRequests(requests, kit.RecoverPanics(validate(routes)))), nil
+	return httpapi.WithRequestID(httpapi.CountRequests(requests, httpapi.LimitBody(kit.RecoverPanics(validate(routes))))), nil
 }
 
 func nullableValue[T any](p *T) nullable.Nullable[T] {

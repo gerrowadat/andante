@@ -136,6 +136,7 @@ func New(opts Options) http.Handler {
 			Help: "Invites used, by result: ok, or refused when the link was used up, withdrawn or out of date.",
 		}, []string{"result"}),
 	}
+	opts.Registry.MustRegister(newSessions(opts))
 	if opts.OIDC != nil {
 		s.oidc = newOIDCLogin(*opts.OIDC, opts.BaseURL)
 	}

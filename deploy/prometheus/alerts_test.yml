@@ -118,3 +118,41 @@ tests:
             exp_annotations:
               summary: "andante has not crawled anything successfully in 24 hours"
               description: "Tail checks should succeed every few hours. Check the crawl loop and the server's network."
+
+  - name: someone guessing passwords
+    interval: 1m
+    input_series:
+      - series: 'andante_logins_total{result="failed"}'
+        values: "0+2x20 40+5x40"
+      - series: 'andante_logins_total{result="throttled"}'
+        values: "0x20 0+1x40"
+      - series: 'andante_logins_total{result="ok"}'
+        values: "0+1x60"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: AndanteLoginFailures
+      - eval_time: 45m
+        alertname: AndanteLoginFailures
+        exp_alerts:
+          - exp_labels: { severity: warning }
+            exp_annotations:
+              summary: "Lots of logins to andante are failing"
+              description: "More than 50 failed logins every 15 minutes, for 15 minutes. Someone may be guessing passwords. andante audit shows the addresses."
+
+  - name: an OpenID provider that has stopped working
+    interval: 1m
+    input_series:
+      - series: 'andante_oidc_logins_total{result="ok"}'
+        values: "0+1x30 30x60"
+      - series: 'andante_oidc_logins_total{result="failed"}'
+        values: "0x30 0+1x60"
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: AndanteOIDCFailures
+      - eval_time: 80m
+        alertname: AndanteOIDCFailures
+        exp_alerts:
+          - exp_labels: { severity: warning }
+            exp_annotations:
+              summary: "Logins with the OpenID provider are failing"
+              description: "More than half of them have failed for 30 minutes. Check the provider, and the client ID and secret, in the server's logs."

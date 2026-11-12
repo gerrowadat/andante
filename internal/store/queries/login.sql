@@ -30,6 +30,13 @@ WHERE user_id = sqlc.arg(user_id) AND id > sqlc.arg(after) AND revoked_at IS NUL
   AND created_at > sqlc.arg(created_after) AND last_seen_at > sqlc.arg(seen_after)
 ORDER BY id LIMIT sqlc.arg(page_size);
 
+-- name: CountLiveSessions :many
+SELECT s.method, count(*)::bigint AS sessions
+FROM sessions s JOIN users u ON u.id = s.user_id
+WHERE s.revoked_at IS NULL AND u.disabled_at IS NULL
+  AND s.created_at > sqlc.arg(created_after) AND s.last_seen_at > sqlc.arg(seen_after)
+GROUP BY s.method;
+
 -- name: RevokeSession :execrows
 UPDATE sessions SET revoked_at = coalesce(revoked_at, sqlc.arg(at))
 WHERE id = sqlc.arg(id) AND user_id = sqlc.arg(user_id);

@@ -122,6 +122,12 @@ job "andante" {
         ANDANTE_LISTEN        = ":8080"
         ANDANTE_OPS_LISTEN    = ":8081"
         ANDANTE_CATALOGUE_URL = "http://127.0.0.1:8082/v1"
+        # The proxy that terminates TLS, so that logins are throttled by the real address.
+        # ANDANTE_TRUSTED_PROXIES = "10.0.0.0/8"
+        # Log in with an OpenID provider. Its client secret goes in the template below.
+        # ANDANTE_OIDC_ISSUER         = "https://id.example.com"
+        # ANDANTE_OIDC_CLIENT_ID      = "andante"
+        # ANDANTE_OIDC_ALLOWED_DOMAIN = "example.com"
       }
 
       template {
@@ -132,6 +138,7 @@ job "andante" {
           ANDANTE_DATABASE_URL={{ .database_url }}
           ANDANTE_SECRET={{ .secret }}
           ANDANTE_CATALOGUE_TOKEN={{ .catalogue_token }}
+          {{ with .oidc_client_secret }}ANDANTE_OIDC_CLIENT_SECRET={{ . }}{{ end }}
           {{- end }}
         EOT
       }

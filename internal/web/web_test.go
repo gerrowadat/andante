@@ -6,6 +6,7 @@ package web_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -174,6 +175,20 @@ func (f *fixture) login(t *testing.T, name, given, ip string) answer {
 	return f.do(t, http.MethodPost, "/login", url.Values{"name": {name}, "password": {given}}, ip, "")
 }
 
+// sessions checks the live sessions metric, all of them password logins.
+func (f *fixture) sessions(t *testing.T, want int) {
+	t.Helper()
+	expected := fmt.Sprintf(`
+		# HELP andante_sessions Live website sessions, by how they logged in: password or oidc.
+		# TYPE andante_sessions gauge
+		andante_sessions{method="oidc"} 0
+		andante_sessions{method="password"} %d
+	`, want)
+	if err := testutil.GatherAndCompare(f.registry, strings.NewReader(expected), "andante_sessions"); err != nil {
+		t.Error(err)
+	}
+}
+
 // user adds someone who has set a password, and returns their first session.
 func (f *fixture) user(t *testing.T, name string) string {
 	t.Helper()
@@ -203,6 +218,7 @@ func TestLoggingInAndOut(t *testing.T) {
 	if in.status != http.StatusSeeOther || in.header.Get("Location") != "/" || in.cookie == nil {
 		t.Fatalf("login: %d %s", in.status, in.body)
 	}
+	f.sessions(t, 2)
 	c := in.cookie
 	if !c.Secure || !c.HttpOnly || c.SameSite != http.SameSiteLaxMode || c.Path != "/" || c.Domain != "" {
 		t.Errorf("cookie = %+v", c)
@@ -230,6 +246,7 @@ func TestLoggingInAndOut(t *testing.T) {
 	if got := f.do(t, http.MethodGet, "/", nil, home, c.Value); got.status != http.StatusSeeOther {
 		t.Errorf("home after logout: %d", got.status)
 	}
+	f.sessions(t, 1)
 	if got := f.do(t, http.MethodPost, "/logout", url.Values{}, home, c.Value); got.status != http.StatusSeeOther {
 		t.Errorf("logging out twice: %d", got.status)
 	}
@@ -689,5 +706,16 @@ func TestLoginsAreAudited(t *testing.T) {
 		if strings.Contains(l.Who+l.Target, "phrase") {
 			t.Errorf("a password reached the audit log: %+v", l)
 		}
+	}
+}
+
+// The stylesheet is there for anyone, but not a list of what else is.
+func TestStaticFilesWithoutAListing(t *testing.T) {
+	f := newFixture(t)
+	if got := f.do(t, http.MethodGet, "/static/", nil, home, ""); got.status != http.StatusNotFound {
+		t.Errorf("the directory: %d %s", got.status, got.body)
+	}
+	if got := f.do(t, http.MethodGet, "/static/style.css", nil, home, ""); got.status != http.StatusOK {
+		t.Errorf("the stylesheet: %d", got.status)
 	}
 }

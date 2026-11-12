@@ -124,7 +124,7 @@ func New(opts Options) (http.Handler, error) {
 		Help: "Admin API requests, by route pattern and status.",
 	}, []string{"route", "status"})
 
-	return httpapi.WithRequestID(httpapi.CountRequests(requests, kit.RecoverPanics(h.withActor(validate(routes))))), nil
+	return httpapi.WithRequestID(httpapi.CountRequests(requests, httpapi.LimitBody(kit.RecoverPanics(h.withActor(validate(routes)))))), nil
 }
 
 type (

@@ -17,9 +17,10 @@ run by hand.
 | Catalogue | `127.0.0.1:8082` | Its private API, `/healthz`, `/readyz`, `/metrics` | `andante-server` and Prometheus |
 
 Keep the ops listener on loopback or a private network, because `/metrics` and the health endpoints
-have no auth. Logins are throttled, but there's no two-factor or OIDC yet, so hold off on putting this
-on the open internet. Behind a proxy, set `--trusted-proxies`, or every login looks like it came from the
-proxy, and throttling treats them all as one address.
+have no auth. The public listener is fine on the internet, behind a proxy that does TLS. Set
+`--trusted-proxies` to the proxy's address, or every login looks like it came from the proxy, and
+throttling treats them all as one address. Under Compose, that and the OpenID settings go in an
+`andante.env` next to `.env`. Copy it from `andante.env.example`.
 
 Each login can take 64 MiB, and two run at once, so leave room for that. The Nomad job allows for it.
 

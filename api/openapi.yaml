@@ -7,8 +7,8 @@ info:
   summary: Manage your reads and tokens, and the sources they follow.
   description: >-
     The single interface for changing andante's state. Within /api/v1 changes
-    are additive only. See docs/api.md for authentication, errors, pagination
-    and the versioning policy.
+    are additive only. A request body over 1 MiB gets a 413. See docs/api.md
+    for authentication, errors, pagination and the versioning policy.
   license:
     name: Apache-2.0
     identifier: Apache-2.0
