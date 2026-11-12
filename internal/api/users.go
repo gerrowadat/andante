@@ -6,6 +6,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 func userToAPI(u db.User) (client.User, error) {
 	return client.User{
 		ID: u.ID, Name: u.Name, Role: client.UserRole(u.Role), CreatedAt: u.CreatedAt, DisabledAt: nullableValue(u.DisabledAt),
+		InvitedBy: u.InvitedBy,
 	}, nil
 }
 
@@ -98,7 +100,13 @@ func (h *handler) settings(ctx context.Context) (client.Settings, error) {
 	if err != nil {
 		return client.Settings{}, err
 	}
-	return client.Settings{RequireTwoFactor: on}, nil
+	invites, err := h.store.GetInviteSettings(ctx)
+	if err != nil {
+		return client.Settings{}, err
+	}
+	return client.Settings{
+		RequireTwoFactor: on, WhoCanInvite: client.WhoCanInvite(invites.Who), InviteLimit: invites.Limit,
+	}, nil
 }
 
 func (h *handler) GetSettings(ctx context.Context, _ gen.GetSettingsRequestObject) (gen.GetSettingsResponseObject, error) {
@@ -125,6 +133,22 @@ func (h *handler) UpdateSettings(ctx context.Context, r gen.UpdateSettingsReques
 			what = "two-factor.required"
 		}
 		h.audit(ctx, "settings.changed", what)
+	}
+	if r.Body.WhoCanInvite != nil || r.Body.InviteLimit != nil {
+		var who *string
+		if r.Body.WhoCanInvite != nil {
+			w := string(*r.Body.WhoCanInvite)
+			who = &w
+		}
+		if err := h.store.SetInviteSettings(ctx, who, r.Body.InviteLimit); err != nil {
+			return nil, err
+		}
+		if who != nil {
+			h.audit(ctx, "settings.changed", "invites."+*who)
+		}
+		if l := r.Body.InviteLimit; l != nil {
+			h.audit(ctx, "settings.changed", fmt.Sprintf("invite-limit.%d", *l))
+		}
 	}
 	body, err := h.settings(ctx)
 	if err != nil {

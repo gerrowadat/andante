@@ -109,7 +109,7 @@ func TestABootstrapInvite(t *testing.T) {
 	if _, err := s.LookupInvite(ctx, old, now); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("the earlier invite still works: %v", err)
 	}
-	user, _, err := s.RedeemInvite(ctx, raw, "hash", client, now)
+	user, _, err := s.RedeemInvite(ctx, raw, "", "hash", client, now)
 	if err != nil || user.Role != store.RoleAdmin {
 		t.Fatalf("redeem = %+v, %v", user, err)
 	}
@@ -128,7 +128,7 @@ func TestABootstrapInviteDiesWithAnotherAdmin(t *testing.T) {
 	if _, _, err := s.CreateBootstrapAdmin(ctx, "sam"); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := s.RedeemInvite(ctx, raw, "hash", client, now); !errors.Is(err, store.ErrNotFound) {
+	if _, _, err := s.RedeemInvite(ctx, raw, "", "hash", client, now); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("redeem after another admin = %v", err)
 	}
 	if _, err := s.GetUserByName(ctx, "dave"); !errors.Is(err, store.ErrNotFound) {

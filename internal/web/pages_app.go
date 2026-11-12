@@ -42,6 +42,7 @@ var (
 	accountView   = view("account")
 	twoFactorView = view("two_factor")
 	recoveryView  = view("recovery")
+	invitesView   = view("invites")
 )
 
 // owns says what a route's ID belongs to, so that a test can try every route with
@@ -57,6 +58,7 @@ const (
 	ownsAPIToken owns = "api-token"
 	ownsSource   owns = "source"
 	ownsUser     owns = "user"
+	ownsInvite   owns = "invite"
 )
 
 // visitor is someone logged in.
@@ -117,7 +119,11 @@ var routes = []route{
 	{pattern: "GET /add/{job}", handle: (*site).found},
 	{pattern: "POST /add/{job}/{n}", handle: (*site).addCandidate},
 	{pattern: "GET /users", admin: true, handle: (*site).users},
-	{pattern: "POST /users/invite", admin: true, handle: (*site).invite},
+	{pattern: "POST /users/invite", admin: true, handle: (*site).resetLink},
+	{pattern: "POST /users/invite-settings", admin: true, handle: (*site).inviteSettings},
+	{pattern: "GET /invites", handle: (*site).invites},
+	{pattern: "POST /invites", handle: (*site).createInvite},
+	{pattern: "POST /invites/{id}/withdraw", owns: ownsInvite, handle: (*site).withdrawInvite},
 	{pattern: "POST /users/{id}", admin: true, owns: ownsUser, handle: (*site).changeUser},
 	{pattern: "GET /users/{id}/delete", admin: true, owns: ownsUser, handle: (*site).confirmDeleteUser},
 	{pattern: "POST /users/{id}/delete", admin: true, owns: ownsUser, handle: (*site).deleteUser},
@@ -149,13 +155,13 @@ func staticHandler() http.Handler {
 // pageData is what every logged-in page gets, around its own data.
 type pageData struct {
 	Title, Me, CSRF, Error, Notice string
-	Admin                          bool
+	Admin, CanInvite               bool
 	Refresh                        int
 	Data                           any
 }
 
 func (s *site) show(w http.ResponseWriter, v visitor, status int, t *template.Template, p pageData) {
-	p.Me, p.Admin, p.CSRF = v.session.Name, v.actor.Admin, csrfFor(v.raw)
+	p.Me, p.Admin, p.CanInvite, p.CSRF = v.session.Name, v.actor.Admin, v.session.CanInvite, csrfFor(v.raw)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
 	if err := t.ExecuteTemplate(w, "layout", p); err != nil {

@@ -138,7 +138,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, exit func
 		})
 	case "user link <name>":
 		return withStore(ctx, c.User.DatabaseURL, stderr, func(st *store.Store) error {
-			_, raw, err := st.CreateInvite(ctx, c.User.Link.Name, store.RoleUser, true, time.Now())
+			_, raw, err := st.CreateInvite(ctx, store.Holder, store.InviteRequest{Name: c.User.Link.Name, Reset: true}, time.Now())
 			if err != nil {
 				return err
 			}

@@ -15,6 +15,10 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Invites from users, when `who_can_invite` is `users`, up to `invite_limit` unused places each.
+  Invite links for more than one person, where each picks their own name, with an expiry of up to 30
+  days. `GET /invites`, `DELETE /invites/{id}`, `invited_by` on users, an Invites page,
+  `andante invite list` and `andante invite rm`.
 - Users. Sources are shared, and reads and tokens are private. `andante-server user add` and
   `user reset` manage them, and `GET /me` and `andante whoami` say who you are.
 - Password login, with sessions, single-use invite links, throttling and an audit log.

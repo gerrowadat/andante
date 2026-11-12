@@ -17,4 +17,4 @@ VALUES ($1, $2, 'admin', $3, $4, true)
 RETURNING *;
 
 -- name: DeleteUnusedBootstrapInvites :exec
-DELETE FROM invites WHERE bootstrap AND used_at IS NULL;
+DELETE FROM invites WHERE bootstrap AND NOT EXISTS (SELECT 1 FROM invite_uses WHERE invite_id = invites.id);

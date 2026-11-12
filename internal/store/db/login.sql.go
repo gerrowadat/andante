@@ -19,62 +19,111 @@ func (q *Queries) ClearPassword(ctx context.Context, id int64) error {
 	return err
 }
 
-const getLiveInvite = `-- name: GetLiveInvite :one
-SELECT id, token_hash, name, role, user_id, created_at, expires_at, used_at, bootstrap FROM invites WHERE token_hash = $1 AND used_at IS NULL AND expires_at > $2
+const countInvitePlaces = `-- name: CountInvitePlaces :one
+SELECT coalesce(sum(i.max_uses - (SELECT count(*) FROM invite_uses u WHERE u.invite_id = i.id)), 0)::integer
+FROM invites i WHERE i.created_by = $1 AND i.expires_at > $2
 `
 
-type GetLiveInviteParams struct {
-	TokenHash []byte
+type CountInvitePlacesParams struct {
+	CreatedBy *int64
 	ExpiresAt time.Time
 }
 
-func (q *Queries) GetLiveInvite(ctx context.Context, arg GetLiveInviteParams) (Invite, error) {
-	row := q.db.QueryRow(ctx, getLiveInvite, arg.TokenHash, arg.ExpiresAt)
-	var i Invite
+// How many more people a user's live invites could let in.
+func (q *Queries) CountInvitePlaces(ctx context.Context, arg CountInvitePlacesParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countInvitePlaces, arg.CreatedBy, arg.ExpiresAt)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const deleteInvite = `-- name: DeleteInvite :execrows
+DELETE FROM invites WHERE id = $1 AND ($2::boolean OR created_by = $3)
+`
+
+type DeleteInviteParams struct {
+	ID       int64
+	Everyone bool
+	UserID   *int64
+}
+
+func (q *Queries) DeleteInvite(ctx context.Context, arg DeleteInviteParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteInvite, arg.ID, arg.Everyone, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const getInvite = `-- name: GetInvite :one
+SELECT i.id, i.token_hash, i.name, i.role, i.user_id, i.created_at, i.expires_at, i.bootstrap, i.max_uses, i.created_by, (SELECT count(*) FROM invite_uses u WHERE u.invite_id = i.id)::integer AS uses,
+       c.name AS creator_name, c.role AS creator_role, (c.disabled_at IS NOT NULL)::boolean AS creator_disabled,
+       coalesce((SELECT who_can_invite FROM settings), 'admins')::text AS who_can_invite
+FROM invites i LEFT JOIN users c ON c.id = i.created_by
+WHERE i.token_hash = $1 AND i.expires_at > $2
+`
+
+type GetInviteParams struct {
+	TokenHash []byte
+	Now       time.Time
+}
+
+type GetInviteRow struct {
+	Invite          Invite
+	Uses            int32
+	CreatorName     *string
+	CreatorRole     *string
+	CreatorDisabled bool
+	WhoCanInvite    string
+}
+
+// An invite, with what decides whether it still works: how often it's been used, who
+// made it and whether they still can.
+func (q *Queries) GetInvite(ctx context.Context, arg GetInviteParams) (GetInviteRow, error) {
+	row := q.db.QueryRow(ctx, getInvite, arg.TokenHash, arg.Now)
+	var i GetInviteRow
 	err := row.Scan(
-		&i.ID,
-		&i.TokenHash,
-		&i.Name,
-		&i.Role,
-		&i.UserID,
-		&i.CreatedAt,
-		&i.ExpiresAt,
-		&i.UsedAt,
-		&i.Bootstrap,
+		&i.Invite.ID,
+		&i.Invite.TokenHash,
+		&i.Invite.Name,
+		&i.Invite.Role,
+		&i.Invite.UserID,
+		&i.Invite.CreatedAt,
+		&i.Invite.ExpiresAt,
+		&i.Invite.Bootstrap,
+		&i.Invite.MaxUses,
+		&i.Invite.CreatedBy,
+		&i.Uses,
+		&i.CreatorName,
+		&i.CreatorRole,
+		&i.CreatorDisabled,
+		&i.WhoCanInvite,
 	)
 	return i, err
 }
 
-const getLiveInviteForUpdate = `-- name: GetLiveInviteForUpdate :one
-SELECT id, token_hash, name, role, user_id, created_at, expires_at, used_at, bootstrap FROM invites WHERE token_hash = $1 AND used_at IS NULL AND expires_at > $2 FOR UPDATE
+const getInviteSettings = `-- name: GetInviteSettings :one
+SELECT coalesce((SELECT who_can_invite FROM settings), 'admins')::text AS who_can_invite,
+       coalesce((SELECT invite_limit FROM settings), 5)::integer AS invite_limit
 `
 
-type GetLiveInviteForUpdateParams struct {
-	TokenHash []byte
-	ExpiresAt time.Time
+type GetInviteSettingsRow struct {
+	WhoCanInvite string
+	InviteLimit  int32
 }
 
-func (q *Queries) GetLiveInviteForUpdate(ctx context.Context, arg GetLiveInviteForUpdateParams) (Invite, error) {
-	row := q.db.QueryRow(ctx, getLiveInviteForUpdate, arg.TokenHash, arg.ExpiresAt)
-	var i Invite
-	err := row.Scan(
-		&i.ID,
-		&i.TokenHash,
-		&i.Name,
-		&i.Role,
-		&i.UserID,
-		&i.CreatedAt,
-		&i.ExpiresAt,
-		&i.UsedAt,
-		&i.Bootstrap,
-	)
+func (q *Queries) GetInviteSettings(ctx context.Context) (GetInviteSettingsRow, error) {
+	row := q.db.QueryRow(ctx, getInviteSettings)
+	var i GetInviteSettingsRow
+	err := row.Scan(&i.WhoCanInvite, &i.InviteLimit)
 	return i, err
 }
 
 const getLiveSession = `-- name: GetLiveSession :one
 SELECT s.id, s.user_id, s.last_seen_at, s.method, u.name, u.role,
        (u.password_hash IS NOT NULL)::boolean AS has_password, (u.totp_enabled_at IS NOT NULL)::boolean AS has_totp,
-       coalesce((SELECT require_totp FROM settings), false)::boolean AS require_totp
+       coalesce((SELECT require_totp FROM settings), false)::boolean AS require_totp,
+       coalesce((SELECT who_can_invite FROM settings), 'admins')::text AS who_can_invite
 FROM sessions s JOIN users u ON u.id = s.user_id
 WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND u.disabled_at IS NULL
   AND s.created_at > $2 AND s.last_seen_at > $3
@@ -87,15 +136,16 @@ type GetLiveSessionParams struct {
 }
 
 type GetLiveSessionRow struct {
-	ID          int64
-	UserID      int64
-	LastSeenAt  time.Time
-	Method      string
-	Name        string
-	Role        string
-	HasPassword bool
-	HasTotp     bool
-	RequireTotp bool
+	ID           int64
+	UserID       int64
+	LastSeenAt   time.Time
+	Method       string
+	Name         string
+	Role         string
+	HasPassword  bool
+	HasTotp      bool
+	RequireTotp  bool
+	WhoCanInvite string
 }
 
 func (q *Queries) GetLiveSession(ctx context.Context, arg GetLiveSessionParams) (GetLiveSessionRow, error) {
@@ -111,6 +161,7 @@ func (q *Queries) GetLiveSession(ctx context.Context, arg GetLiveSessionParams) 
 		&i.HasPassword,
 		&i.HasTotp,
 		&i.RequireTotp,
+		&i.WhoCanInvite,
 	)
 	return i, err
 }
@@ -158,18 +209,20 @@ func (q *Queries) InsertAudit(ctx context.Context, arg InsertAuditParams) error 
 }
 
 const insertInvite = `-- name: InsertInvite :one
-INSERT INTO invites (token_hash, name, role, user_id, created_at, expires_at)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, token_hash, name, role, user_id, created_at, expires_at, used_at, bootstrap
+INSERT INTO invites (token_hash, name, role, user_id, created_at, expires_at, max_uses, created_by)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, token_hash, name, role, user_id, created_at, expires_at, bootstrap, max_uses, created_by
 `
 
 type InsertInviteParams struct {
 	TokenHash []byte
-	Name      string
+	Name      *string
 	Role      string
 	UserID    *int64
 	CreatedAt time.Time
 	ExpiresAt time.Time
+	MaxUses   int32
+	CreatedBy *int64
 }
 
 func (q *Queries) InsertInvite(ctx context.Context, arg InsertInviteParams) (Invite, error) {
@@ -180,6 +233,8 @@ func (q *Queries) InsertInvite(ctx context.Context, arg InsertInviteParams) (Inv
 		arg.UserID,
 		arg.CreatedAt,
 		arg.ExpiresAt,
+		arg.MaxUses,
+		arg.CreatedBy,
 	)
 	var i Invite
 	err := row.Scan(
@@ -190,8 +245,37 @@ func (q *Queries) InsertInvite(ctx context.Context, arg InsertInviteParams) (Inv
 		&i.UserID,
 		&i.CreatedAt,
 		&i.ExpiresAt,
-		&i.UsedAt,
 		&i.Bootstrap,
+		&i.MaxUses,
+		&i.CreatedBy,
+	)
+	return i, err
+}
+
+const insertInvitedUser = `-- name: InsertInvitedUser :one
+INSERT INTO users (name, role, invited_by) VALUES ($1, $2, $3) RETURNING id, name, role, created_at, disabled_at, password_hash, totp_sealed, totp_enabled_at, totp_last_step, invited_by
+`
+
+type InsertInvitedUserParams struct {
+	Name      string
+	Role      string
+	InvitedBy *string
+}
+
+func (q *Queries) InsertInvitedUser(ctx context.Context, arg InsertInvitedUserParams) (User, error) {
+	row := q.db.QueryRow(ctx, insertInvitedUser, arg.Name, arg.Role, arg.InvitedBy)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Role,
+		&i.CreatedAt,
+		&i.DisabledAt,
+		&i.PasswordHash,
+		&i.TotpSealed,
+		&i.TotpEnabledAt,
+		&i.TotpLastStep,
+		&i.InvitedBy,
 	)
 	return i, err
 }
@@ -271,6 +355,70 @@ func (q *Queries) ListAudit(ctx context.Context, arg ListAuditParams) ([]AuditLo
 	return items, nil
 }
 
+const listInvites = `-- name: ListInvites :many
+SELECT i.id, i.token_hash, i.name, i.role, i.user_id, i.created_at, i.expires_at, i.bootstrap, i.max_uses, i.created_by, c.name AS creator_name,
+       (SELECT count(*) FROM invite_uses u WHERE u.invite_id = i.id)::integer AS uses
+FROM invites i LEFT JOIN users c ON c.id = i.created_by
+WHERE i.id > $1 AND i.expires_at > $2 AND NOT i.bootstrap
+  AND ($3::boolean OR i.created_by = $4)
+  AND (SELECT count(*) FROM invite_uses u WHERE u.invite_id = i.id) < i.max_uses
+ORDER BY i.id LIMIT $5
+`
+
+type ListInvitesParams struct {
+	After    int64
+	Now      time.Time
+	Everyone bool
+	UserID   *int64
+	PageSize int32
+}
+
+type ListInvitesRow struct {
+	Invite      Invite
+	CreatorName *string
+	Uses        int32
+}
+
+// Invites with uses left, everyone's or one user's.
+func (q *Queries) ListInvites(ctx context.Context, arg ListInvitesParams) ([]ListInvitesRow, error) {
+	rows, err := q.db.Query(ctx, listInvites,
+		arg.After,
+		arg.Now,
+		arg.Everyone,
+		arg.UserID,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListInvitesRow
+	for rows.Next() {
+		var i ListInvitesRow
+		if err := rows.Scan(
+			&i.Invite.ID,
+			&i.Invite.TokenHash,
+			&i.Invite.Name,
+			&i.Invite.Role,
+			&i.Invite.UserID,
+			&i.Invite.CreatedAt,
+			&i.Invite.ExpiresAt,
+			&i.Invite.Bootstrap,
+			&i.Invite.MaxUses,
+			&i.Invite.CreatedBy,
+			&i.CreatorName,
+			&i.Uses,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listLiveSessions = `-- name: ListLiveSessions :many
 SELECT id, user_id, token_hash, ip, user_agent, created_at, last_seen_at, revoked_at, method FROM sessions
 WHERE user_id = $1 AND id > $2 AND revoked_at IS NULL
@@ -320,6 +468,15 @@ func (q *Queries) ListLiveSessions(ctx context.Context, arg ListLiveSessionsPara
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockInvite = `-- name: LockInvite :exec
+SELECT 1 FROM invites WHERE token_hash = $1 FOR UPDATE
+`
+
+func (q *Queries) LockInvite(ctx context.Context, tokenHash []byte) error {
+	_, err := q.db.Exec(ctx, lockInvite, tokenHash)
+	return err
 }
 
 const revokeAllSessions = `-- name: RevokeAllSessions :exec
@@ -385,6 +542,24 @@ func (q *Queries) RevokeSessionByHash(ctx context.Context, arg RevokeSessionByHa
 	return err
 }
 
+const setInviteSettings = `-- name: SetInviteSettings :exec
+INSERT INTO settings (who_can_invite, invite_limit)
+VALUES (coalesce($1::text, 'admins'), coalesce($2::integer, 5))
+ON CONFLICT (only_row) DO UPDATE SET
+    who_can_invite = coalesce($1::text, settings.who_can_invite),
+    invite_limit = coalesce($2::integer, settings.invite_limit)
+`
+
+type SetInviteSettingsParams struct {
+	WhoCanInvite *string
+	InviteLimit  *int32
+}
+
+func (q *Queries) SetInviteSettings(ctx context.Context, arg SetInviteSettingsParams) error {
+	_, err := q.db.Exec(ctx, setInviteSettings, arg.WhoCanInvite, arg.InviteLimit)
+	return err
+}
+
 const setPassword = `-- name: SetPassword :exec
 
 UPDATE users SET password_hash = $2 WHERE id = $1
@@ -417,15 +592,16 @@ func (q *Queries) TouchSession(ctx context.Context, arg TouchSessionParams) erro
 }
 
 const useInvite = `-- name: UseInvite :exec
-UPDATE invites SET used_at = $2 WHERE id = $1
+INSERT INTO invite_uses (invite_id, user_id, used_at) VALUES ($1, $2, $3)
 `
 
 type UseInviteParams struct {
-	ID     int64
-	UsedAt *time.Time
+	InviteID int64
+	UserID   *int64
+	UsedAt   time.Time
 }
 
 func (q *Queries) UseInvite(ctx context.Context, arg UseInviteParams) error {
-	_, err := q.db.Exec(ctx, useInvite, arg.ID, arg.UsedAt)
+	_, err := q.db.Exec(ctx, useInvite, arg.InviteID, arg.UserID, arg.UsedAt)
 	return err
 }

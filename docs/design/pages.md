@@ -15,7 +15,8 @@ and can edit and delete sources. Login itself, with two-factor and OIDC, is in
 | Track | `/sources/{id}/track` | Pick a pace and a name. Makes a read and an owner feed link, and goes to the read |
 | Read | `/reads/{id}` | The pace in words, position, next release, feed links, pause, resume, skip, jump, change pace, delete |
 | Add | `/add` | Paste an address, wait while andante looks, pick a candidate |
-| Users | `/users` | Invite, make admin, disable, a new password link, delete. Admins only |
+| Invites | `/invites` | Make invite links, see who's used them, withdraw them. For anyone who can invite |
+| Users | `/users` | Make admin, disable, a new password link, delete, who invited whom, the invite settings. Admins only |
 | Account | `/account` | Change password, sessions, API tokens |
 | Feed page | `/f/{token}` | For anyone with a feed link, no login: the source, the pace, the position and the next release |
 

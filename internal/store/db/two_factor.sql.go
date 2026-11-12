@@ -77,7 +77,7 @@ func (q *Queries) ForgetTOTP(ctx context.Context) error {
 }
 
 const getIdentityUser = `-- name: GetIdentityUser :one
-SELECT u.id, u.name, u.role, u.created_at, u.disabled_at, u.password_hash, u.totp_sealed, u.totp_enabled_at, u.totp_last_step FROM identities i JOIN users u ON u.id = i.user_id
+SELECT u.id, u.name, u.role, u.created_at, u.disabled_at, u.password_hash, u.totp_sealed, u.totp_enabled_at, u.totp_last_step, u.invited_by FROM identities i JOIN users u ON u.id = i.user_id
 WHERE i.issuer = $1 AND i.subject = $2
 `
 
@@ -99,6 +99,7 @@ func (q *Queries) GetIdentityUser(ctx context.Context, arg GetIdentityUserParams
 		&i.TotpSealed,
 		&i.TotpEnabledAt,
 		&i.TotpLastStep,
+		&i.InvitedBy,
 	)
 	return i, err
 }

@@ -229,7 +229,7 @@ func (s *Service) Make(ctx context.Context, given, name, ip string) (Admin, erro
 	}
 	// The admin exists either way. Without the link they can still get one with
 	// their API token.
-	_, invite, err := s.opts.Store.CreateInvite(ctx, name, "", true, s.opts.Now())
+	_, invite, err := s.opts.Store.CreateInvite(ctx, store.Holder, store.InviteRequest{Name: name, Reset: true}, s.opts.Now())
 	if err != nil {
 		s.opts.Logger.Warn("could not make a password link for the first admin", "error", err)
 	}

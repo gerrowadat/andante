@@ -161,7 +161,7 @@ func (s *Store) CreateBootstrapInvite(ctx context.Context, name string, now time
 		}
 		hash := sha256.Sum256([]byte(raw))
 		invite, err = q.InsertBootstrapInvite(ctx, db.InsertBootstrapInviteParams{
-			TokenHash: hash[:], Name: name, CreatedAt: now, ExpiresAt: now.Add(InviteLife),
+			TokenHash: hash[:], Name: &name, CreatedAt: now, ExpiresAt: now.Add(InviteLife),
 		})
 		return err
 	})

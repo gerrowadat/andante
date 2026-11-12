@@ -102,8 +102,13 @@ many wrong tokens from one address is a 429 with `Retry-After`. See
 
 ## Invites, Sessions and the Audit Log
 
-`POST /invites` is for admins, and returns a single-use link, good for a week, where someone sets a
-password. With `reset` it's for an existing user. `GET /sessions` lists your logged-in browsers, and
+`POST /invites` returns a link where someone sets a password. It's good for a week unless
+`expires_at` says otherwise (30 days at most), and for one person unless `max_uses` says more. Without
+a `name`, whoever uses it picks their own. With `reset` it's for an existing user. Admins can always
+invite. Users can when the `who_can_invite` setting is `users`, and then only users, never a reset,
+and only up to `invite_limit` unused places at once. `GET /invites` lists invites with uses left (your
+own, or everyone's for an admin), and `DELETE /invites/{id}` withdraws one. A user's `invited_by` says
+whose invite made them. `GET /sessions` lists your logged-in browsers, and
 `DELETE /sessions/{id}` ends one. Someone else's session is a 404, even for an admin. `GET /audit` is
 for admins.
 

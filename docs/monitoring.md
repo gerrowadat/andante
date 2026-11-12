@@ -33,6 +33,7 @@ you create. Tokens and read IDs are never labels.
 | `andante_logins_total` | `result` | Login attempts: `ok`, `failed` or `throttled` |
 | `andante_two_factor_codes_total` | `result` | Two-factor codes: `ok`, `recovery`, `wrong` or `reused` |
 | `andante_oidc_logins_total` | `result` | Logins with the OpenID provider: `ok`, `created`, `linked`, `refused` or `failed` |
+| `andante_invite_uses_total` | `result` | Invites used: `ok`, or `refused` when the link was used up, withdrawn or out of date |
 | `andante_api_requests_total` | `route`, `status` | Admin API requests |
 
 ## Alerts

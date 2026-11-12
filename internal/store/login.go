@@ -19,8 +19,6 @@ import (
 const (
 	SessionIdle     = 7 * 24 * time.Hour
 	SessionAbsolute = 30 * 24 * time.Hour
-	// InviteLife is how long an invite link works.
-	InviteLife = 7 * 24 * time.Hour
 )
 
 // Session is a logged-in browser.
@@ -35,6 +33,8 @@ type Session struct {
 	// NeedsTOTP means two-factor is required and this session has to set it up
 	// before it can do anything else.
 	NeedsTOTP bool
+	// CanInvite means they can make invites.
+	CanInvite bool
 }
 
 // Client is where a request came from.
@@ -95,6 +95,7 @@ func (s *Store) LookupSession(ctx context.Context, raw string, now time.Time) (S
 		ID: row.ID, UserID: row.UserID, Name: row.Name, Role: row.Role, Method: row.Method,
 		HasPassword: row.HasPassword, HasTOTP: row.HasTotp,
 		NeedsTOTP: row.RequireTotp && row.Method == MethodPassword && !row.HasTotp,
+		CanInvite: row.Role == RoleAdmin || row.WhoCanInvite == InvitesByUsers,
 	}, nil
 }
 
@@ -140,118 +141,6 @@ func (s *Store) HasLoggedInFrom(ctx context.Context, userID int64, ip string, no
 		return false, fmt.Errorf("check login history: %w", err)
 	}
 	return known, nil
-}
-
-// CreateInvite makes a single-use link. With reset it's for an existing user to set
-// a new password, and name must exist. Without, it creates the user, and name must be
-// free. It returns the raw token, which exists nowhere else.
-func (s *Store) CreateInvite(ctx context.Context, name, role string, reset bool, now time.Time) (db.Invite, string, error) {
-	var userID *int64
-	user, err := s.GetUserByName(ctx, name)
-	switch {
-	case err == nil && !reset:
-		return db.Invite{}, "", fmt.Errorf("invite %s: %w", name, ErrConflict)
-	case err == nil:
-		userID, role = &user.ID, user.Role
-	case !errors.Is(err, ErrNotFound) || reset:
-		return db.Invite{}, "", err
-	}
-	raw, err := newToken()
-	if err != nil {
-		return db.Invite{}, "", err
-	}
-	hash := sha256.Sum256([]byte(raw))
-	invite, err := s.queries.InsertInvite(ctx, db.InsertInviteParams{
-		TokenHash: hash[:], Name: name, Role: role, UserID: userID, CreatedAt: now, ExpiresAt: now.Add(InviteLife),
-	})
-	if err != nil {
-		return db.Invite{}, "", fmt.Errorf("insert invite: %w", err)
-	}
-	return invite, raw, nil
-}
-
-// LookupInvite returns the unused invite raw stands for, or ErrNotFound.
-func (s *Store) LookupInvite(ctx context.Context, raw string, now time.Time) (db.Invite, error) {
-	hash := sha256.Sum256([]byte(raw))
-	invite, err := s.queries.GetLiveInvite(ctx, db.GetLiveInviteParams{TokenHash: hash[:], ExpiresAt: now})
-	if err != nil {
-		return db.Invite{}, fmt.Errorf("look up invite: %w", translate(err))
-	}
-	return invite, nil
-}
-
-// RedeemInvite uses an invite up: it sets the password, creating the user if the
-// invite is for a new one, ends every other session, and logs them in. Holding the
-// invite's row means two tabs can't both use it.
-func (s *Store) RedeemInvite(ctx context.Context, raw, passwordHash string, client Client, now time.Time) (db.User, string, error) {
-	return s.redeem(ctx, raw, MethodPassword, client, now, func(q *db.Queries, user db.User) error {
-		return q.SetPassword(ctx, db.SetPasswordParams{ID: user.ID, PasswordHash: &passwordHash})
-	})
-}
-
-// RedeemInviteWithIdentity is RedeemInvite for someone who logged in at an OpenID
-// provider: the identity is linked to the user in place of a password. It's
-// ErrConflict if the identity already belongs to someone.
-func (s *Store) RedeemInviteWithIdentity(ctx context.Context, raw string, id Identity, client Client, now time.Time) (db.User, string, error) {
-	return s.redeem(ctx, raw, MethodOIDC, client, now, func(q *db.Queries, user db.User) error {
-		return q.InsertIdentity(ctx, db.InsertIdentityParams{UserID: user.ID, Issuer: id.Issuer, Subject: id.Subject, CreatedAt: now})
-	})
-}
-
-func (s *Store) redeem(ctx context.Context, raw, method string, client Client, now time.Time, set func(*db.Queries, db.User) error) (db.User, string, error) {
-	hash := sha256.Sum256([]byte(raw))
-	var (
-		user    db.User
-		session string
-	)
-	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		q := s.queries.WithTx(tx)
-		// The users lock comes first, as everywhere else, so that a bootstrap invite and
-		// anything else making an admin can't cross.
-		if err := q.LockUsers(ctx, usersLockID); err != nil {
-			return err
-		}
-		invite, err := q.GetLiveInviteForUpdate(ctx, db.GetLiveInviteForUpdateParams{TokenHash: hash[:], ExpiresAt: now})
-		if err != nil {
-			return err
-		}
-		if invite.Bootstrap {
-			// A bootstrap invite is dead once someone else has become an admin.
-			admins, err := q.CountActiveAdmins(ctx)
-			if err != nil {
-				return err
-			}
-			if admins > 0 {
-				return pgx.ErrNoRows
-			}
-			if err := q.DeleteBootstrapToken(ctx); err != nil {
-				return err
-			}
-		}
-		if invite.UserID == nil {
-			user, err = q.InsertUser(ctx, db.InsertUserParams{Name: invite.Name, Role: invite.Role})
-		} else {
-			user, err = q.GetUser(ctx, *invite.UserID)
-		}
-		if err != nil {
-			return err
-		}
-		if err := set(q, user); err != nil {
-			return err
-		}
-		if err := q.RevokeAllSessions(ctx, db.RevokeAllSessionsParams{UserID: user.ID, At: &now}); err != nil {
-			return err
-		}
-		if err := q.UseInvite(ctx, db.UseInviteParams{ID: invite.ID, UsedAt: &now}); err != nil {
-			return err
-		}
-		session, err = insertSession(ctx, q, user.ID, method, client, now)
-		return err
-	})
-	if err != nil {
-		return db.User{}, "", fmt.Errorf("redeem invite: %w", translate(err))
-	}
-	return user, session, nil
 }
 
 // AuditEntry is one line of the audit log.
