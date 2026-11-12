@@ -40,6 +40,8 @@ type fixture struct {
 	registry *prometheus.Registry
 }
 
+func ptr[T any](v T) *T { return &v }
+
 // newFixture serves the API on a real database, with one API token.
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
@@ -1372,6 +1374,7 @@ var scoped = map[string]struct {
 	"revokeFeedToken":  {},
 	"revokeAPIToken":   {},
 	"revokeSession":    {},
+	"deleteInvite":     {},
 }
 
 func TestUsersCantReachEachOthersThings(t *testing.T) {
@@ -1395,6 +1398,14 @@ func TestUsersCantReachEachOthersThings(t *testing.T) {
 	}
 
 	session := f.session(t, alice)
+	users := store.InvitesByUsers
+	if err := f.store.SetInviteSettings(ctx, &users, nil); err != nil {
+		t.Fatal(err)
+	}
+	invite, err := alice.client.CreateInviteWithResponse(ctx, client.InviteCreate{})
+	if err != nil || invite.JSON201 == nil {
+		t.Fatalf("create invite: %v %s", err, invite.Body)
+	}
 
 	spec, err := openapi3.NewLoader().LoadFromData(specfile.OpenAPI)
 	if err != nil {
@@ -1412,6 +1423,8 @@ func TestUsersCantReachEachOthersThings(t *testing.T) {
 			id = second.JSON201.ID
 		case strings.HasPrefix(path, "/sessions/{id}"):
 			id = session
+		case strings.HasPrefix(path, "/invites/{id}"):
+			id = invite.JSON201.ID
 		default:
 			continue
 		}
@@ -1826,33 +1839,122 @@ func TestInvitesAreForAdmins(t *testing.T) {
 	ctx := t.Context()
 	bob := f.user(t, "bob", false)
 
-	refused, err := bob.client.CreateInviteWithResponse(ctx, client.InviteCreate{Name: "alex"})
+	refused, err := bob.client.CreateInviteWithResponse(ctx, client.InviteCreate{Name: ptr("alex")})
 	if err != nil || refused.StatusCode() != http.StatusForbidden {
 		t.Errorf("a user inviting: %v %d", err, refused.StatusCode())
 	}
-	created, err := f.client.CreateInviteWithResponse(ctx, client.InviteCreate{Name: "alex"})
+	created, err := f.client.CreateInviteWithResponse(ctx, client.InviteCreate{Name: ptr("alex")})
 	if err != nil || created.JSON201 == nil {
 		t.Fatalf("an admin inviting: %v %s", err, created.Body)
 	}
-	if created.JSON201.Role != client.InviteRoleUser || !strings.HasPrefix(created.JSON201.URL, "https://andante.example/invite/") {
+	if created.JSON201.Role != client.InviteRoleUser || created.JSON201.MaxUses != 1 || !strings.HasPrefix(created.JSON201.URL, "https://andante.example/invite/") {
 		t.Errorf("invite = %s", created.Body)
 	}
-	taken, err := f.client.CreateInviteWithResponse(ctx, client.InviteCreate{Name: "bob"})
+	taken, err := f.client.CreateInviteWithResponse(ctx, client.InviteCreate{Name: ptr("bob")})
 	if err != nil || taken.StatusCode() != http.StatusConflict {
 		t.Errorf("a taken name: %v %d", err, taken.StatusCode())
 	}
 	reset := true
-	again, err := f.client.CreateInviteWithResponse(ctx, client.InviteCreate{Name: "bob", Reset: &reset})
+	again, err := f.client.CreateInviteWithResponse(ctx, client.InviteCreate{Name: ptr("bob"), Reset: &reset})
 	if err != nil || again.JSON201 == nil {
 		t.Errorf("a reset: %v %s", err, again.Body)
 	}
-	nobody, err := f.client.CreateInviteWithResponse(ctx, client.InviteCreate{Name: "nobody", Reset: &reset})
+	nobody, err := f.client.CreateInviteWithResponse(ctx, client.InviteCreate{Name: ptr("nobody"), Reset: &reset})
 	if err != nil || nobody.StatusCode() != http.StatusConflict {
 		t.Errorf("a reset for nobody: %v %d", err, nobody.StatusCode())
 	}
-	bad, err := f.client.CreateInviteWithResponse(ctx, client.InviteCreate{Name: "Not A Name"})
+	bad, err := f.client.CreateInviteWithResponse(ctx, client.InviteCreate{Name: ptr("Not A Name")})
 	if err != nil || bad.StatusCode() != http.StatusBadRequest {
 		t.Errorf("a bad name: %v %d", err, bad.StatusCode())
+	}
+
+	three, far := int32(3), time.Now().Add(31*24*time.Hour)
+	for what, body := range map[string]client.InviteCreate{
+		"a name for three":                 {Name: ptr("sam"), MaxUses: &three},
+		"a reset for three":                {Name: ptr("bob"), Reset: &reset, MaxUses: &three},
+		"a reset for nobody in particular": {Reset: &reset},
+		"31 days":                          {ExpiresAt: &far},
+	} {
+		got, err := f.client.CreateInviteWithResponse(ctx, body)
+		if err != nil || got.StatusCode() != http.StatusBadRequest {
+			t.Errorf("%s: %v %d", what, err, got.StatusCode())
+		}
+	}
+	open, err := f.client.CreateInviteWithResponse(ctx, client.InviteCreate{MaxUses: &three})
+	if err != nil || open.JSON201 == nil || open.JSON201.Name != "" || open.JSON201.MaxUses != 3 {
+		t.Fatalf("a link for three: %v %s", err, open.Body)
+	}
+}
+
+func TestUsersInviteWhenTheSiteSaysSo(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	bob, carol := f.user(t, "bob", false), f.user(t, "carol", false)
+	users, limit := client.WhoCanInvite("users"), int32(3)
+	two, one := int32(2), int32(1)
+
+	settings, err := f.client.UpdateSettingsWithApplicationMergePatchPlusJSONBodyWithResponse(ctx, client.SettingsPatch{WhoCanInvite: &users, InviteLimit: &limit})
+	if err != nil || settings.JSON200 == nil || settings.JSON200.WhoCanInvite != users || settings.JSON200.InviteLimit != 3 {
+		t.Fatalf("let users invite: %v %s", err, settings.Body)
+	}
+
+	admin, reset := client.InviteCreateRoleAdmin, true
+	for what, body := range map[string]client.InviteCreate{
+		"an admin": {Role: &admin},
+		"a reset":  {Name: ptr("carol"), Reset: &reset},
+	} {
+		got, err := bob.client.CreateInviteWithResponse(ctx, body)
+		if err != nil || got.StatusCode() != http.StatusForbidden {
+			t.Errorf("bob inviting %s: %v %d", what, err, got.StatusCode())
+		}
+	}
+
+	first, err := bob.client.CreateInviteWithResponse(ctx, client.InviteCreate{MaxUses: &two})
+	if err != nil || first.JSON201 == nil || first.JSON201.Role != client.InviteRoleUser {
+		t.Fatalf("bob's first: %v %s", err, first.Body)
+	}
+	over, err := bob.client.CreateInviteWithResponse(ctx, client.InviteCreate{MaxUses: &two})
+	if err != nil || over.StatusCode() != http.StatusConflict {
+		t.Errorf("past the limit: %v %d %s", err, over.StatusCode(), over.Body)
+	}
+	if got, err := bob.client.CreateInviteWithResponse(ctx, client.InviteCreate{MaxUses: &one}); err != nil || got.JSON201 == nil {
+		t.Errorf("up to the limit: %v %s", err, got.Body)
+	}
+	if got, err := carol.client.CreateInviteWithResponse(ctx, client.InviteCreate{MaxUses: &two}); err != nil || got.JSON201 == nil {
+		t.Errorf("carol has her own places: %v %s", err, got.Body)
+	}
+	if got, err := f.client.CreateInviteWithResponse(ctx, client.InviteCreate{MaxUses: ptr(int32(100))}); err != nil || got.JSON201 == nil {
+		t.Errorf("an admin has no limit: %v %s", err, got.Body)
+	}
+
+	mine, err := bob.client.ListInvitesWithResponse(ctx, nil)
+	if err != nil || mine.JSON200 == nil || len(mine.JSON200.Items) != 2 {
+		t.Fatalf("bob's invites: %v %s", err, mine.Body)
+	}
+	if i := mine.JSON200.Items[0]; i.ID != first.JSON201.ID || i.MaxUses != 2 || i.Uses != 0 || i.CreatedBy == nil || *i.CreatedBy != "bob" {
+		t.Errorf("bob's first, listed: %+v", i)
+	}
+	everyone, err := f.client.ListInvitesWithResponse(ctx, nil)
+	if err != nil || everyone.JSON200 == nil || len(everyone.JSON200.Items) != 4 {
+		t.Errorf("everyone's invites: %v %s", err, everyone.Body)
+	}
+
+	if got, err := carol.client.DeleteInviteWithResponse(ctx, first.JSON201.ID); err != nil || got.StatusCode() != http.StatusNotFound {
+		t.Errorf("carol withdrawing bob's: %v %d", err, got.StatusCode())
+	}
+	if got, err := bob.client.DeleteInviteWithResponse(ctx, first.JSON201.ID); err != nil || got.StatusCode() != http.StatusNoContent {
+		t.Errorf("bob withdrawing his own: %v %d", err, got.StatusCode())
+	}
+	if got, err := bob.client.CreateInviteWithResponse(ctx, client.InviteCreate{MaxUses: &two}); err != nil || got.JSON201 == nil {
+		t.Errorf("the places come back: %v %s", err, got.Body)
+	}
+
+	admins := client.WhoCanInvite("admins")
+	if _, err := f.client.UpdateSettingsWithApplicationMergePatchPlusJSONBodyWithResponse(ctx, client.SettingsPatch{WhoCanInvite: &admins}); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := bob.client.CreateInviteWithResponse(ctx, client.InviteCreate{}); err != nil || got.StatusCode() != http.StatusForbidden {
+		t.Errorf("once only admins can: %v %d", err, got.StatusCode())
 	}
 }
 
@@ -1869,7 +1971,7 @@ func TestTheAuditLog(t *testing.T) {
 	if _, err := bob.client.CreateAPITokenWithResponse(ctx, client.APITokenCreate{Label: "laptop"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.client.CreateInviteWithResponse(ctx, client.InviteCreate{Name: "alex"}); err != nil {
+	if _, err := f.client.CreateInviteWithResponse(ctx, client.InviteCreate{Name: ptr("alex")}); err != nil {
 		t.Fatal(err)
 	}
 	log, err := f.client.ListAuditWithResponse(ctx, nil)
@@ -2027,5 +2129,12 @@ func TestSettings(t *testing.T) {
 	}
 	if same, err := f.client.UpdateSettingsWithApplicationMergePatchPlusJSONBodyWithResponse(ctx, client.SettingsPatch{}); err != nil || same.JSON200 == nil || !same.JSON200.RequireTwoFactor {
 		t.Errorf("an empty patch changed them: %v", err)
+	}
+	if got.JSON200.WhoCanInvite != "admins" || got.JSON200.InviteLimit != 5 {
+		t.Errorf("invites by default: %+v", got.JSON200)
+	}
+	limit := int32(-1)
+	if bad, err := f.client.UpdateSettingsWithApplicationMergePatchPlusJSONBodyWithResponse(ctx, client.SettingsPatch{InviteLimit: &limit}); err != nil || bad.StatusCode() != http.StatusBadRequest {
+		t.Errorf("a negative limit: %v %d", err, bad.StatusCode())
 	}
 }

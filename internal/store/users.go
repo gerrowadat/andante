@@ -46,6 +46,9 @@ var Holder = Actor{Admin: true}
 // validName is what a user can be called. Logging in folds names to lower case.
 var validName = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 
+// ValidName says whether a user could be called name.
+func ValidName(name string) bool { return validName.MatchString(name) }
+
 // ErrBadName means a name is no good.
 var ErrBadName = errors.New("a name is 1 to 64 lower-case letters, digits, dots, dashes or underscores")
 

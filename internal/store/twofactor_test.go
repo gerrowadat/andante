@@ -248,27 +248,27 @@ func TestRedeemingAnInviteWithAnIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, raw, err := s.CreateInvite(ctx, "dave", "", true, now)
+	_, raw, err := s.CreateInvite(ctx, store.Holder, store.InviteRequest{Name: "dave", Reset: true}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	id := store.Identity{Issuer: "https://idp", Subject: "dave"}
-	user, session, err := s.RedeemInviteWithIdentity(ctx, raw, id, client, now)
+	user, session, err := s.RedeemInviteWithIdentity(ctx, raw, "", id, client, now)
 	if err != nil || user.ID != dave.ID || session == "" {
 		t.Fatalf("redeem = %+v, %v", user, err)
 	}
 	if got, _, err := s.LoginByIdentity(ctx, id, client, now); err != nil || got.ID != dave.ID {
 		t.Errorf("login = %+v, %v", got, err)
 	}
-	if _, _, err := s.RedeemInviteWithIdentity(ctx, raw, id, client, now); !errors.Is(err, store.ErrNotFound) {
+	if _, _, err := s.RedeemInviteWithIdentity(ctx, raw, "", id, client, now); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("used twice = %v", err)
 	}
 
-	_, raw, err = s.CreateInvite(ctx, "alex", store.RoleUser, false, now)
+	_, raw, err = s.CreateInvite(ctx, store.Holder, store.InviteRequest{Name: "alex", Role: store.RoleUser}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := s.RedeemInviteWithIdentity(ctx, raw, id, client, now); !errors.Is(err, store.ErrConflict) {
+	if _, _, err := s.RedeemInviteWithIdentity(ctx, raw, "", id, client, now); !errors.Is(err, store.ErrConflict) {
 		t.Errorf("someone else's identity = %v", err)
 	}
 	if _, err := s.LookupInvite(ctx, raw, now); err != nil {

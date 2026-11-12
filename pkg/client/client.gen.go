@@ -119,6 +119,24 @@ func (e InviteCreateRole) Valid() bool {
 	}
 }
 
+// Defines values for InviteSummaryRole.
+const (
+	InviteSummaryRoleAdmin InviteSummaryRole = "admin"
+	InviteSummaryRoleUser  InviteSummaryRole = "user"
+)
+
+// Valid indicates whether the value is a known member of the InviteSummaryRole enum.
+func (e InviteSummaryRole) Valid() bool {
+	switch e {
+	case InviteSummaryRoleAdmin:
+		return true
+	case InviteSummaryRoleUser:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for IssuedFeedTokenSuggested.
 const (
 	IssuedFeedTokenSuggestedAtom IssuedFeedTokenSuggested = "atom"
@@ -482,6 +500,24 @@ func (e UserPatchRole) Valid() bool {
 	}
 }
 
+// Defines values for WhoCanInvite.
+const (
+	Admins WhoCanInvite = "admins"
+	Users  WhoCanInvite = "users"
+)
+
+// Valid indicates whether the value is a known member of the WhoCanInvite enum.
+func (e WhoCanInvite) Valid() bool {
+	switch e {
+	case Admins:
+		return true
+	case Users:
+		return true
+	default:
+		return false
+	}
+}
+
 // APIToken defines model for APIToken.
 type APIToken struct {
 	CreatedAt  time.Time                    `json:"created_at"`
@@ -710,10 +746,13 @@ type FieldError struct {
 
 // Invite defines model for Invite.
 type Invite struct {
-	ExpiresAt time.Time  `json:"expires_at"`
-	ID        int64      `json:"id"`
-	Name      string     `json:"name"`
-	Role      InviteRole `json:"role"`
+	ExpiresAt time.Time `json:"expires_at"`
+	ID        int64     `json:"id"`
+	MaxUses   int32     `json:"max_uses"`
+
+	// Name Who it's for, or empty if whoever uses it picks.
+	Name string     `json:"name"`
+	Role InviteRole `json:"role"`
 
 	// URL The link, shown only here.
 	URL string `json:"url"`
@@ -724,7 +763,14 @@ type InviteRole string
 
 // InviteCreate defines model for InviteCreate.
 type InviteCreate struct {
-	Name string `json:"name"`
+	// ExpiresAt When it stops working, at most 30 days away. A week by default.
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+
+	// MaxUses How many people can use it. An invite with a name is for one.
+	MaxUses *int32 `json:"max_uses,omitempty"`
+
+	// Name Who it's for. Without one, whoever uses it picks their own name.
+	Name *string `json:"name,omitempty"`
 
 	// Reset This is for an existing user, to set a new password.
 	Reset *bool             `json:"reset,omitempty"`
@@ -733,6 +779,39 @@ type InviteCreate struct {
 
 // InviteCreateRole defines model for InviteCreate.Role.
 type InviteCreateRole string
+
+// InviteLimit How many unused places a user who isn't an admin can have out at once, counting each use left on each of their invites.
+type InviteLimit = int32
+
+// InviteList defines model for InviteList.
+type InviteList struct {
+	Items []InviteSummary `json:"items"`
+
+	// Next The next page, or null on the last one.
+	Next nullable.Nullable[NextLink] `json:"next"`
+}
+
+// InviteSummary defines model for InviteSummary.
+type InviteSummary struct {
+	CreatedAt time.Time `json:"created_at"`
+
+	// CreatedBy Who made it. It's missing for one the server made.
+	CreatedBy *string   `json:"created_by,omitempty"`
+	ExpiresAt time.Time `json:"expires_at"`
+	ID        int64     `json:"id"`
+	MaxUses   int32     `json:"max_uses"`
+
+	// Name Who it's for, or empty if whoever uses it picks.
+	Name string `json:"name"`
+
+	// Reset It's for an existing user, to set a new password.
+	Reset bool              `json:"reset"`
+	Role  InviteSummaryRole `json:"role"`
+	Uses  int32             `json:"uses"`
+}
+
+// InviteSummaryRole defines model for InviteSummary.Role.
+type InviteSummaryRole string
 
 // IssuedAPIToken defines model for IssuedAPIToken.
 type IssuedAPIToken struct {
@@ -1046,12 +1125,22 @@ type SessionList struct {
 
 // Settings defines model for Settings.
 type Settings struct {
-	RequireTwoFactor bool `json:"require_two_factor"`
+	// InviteLimit How many unused places a user who isn't an admin can have out at once, counting each use left on each of their invites.
+	InviteLimit      InviteLimit `json:"invite_limit"`
+	RequireTwoFactor bool        `json:"require_two_factor"`
+
+	// WhoCanInvite Who can make invites. With users, what they invite is always a user.
+	WhoCanInvite WhoCanInvite `json:"who_can_invite"`
 }
 
 // SettingsPatch defines model for SettingsPatch.
 type SettingsPatch struct {
-	RequireTwoFactor *bool `json:"require_two_factor,omitempty"`
+	// InviteLimit How many unused places a user who isn't an admin can have out at once, counting each use left on each of their invites.
+	InviteLimit      *InviteLimit `json:"invite_limit,omitempty"`
+	RequireTwoFactor *bool        `json:"require_two_factor,omitempty"`
+
+	// WhoCanInvite Who can make invites. With users, what they invite is always a user.
+	WhoCanInvite *WhoCanInvite `json:"who_can_invite,omitempty"`
 }
 
 // SkipAdjustment defines model for SkipAdjustment.
@@ -1129,8 +1218,11 @@ type User struct {
 	CreatedAt  time.Time                    `json:"created_at"`
 	DisabledAt nullable.Nullable[time.Time] `json:"disabled_at,omitempty"`
 	ID         int64                        `json:"id"`
-	Name       string                       `json:"name"`
-	Role       UserRole                     `json:"role"`
+
+	// InvitedBy The name of whoever made the invite this account was made with, as it was then. It's missing for an account made any other way.
+	InvitedBy *string  `json:"invited_by,omitempty"`
+	Name      string   `json:"name"`
+	Role      UserRole `json:"role"`
 }
 
 // UserRole defines model for User.Role.
@@ -1160,6 +1252,9 @@ type Version struct {
 	Version string `json:"version"`
 }
 
+// WhoCanInvite Who can make invites. With users, what they invite is always a user.
+type WhoCanInvite string
+
 // Cursor defines model for Cursor.
 type Cursor = string
 
@@ -1180,6 +1275,15 @@ type ListAPITokensParams struct {
 
 // ListAuditParams defines parameters for ListAudit.
 type ListAuditParams struct {
+	// Cursor An opaque cursor from a previous page's next link.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+
+	// Limit The most items to return.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// ListInvitesParams defines parameters for ListInvites.
+type ListInvitesParams struct {
 	// Cursor An opaque cursor from a previous page's next link.
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 
@@ -1996,9 +2100,16 @@ type ClientInterface interface {
 	// Corresponds with POST /imports/opml (the `ImportOPML` operationId).
 	ImportOPMLWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ListInvites List invites
+	//
+	// Lists invites that still have uses left, oldest first: your own, or everyone's for an admin. The links themselves were only shown when the invites were made.
+	//
+	// Corresponds with GET /invites (the `ListInvites` operationId).
+	ListInvites(ctx context.Context, params *ListInvitesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// CreateInviteWithBody Invite someone, or reset a password
 	//
-	// Admins only. Returns a single-use link, good for a week, where someone sets a password. With reset it's for an existing user, and ends their sessions when it's used.
+	// Returns a link, good for a week unless expires_at says otherwise, where someone sets a password. Without a name, whoever uses it picks their own, and max_uses people can. With reset it's for an existing user, and ends their sessions when it's used. Admins can always invite. Users can when the who_can_invite setting is users, and then only users, never a reset, and only up to invite_limit unused places at once.
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -2007,12 +2118,19 @@ type ClientInterface interface {
 
 	// CreateInvite Invite someone, or reset a password
 	//
-	// Admins only. Returns a single-use link, good for a week, where someone sets a password. With reset it's for an existing user, and ends their sessions when it's used.
+	// Returns a link, good for a week unless expires_at says otherwise, where someone sets a password. Without a name, whoever uses it picks their own, and max_uses people can. With reset it's for an existing user, and ends their sessions when it's used. Admins can always invite. Users can when the who_can_invite setting is users, and then only users, never a reset, and only up to invite_limit unused places at once.
 	//
 	// Takes a body of the `application/json` content type.
 	//
 	// Corresponds with POST /invites (the `CreateInvite` operationId).
 	CreateInvite(ctx context.Context, body CreateInviteJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteInvite Withdraw an invite
+	//
+	// Withdraws one of your own invites, or anyone's for an admin, so that its link stops working. Accounts it already made are left alone. Someone else's is a 404.
+	//
+	// Corresponds with DELETE /invites/{id} (the `DeleteInvite` operationId).
+	DeleteInvite(ctx context.Context, id ID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetMe Who this token belongs to
 	//
@@ -2176,7 +2294,7 @@ type ClientInterface interface {
 
 	// UpdateSettingsWithBody Change the site's settings
 	//
-	// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected.
+	// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each.
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -2185,7 +2303,7 @@ type ClientInterface interface {
 
 	// UpdateSettingsWithApplicationMergePatchPlusJSONBody Change the site's settings
 	//
-	// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected.
+	// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each.
 	//
 	// Takes a body of the `application/merge-patch+json` content type.
 	//
@@ -2532,9 +2650,26 @@ func (c *Client) ImportOPMLWithBody(ctx context.Context, contentType string, bod
 	return c.Client.Do(req)
 }
 
+// ListInvites List invites
+//
+// Lists invites that still have uses left, oldest first: your own, or everyone's for an admin. The links themselves were only shown when the invites were made.
+//
+// Corresponds with GET /invites (the `ListInvites` operationId).
+func (c *Client) ListInvites(ctx context.Context, params *ListInvitesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListInvitesRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // CreateInviteWithBody Invite someone, or reset a password
 //
-// Admins only. Returns a single-use link, good for a week, where someone sets a password. With reset it's for an existing user, and ends their sessions when it's used.
+// Returns a link, good for a week unless expires_at says otherwise, where someone sets a password. Without a name, whoever uses it picks their own, and max_uses people can. With reset it's for an existing user, and ends their sessions when it's used. Admins can always invite. Users can when the who_can_invite setting is users, and then only users, never a reset, and only up to invite_limit unused places at once.
 //
 // Takes any type of body and a specified content type.
 //
@@ -2553,13 +2688,30 @@ func (c *Client) CreateInviteWithBody(ctx context.Context, contentType string, b
 
 // CreateInvite Invite someone, or reset a password
 //
-// Admins only. Returns a single-use link, good for a week, where someone sets a password. With reset it's for an existing user, and ends their sessions when it's used.
+// Returns a link, good for a week unless expires_at says otherwise, where someone sets a password. Without a name, whoever uses it picks their own, and max_uses people can. With reset it's for an existing user, and ends their sessions when it's used. Admins can always invite. Users can when the who_can_invite setting is users, and then only users, never a reset, and only up to invite_limit unused places at once.
 //
 // Takes a body of the `application/json` content type.
 //
 // Corresponds with POST /invites (the `CreateInvite` operationId).
 func (c *Client) CreateInvite(ctx context.Context, body CreateInviteJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCreateInviteRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteInvite Withdraw an invite
+//
+// Withdraws one of your own invites, or anyone's for an admin, so that its link stops working. Accounts it already made are left alone. Someone else's is a 404.
+//
+// Corresponds with DELETE /invites/{id} (the `DeleteInvite` operationId).
+func (c *Client) DeleteInvite(ctx context.Context, id ID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteInviteRequest(c.Server, id)
 	if err != nil {
 		return nil, err
 	}
@@ -2932,7 +3084,7 @@ func (c *Client) GetSettings(ctx context.Context, reqEditors ...RequestEditorFn)
 
 // UpdateSettingsWithBody Change the site's settings
 //
-// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected.
+// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each.
 //
 // Takes any type of body and a specified content type.
 //
@@ -2951,7 +3103,7 @@ func (c *Client) UpdateSettingsWithBody(ctx context.Context, contentType string,
 
 // UpdateSettingsWithApplicationMergePatchPlusJSONBody Change the site's settings
 //
-// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected.
+// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each.
 //
 // Takes a body of the `application/merge-patch+json` content type.
 //
@@ -3590,6 +3742,72 @@ func NewImportOPMLRequestWithBody(server string, contentType string, body io.Rea
 	return req, nil
 }
 
+// NewListInvitesRequest constructs an http.Request for the ListInvites method
+func NewListInvitesRequest(server string, params *ListInvitesParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/invites")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewCreateInviteRequest calls the generic CreateInvite builder with application/json body
 func NewCreateInviteRequest(server string, body CreateInviteJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -3626,6 +3844,40 @@ func NewCreateInviteRequestWithBody(server string, contentType string, body io.R
 	}
 
 	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteInviteRequest constructs an http.Request for the DeleteInvite method
+func NewDeleteInviteRequest(server string, id ID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/invites/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
 
 	return req, nil
 }
@@ -5076,9 +5328,18 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /imports/opml (the `ImportOPML` operationId).
 	ImportOPMLWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ImportOPMLResponse, error)
 
+	// ListInvitesWithResponse List invites
+	//
+	// Lists invites that still have uses left, oldest first: your own, or everyone's for an admin. The links themselves were only shown when the invites were made.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /invites (the `ListInvites` operationId).
+	ListInvitesWithResponse(ctx context.Context, params *ListInvitesParams, reqEditors ...RequestEditorFn) (*ListInvitesResponse, error)
+
 	// CreateInviteWithBodyWithResponse Invite someone, or reset a password
 	//
-	// Admins only. Returns a single-use link, good for a week, where someone sets a password. With reset it's for an existing user, and ends their sessions when it's used.
+	// Returns a link, good for a week unless expires_at says otherwise, where someone sets a password. Without a name, whoever uses it picks their own, and max_uses people can. With reset it's for an existing user, and ends their sessions when it's used. Admins can always invite. Users can when the who_can_invite setting is users, and then only users, never a reset, and only up to invite_limit unused places at once.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -5087,12 +5348,21 @@ type ClientWithResponsesInterface interface {
 
 	// CreateInviteWithResponse Invite someone, or reset a password
 	//
-	// Admins only. Returns a single-use link, good for a week, where someone sets a password. With reset it's for an existing user, and ends their sessions when it's used.
+	// Returns a link, good for a week unless expires_at says otherwise, where someone sets a password. Without a name, whoever uses it picks their own, and max_uses people can. With reset it's for an existing user, and ends their sessions when it's used. Admins can always invite. Users can when the who_can_invite setting is users, and then only users, never a reset, and only up to invite_limit unused places at once.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with POST /invites (the `CreateInvite` operationId).
 	CreateInviteWithResponse(ctx context.Context, body CreateInviteJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateInviteResponse, error)
+
+	// DeleteInviteWithResponse Withdraw an invite
+	//
+	// Withdraws one of your own invites, or anyone's for an admin, so that its link stops working. Accounts it already made are left alone. Someone else's is a 404.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /invites/{id} (the `DeleteInvite` operationId).
+	DeleteInviteWithResponse(ctx context.Context, id ID, reqEditors ...RequestEditorFn) (*DeleteInviteResponse, error)
 
 	// GetMeWithResponse Who this token belongs to
 	//
@@ -5276,7 +5546,7 @@ type ClientWithResponsesInterface interface {
 
 	// UpdateSettingsWithBodyWithResponse Change the site's settings
 	//
-	// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected.
+	// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -5285,7 +5555,7 @@ type ClientWithResponsesInterface interface {
 
 	// UpdateSettingsWithApplicationMergePatchPlusJSONBodyWithResponse Change the site's settings
 	//
-	// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected.
+	// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each.
 	//
 	// Takes a body of the `application/merge-patch+json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -5826,6 +6096,61 @@ func (r ImportOPMLResponse) ContentType() string {
 	return ""
 }
 
+// ListInvitesResponse200Headers the declared response headers of an HTTP 200 response for ListInvites
+type ListInvitesResponse200Headers struct {
+	Link *string
+}
+
+type ListInvitesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *InviteList
+	// ApplicationProblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationProblemJSONDefault *Problem
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *ListInvitesResponse200Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListInvitesResponse) GetJSON200() *InviteList {
+	return r.JSON200
+}
+
+// GetApplicationProblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ListInvitesResponse) GetApplicationProblemJSONDefault() *Problem {
+	return r.ApplicationProblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListInvitesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListInvitesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListInvitesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListInvitesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type CreateInviteResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -5868,6 +6193,47 @@ func (r CreateInviteResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r CreateInviteResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteInviteResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// ApplicationProblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationProblemJSONDefault *Problem
+}
+
+// GetApplicationProblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r DeleteInviteResponse) GetApplicationProblemJSONDefault() *Problem {
+	return r.ApplicationProblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r DeleteInviteResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteInviteResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteInviteResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteInviteResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -7405,9 +7771,24 @@ func (c *ClientWithResponses) ImportOPMLWithBodyWithResponse(ctx context.Context
 	return ParseImportOPMLResponse(rsp)
 }
 
+// ListInvitesWithResponse List invites
+//
+// Lists invites that still have uses left, oldest first: your own, or everyone's for an admin. The links themselves were only shown when the invites were made.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /invites (the `ListInvites` operationId).
+func (c *ClientWithResponses) ListInvitesWithResponse(ctx context.Context, params *ListInvitesParams, reqEditors ...RequestEditorFn) (*ListInvitesResponse, error) {
+	rsp, err := c.ListInvites(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListInvitesResponse(rsp)
+}
+
 // CreateInviteWithBodyWithResponse Invite someone, or reset a password
 //
-// Admins only. Returns a single-use link, good for a week, where someone sets a password. With reset it's for an existing user, and ends their sessions when it's used.
+// Returns a link, good for a week unless expires_at says otherwise, where someone sets a password. Without a name, whoever uses it picks their own, and max_uses people can. With reset it's for an existing user, and ends their sessions when it's used. Admins can always invite. Users can when the who_can_invite setting is users, and then only users, never a reset, and only up to invite_limit unused places at once.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -7422,7 +7803,7 @@ func (c *ClientWithResponses) CreateInviteWithBodyWithResponse(ctx context.Conte
 
 // CreateInviteWithResponse Invite someone, or reset a password
 //
-// Admins only. Returns a single-use link, good for a week, where someone sets a password. With reset it's for an existing user, and ends their sessions when it's used.
+// Returns a link, good for a week unless expires_at says otherwise, where someone sets a password. Without a name, whoever uses it picks their own, and max_uses people can. With reset it's for an existing user, and ends their sessions when it's used. Admins can always invite. Users can when the who_can_invite setting is users, and then only users, never a reset, and only up to invite_limit unused places at once.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -7433,6 +7814,21 @@ func (c *ClientWithResponses) CreateInviteWithResponse(ctx context.Context, body
 		return nil, err
 	}
 	return ParseCreateInviteResponse(rsp)
+}
+
+// DeleteInviteWithResponse Withdraw an invite
+//
+// Withdraws one of your own invites, or anyone's for an admin, so that its link stops working. Accounts it already made are left alone. Someone else's is a 404.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /invites/{id} (the `DeleteInvite` operationId).
+func (c *ClientWithResponses) DeleteInviteWithResponse(ctx context.Context, id ID, reqEditors ...RequestEditorFn) (*DeleteInviteResponse, error) {
+	rsp, err := c.DeleteInvite(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteInviteResponse(rsp)
 }
 
 // GetMeWithResponse Who this token belongs to
@@ -7737,7 +8133,7 @@ func (c *ClientWithResponses) GetSettingsWithResponse(ctx context.Context, reqEd
 
 // UpdateSettingsWithBodyWithResponse Change the site's settings
 //
-// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected.
+// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -7752,7 +8148,7 @@ func (c *ClientWithResponses) UpdateSettingsWithBodyWithResponse(ctx context.Con
 
 // UpdateSettingsWithApplicationMergePatchPlusJSONBodyWithResponse Change the site's settings
 //
-// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected.
+// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each.
 //
 // Takes a body of the `application/merge-patch+json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -8289,6 +8685,52 @@ func ParseImportOPMLResponse(rsp *http.Response) (*ImportOPMLResponse, error) {
 	return response, nil
 }
 
+// ParseListInvitesResponse parses an HTTP response from a ListInvitesWithResponse call
+func ParseListInvitesResponse(rsp *http.Response) (*ListInvitesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListInvitesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest InviteList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationProblemJSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers ListInvitesResponse200Headers
+		if values := rsp.Header.Values("Link"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Link", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.Link = &value
+		}
+		response.Headers200 = &headers
+	}
+
+	return response, nil
+}
+
 // ParseCreateInviteResponse parses an HTTP response from a CreateInviteWithResponse call
 func ParseCreateInviteResponse(rsp *http.Response) (*CreateInviteResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -8309,6 +8751,35 @@ func ParseCreateInviteResponse(rsp *http.Response) (*CreateInviteResponse, error
 			return nil, err
 		}
 		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationProblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteInviteResponse parses an HTTP response from a DeleteInviteWithResponse call
+func ParseDeleteInviteResponse(rsp *http.Response) (*DeleteInviteResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteInviteResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Problem

@@ -15,7 +15,8 @@ RETURNING *;
 -- name: GetLiveSession :one
 SELECT s.id, s.user_id, s.last_seen_at, s.method, u.name, u.role,
        (u.password_hash IS NOT NULL)::boolean AS has_password, (u.totp_enabled_at IS NOT NULL)::boolean AS has_totp,
-       coalesce((SELECT require_totp FROM settings), false)::boolean AS require_totp
+       coalesce((SELECT require_totp FROM settings), false)::boolean AS require_totp,
+       coalesce((SELECT who_can_invite FROM settings), 'admins')::text AS who_can_invite
 FROM sessions s JOIN users u ON u.id = s.user_id
 WHERE s.token_hash = sqlc.arg(token_hash) AND s.revoked_at IS NULL AND u.disabled_at IS NULL
   AND s.created_at > sqlc.arg(created_after) AND s.last_seen_at > sqlc.arg(seen_after);
@@ -45,18 +46,56 @@ SELECT EXISTS (
 );
 
 -- name: InsertInvite :one
-INSERT INTO invites (token_hash, name, role, user_id, created_at, expires_at)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO invites (token_hash, name, role, user_id, created_at, expires_at, max_uses, created_by)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING *;
 
--- name: GetLiveInvite :one
-SELECT * FROM invites WHERE token_hash = $1 AND used_at IS NULL AND expires_at > $2;
+-- name: GetInvite :one
+-- An invite, with what decides whether it still works: how often it's been used, who
+-- made it and whether they still can.
+SELECT sqlc.embed(i), (SELECT count(*) FROM invite_uses u WHERE u.invite_id = i.id)::integer AS uses,
+       c.name AS creator_name, c.role AS creator_role, (c.disabled_at IS NOT NULL)::boolean AS creator_disabled,
+       coalesce((SELECT who_can_invite FROM settings), 'admins')::text AS who_can_invite
+FROM invites i LEFT JOIN users c ON c.id = i.created_by
+WHERE i.token_hash = sqlc.arg(token_hash) AND i.expires_at > sqlc.arg(now);
 
--- name: GetLiveInviteForUpdate :one
-SELECT * FROM invites WHERE token_hash = $1 AND used_at IS NULL AND expires_at > $2 FOR UPDATE;
+-- name: LockInvite :exec
+SELECT 1 FROM invites WHERE token_hash = $1 FOR UPDATE;
 
 -- name: UseInvite :exec
-UPDATE invites SET used_at = $2 WHERE id = $1;
+INSERT INTO invite_uses (invite_id, user_id, used_at) VALUES ($1, $2, $3);
+
+-- name: InsertInvitedUser :one
+INSERT INTO users (name, role, invited_by) VALUES ($1, $2, $3) RETURNING *;
+
+-- name: ListInvites :many
+-- Invites with uses left, everyone's or one user's.
+SELECT sqlc.embed(i), c.name AS creator_name,
+       (SELECT count(*) FROM invite_uses u WHERE u.invite_id = i.id)::integer AS uses
+FROM invites i LEFT JOIN users c ON c.id = i.created_by
+WHERE i.id > sqlc.arg(after) AND i.expires_at > sqlc.arg(now) AND NOT i.bootstrap
+  AND (sqlc.arg(everyone)::boolean OR i.created_by = sqlc.arg(user_id))
+  AND (SELECT count(*) FROM invite_uses u WHERE u.invite_id = i.id) < i.max_uses
+ORDER BY i.id LIMIT sqlc.arg(page_size);
+
+-- name: DeleteInvite :execrows
+DELETE FROM invites WHERE id = sqlc.arg(id) AND (sqlc.arg(everyone)::boolean OR created_by = sqlc.arg(user_id));
+
+-- name: CountInvitePlaces :one
+-- How many more people a user's live invites could let in.
+SELECT coalesce(sum(i.max_uses - (SELECT count(*) FROM invite_uses u WHERE u.invite_id = i.id)), 0)::integer
+FROM invites i WHERE i.created_by = $1 AND i.expires_at > $2;
+
+-- name: GetInviteSettings :one
+SELECT coalesce((SELECT who_can_invite FROM settings), 'admins')::text AS who_can_invite,
+       coalesce((SELECT invite_limit FROM settings), 5)::integer AS invite_limit;
+
+-- name: SetInviteSettings :exec
+INSERT INTO settings (who_can_invite, invite_limit)
+VALUES (coalesce(sqlc.narg(who_can_invite)::text, 'admins'), coalesce(sqlc.narg(invite_limit)::integer, 5))
+ON CONFLICT (only_row) DO UPDATE SET
+    who_can_invite = coalesce(sqlc.narg(who_can_invite)::text, settings.who_can_invite),
+    invite_limit = coalesce(sqlc.narg(invite_limit)::integer, settings.invite_limit);
 
 -- name: InsertAudit :exec
 INSERT INTO audit_log (at, who, action, target, ip) VALUES ($1, $2, $3, $4, $5);

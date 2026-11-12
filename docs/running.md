@@ -121,8 +121,15 @@ To invite someone else:
 andante invite add alex
 ```
 
-The link works once and lasts a week. With an `http://` base URL the session cookie isn't `Secure`, which
-is only good enough for trying it out. An admin can also invite people from the Users page.
+The link works once and lasts a week. Leave the name off and add `--uses 5` for a link five people
+can use, each picking their own name. With an `http://` base URL the session cookie isn't `Secure`,
+which is only good enough for trying it out. There's an Invites page on the website too.
+
+To let everyone invite their friends, up to five unused places each:
+
+```sh
+andante settings set --who-can-invite users --invite-limit 5
+```
 
 With an OpenID provider set up, the login and invite pages have single sign-on as well. See
 [configuration](configuration.md#logging-in-with-a-provider).

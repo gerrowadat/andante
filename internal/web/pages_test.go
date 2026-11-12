@@ -36,7 +36,7 @@ func (f *fixture) person(t *testing.T, name string, admin bool) person {
 	if admin {
 		role = store.RoleAdmin
 	}
-	_, raw, err := f.store.CreateInvite(t.Context(), name, role, false, f.clock())
+	_, raw, err := f.store.CreateInvite(t.Context(), store.Holder, store.InviteRequest{Name: name, Role: role}, f.clock())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +206,15 @@ func TestNobodyReachesSomeoneElsesThings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ids := map[string]int64{"read": read, "token": tokens[0].ID, "api-token": apiToken.ID, "session": session.ID}
+	users := store.InvitesByUsers
+	if err := f.store.SetInviteSettings(ctx, &users, nil); err != nil {
+		t.Fatal(err)
+	}
+	invite, _, err := f.store.CreateInvite(ctx, alice.actor, store.InviteRequest{Role: store.RoleUser}, f.clock())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := map[string]int64{"read": read, "token": tokens[0].ID, "api-token": apiToken.ID, "session": session.ID, "invite": invite.ID}
 
 	tried := 0
 	for _, rt := range web.Routes() {
@@ -440,8 +448,8 @@ func TestManagingUsersFromThePage(t *testing.T) {
 	f := newFixture(t)
 	dave, bob := f.person(t, "dave", true), f.person(t, "bob", false)
 
-	if got := f.post(t, dave, "/users/invite", url.Values{"name": {"carol"}}); got.status != http.StatusOK || !strings.Contains(got.body, "/invite/") {
-		t.Errorf("invite: %d %s", got.status, got.body)
+	if got := f.post(t, dave, "/users/invite", url.Values{"name": {"carol"}}); got.status != http.StatusNotFound {
+		t.Errorf("a password link for someone who isn't here yet: %d", got.status)
 	}
 	if got := f.post(t, dave, "/users/invite", url.Values{"name": {"nobody"}, "reset": {"1"}}); got.status != http.StatusNotFound {
 		t.Errorf("a password link for nobody: %d", got.status)

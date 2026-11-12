@@ -29,13 +29,13 @@ Start at the [project README](../README.md) if you don't know what andante is ye
   - [Login](design/login.md): passwords, sessions, invites, throttling, the audit log.
   - [Pages](design/pages.md): the website, who can reach what, and the feed page.
   - [Bootstrapping](design/bootstrap.md): the token that makes the first admin without a shell.
+  - [Invites](design/invites.md): users inviting people, links for more than one, who invited whom.
   - [Discovery](design/discovery.md): strategies, extraction, politeness, tail mode.
   - [Scheduling](design/scheduling.md): pacing, segments and the arithmetic of a read.
   - [Feeds and sharing](design/feeds-and-sharing.md): output formats, tokens, decorators.
 - [`proposals/`](proposals/): ideas that aren't built:
   - [Discovery](proposals/discovery.md): later strategies, and mid-archive insertions.
   - [Feed links](proposals/feed-links.md): per-read link templates, such as for discussion.
-  - [Invites](proposals/invites.md): letting users invite people, and links for more than one.
   - [Users and a web UI](proposals/web-ui.md): what's left, which is two-factor and OIDC.
 
 ## Building It

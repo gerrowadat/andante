@@ -20,7 +20,7 @@ func (q *Queries) DeleteBootstrapToken(ctx context.Context) error {
 }
 
 const deleteUnusedBootstrapInvites = `-- name: DeleteUnusedBootstrapInvites :exec
-DELETE FROM invites WHERE bootstrap AND used_at IS NULL
+DELETE FROM invites WHERE bootstrap AND NOT EXISTS (SELECT 1 FROM invite_uses WHERE invite_id = invites.id)
 `
 
 func (q *Queries) DeleteUnusedBootstrapInvites(ctx context.Context) error {
@@ -50,12 +50,12 @@ func (q *Queries) GetBootstrapToken(ctx context.Context) (GetBootstrapTokenRow, 
 const insertBootstrapInvite = `-- name: InsertBootstrapInvite :one
 INSERT INTO invites (token_hash, name, role, created_at, expires_at, bootstrap)
 VALUES ($1, $2, 'admin', $3, $4, true)
-RETURNING id, token_hash, name, role, user_id, created_at, expires_at, used_at, bootstrap
+RETURNING id, token_hash, name, role, user_id, created_at, expires_at, bootstrap, max_uses, created_by
 `
 
 type InsertBootstrapInviteParams struct {
 	TokenHash []byte
-	Name      string
+	Name      *string
 	CreatedAt time.Time
 	ExpiresAt time.Time
 }
@@ -76,8 +76,9 @@ func (q *Queries) InsertBootstrapInvite(ctx context.Context, arg InsertBootstrap
 		&i.UserID,
 		&i.CreatedAt,
 		&i.ExpiresAt,
-		&i.UsedAt,
 		&i.Bootstrap,
+		&i.MaxUses,
+		&i.CreatedBy,
 	)
 	return i, err
 }

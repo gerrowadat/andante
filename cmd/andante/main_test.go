@@ -686,6 +686,21 @@ func TestLoginCommands(t *testing.T) {
 		t.Error("invited a taken name")
 	}
 	h.ok(t, "invite", "add", "admin", "--reset")
+	open := h.ok(t, "invite", "add", "--uses", "3", "--days", "2")
+	if !strings.Contains(open, "Uses:") || !strings.Contains(open, "3") {
+		t.Errorf("a link for three = %s", open)
+	}
+	if r := h.run("invite", "add", "sam", "--uses", "2"); r.err == nil {
+		t.Error("made a named invite for two")
+	}
+	listed := h.ok(t, "invite", "list")
+	if !strings.Contains(listed, "0 of 3") || !strings.Contains(listed, "admin (reset)") {
+		t.Errorf("invite list = %s", listed)
+	}
+	h.ok(t, "invite", "rm", "1")
+	if got := h.ok(t, "invite", "list"); strings.Contains(got, "alex") {
+		t.Errorf("invite list after rm = %s", got)
+	}
 
 	user, err := h.store.GetUserByName(t.Context(), "admin")
 	if err != nil {
@@ -719,6 +734,13 @@ func TestSettingsCommands(t *testing.T) {
 	}
 	if got := h.ok(t, "settings", "set", "--require-two-factor=false"); !strings.Contains(got, "false") {
 		t.Errorf("set back = %s", got)
+	}
+	got := h.ok(t, "settings", "set", "--who-can-invite", "users", "--invite-limit", "7")
+	if !strings.Contains(got, "users") || !strings.Contains(got, "7") {
+		t.Errorf("set invites = %s", got)
+	}
+	if r := h.run("settings", "set", "--who-can-invite", "everyone"); r.err == nil {
+		t.Error("accepted who can invite = everyone")
 	}
 }
 

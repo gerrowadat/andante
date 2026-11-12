@@ -604,7 +604,7 @@ func (s *site) revokeToken(w http.ResponseWriter, r *http.Request, v visitor) {
 
 type userRow struct {
 	ID                        int64
-	Name, Role                string
+	Name, Role, InvitedBy     string
 	Disabled, Self, TwoFactor bool
 }
 
@@ -621,15 +621,26 @@ func (s *site) showUsers(w http.ResponseWriter, r *http.Request, v visitor, stat
 		s.fail(w, err)
 		return
 	}
+	invites, err := s.opts.Store.GetInviteSettings(r.Context())
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
 	data := struct {
 		Users            []userRow
 		Invite           *inviteNote
 		RequireTwoFactor bool
-	}{Invite: invite, RequireTwoFactor: required}
+		UsersInvite      bool
+		InviteLimit      int32
+	}{Invite: invite, RequireTwoFactor: required, UsersInvite: invites.Who == store.InvitesByUsers, InviteLimit: invites.Limit}
 	for _, u := range users {
-		data.Users = append(data.Users, userRow{
+		row := userRow{
 			ID: u.ID, Name: u.Name, Role: u.Role, Disabled: u.DisabledAt != nil, Self: u.ID == v.actor.UserID, TwoFactor: u.TotpEnabledAt != nil,
-		})
+		}
+		if u.InvitedBy != nil {
+			row.InvitedBy = *u.InvitedBy
+		}
+		data.Users = append(data.Users, row)
 	}
 	s.show(w, v, status, usersView, pageData{Title: "Users", Error: problem, Data: data})
 }
@@ -638,24 +649,16 @@ func (s *site) users(w http.ResponseWriter, r *http.Request, v visitor) {
 	s.showUsers(w, r, v, http.StatusOK, "", nil)
 }
 
-func (s *site) invite(w http.ResponseWriter, r *http.Request, v visitor) {
+// resetLink makes a link for an existing user to set a new password.
+func (s *site) resetLink(w http.ResponseWriter, r *http.Request, v visitor) {
 	name := strings.ToLower(strings.TrimSpace(r.PostForm.Get("name")))
-	role := store.RoleUser
-	if r.PostForm.Get("admin") == "1" {
-		role = store.RoleAdmin
-	}
-	reset := r.PostForm.Get("reset") == "1"
-	invite, raw, err := s.opts.Store.CreateInvite(r.Context(), name, role, reset, s.opts.Now())
-	if errors.Is(err, store.ErrNotFound) {
+	invite, raw, err := s.opts.Store.CreateInvite(r.Context(), v.actor, store.InviteRequest{Name: name, Reset: true}, s.opts.Now())
+	if errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrBadName) || errors.Is(err, store.ErrBadInvite) {
 		http.NotFound(w, r)
 		return
 	}
-	if errors.Is(err, store.ErrConflict) {
-		s.showUsers(w, r, v, http.StatusConflict, "There's already a user called "+name+".", nil)
-		return
-	}
 	if err != nil {
-		s.showUsers(w, r, v, http.StatusUnprocessableEntity, "That didn't work: "+err.Error(), nil)
+		s.fail(w, err)
 		return
 	}
 	s.audit(r.Context(), v.session.Name, "invite.created", invite.Name, s.client(r))

@@ -4,6 +4,8 @@
 package main
 
 import (
+	"time"
+
 	"bufio"
 	"errors"
 	"os"
@@ -49,28 +51,90 @@ func (a *app) inviteCmd() *cobra.Command {
 	invites := &cobra.Command{Use: "invite", Short: "Invite people."}
 	var (
 		admin, reset bool
+		uses         int32
+		days         int
 	)
 	add := operation(&cobra.Command{
-		Use:   "add <name>",
-		Short: "Make a single-use link for someone to set a password. Admins only.",
-		Args:  cobra.ExactArgs(1),
+		Use:   "add [name]",
+		Short: "Make a link for people to set a password. Without a name, whoever uses it picks their own.",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			role := client.InviteCreateRoleUser
 			if admin {
 				role = client.InviteCreateRoleAdmin
 			}
-			resp, err := a.client.CreateInviteWithResponse(cmd.Context(), client.InviteCreate{Name: args[0], Role: &role, Reset: &reset})
+			body := client.InviteCreate{Role: &role, Reset: &reset, MaxUses: &uses}
+			if len(args) == 1 {
+				body.Name = &args[0]
+			}
+			if days > 0 {
+				expires := time.Now().Add(time.Duration(days) * 24 * time.Hour).UTC()
+				body.ExpiresAt = &expires
+			}
+			resp, err := a.client.CreateInviteWithResponse(cmd.Context(), body)
 			if err != nil {
 				return err
 			}
 			return a.show(resp.StatusCode(), resp.Body, func(w *table) {
-				w.printf("Name:\t%s\nRole:\t%s\nExpires:\t%s\nLink:\t%s\n", resp.JSON201.Name, resp.JSON201.Role, resp.JSON201.ExpiresAt, resp.JSON201.URL)
+				i := resp.JSON201
+				w.printf("ID:\t%d\nName:\t%s\nRole:\t%s\nUses:\t%d\nExpires:\t%s\nLink:\t%s\n", i.ID, i.Name, i.Role, i.MaxUses, i.ExpiresAt, i.URL)
 			})
 		},
 	}, "createInvite")
-	add.Flags().BoolVar(&admin, "admin", false, "make them an admin")
-	add.Flags().BoolVar(&reset, "reset", false, "this is for an existing user, to set a new password")
-	invites.AddCommand(add)
+	add.Flags().BoolVar(&admin, "admin", false, "make them an admin (admins only)")
+	add.Flags().BoolVar(&reset, "reset", false, "this is for an existing user, to set a new password (admins only)")
+	add.Flags().Int32Var(&uses, "uses", 1, "how many people can use it")
+	add.Flags().IntVar(&days, "days", 0, "how many days it works for, up to 30 (default 7)")
+
+	var p page
+	list := operation(&cobra.Command{
+		Use:   "list",
+		Short: "List invites with uses left: yours, or everyone's for an admin.",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			resp, err := a.client.ListInvitesWithResponse(cmd.Context(), &client.ListInvitesParams{Cursor: p.cursorParam(), Limit: p.limitParam()})
+			if err != nil {
+				return err
+			}
+			return a.show(resp.StatusCode(), resp.Body, func(w *table) {
+				w.println("ID\tNAME\tROLE\tUSED\tEXPIRES\tMADE BY")
+				for _, i := range resp.JSON200.Items {
+					name, by := i.Name, "the server"
+					if name == "" {
+						name = "-"
+					}
+					if i.Reset {
+						name += " (reset)"
+					}
+					if i.CreatedBy != nil {
+						by = *i.CreatedBy
+					}
+					w.printf("%d\t%s\t%s\t%d of %d\t%s\t%s\n", i.ID, name, i.Role, i.Uses, i.MaxUses, i.ExpiresAt, by)
+				}
+				a.more(resp.JSON200.Next)
+			})
+		},
+	}, "listInvites")
+	p.add(list)
+
+	remove := operation(&cobra.Command{
+		Use:   "rm <id>",
+		Short: "Withdraw an invite, so that its link stops working.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := parseID(args[0])
+			if err != nil {
+				return err
+			}
+			resp, err := a.client.DeleteInviteWithResponse(cmd.Context(), id)
+			if err != nil {
+				return err
+			}
+			return a.done(resp.StatusCode(), resp.Body, "withdrawn")
+		},
+	}, "deleteInvite")
+
+	invites.AddCommand(add, list, remove)
 	return invites
 }
 
@@ -145,7 +209,7 @@ func (a *app) auditCmd() *cobra.Command {
 
 func (a *app) settingsCmd() *cobra.Command {
 	showSettings := func(w *table, s *client.Settings) {
-		w.printf("Require two-factor:\t%t\n", s.RequireTwoFactor)
+		w.printf("Require two-factor:\t%t\nWho can invite:\t%s\nInvite limit:\t%d\n", s.RequireTwoFactor, s.WhoCanInvite, s.InviteLimit)
 	}
 	settings := operation(&cobra.Command{
 		Use:   "settings",
@@ -160,7 +224,11 @@ func (a *app) settingsCmd() *cobra.Command {
 		},
 	}, "getSettings")
 
-	var requireTwoFactor bool
+	var (
+		requireTwoFactor bool
+		whoCanInvite     string
+		inviteLimit      int32
+	)
 	set := operation(&cobra.Command{
 		Use:   "set",
 		Short: "Change the site's settings. Admins only.",
@@ -170,6 +238,13 @@ func (a *app) settingsCmd() *cobra.Command {
 			if cmd.Flags().Changed("require-two-factor") {
 				patch.RequireTwoFactor = &requireTwoFactor
 			}
+			if cmd.Flags().Changed("who-can-invite") {
+				who := client.WhoCanInvite(whoCanInvite)
+				patch.WhoCanInvite = &who
+			}
+			if cmd.Flags().Changed("invite-limit") {
+				patch.InviteLimit = &inviteLimit
+			}
 			resp, err := a.client.UpdateSettingsWithApplicationMergePatchPlusJSONBodyWithResponse(cmd.Context(), patch)
 			if err != nil {
 				return err
@@ -178,6 +253,8 @@ func (a *app) settingsCmd() *cobra.Command {
 		},
 	}, "updateSettings")
 	set.Flags().BoolVar(&requireTwoFactor, "require-two-factor", false, "make everyone who logs in to the website with a password set up two-factor")
+	set.Flags().StringVar(&whoCanInvite, "who-can-invite", "", "who can invite people: admins or users")
+	set.Flags().Int32Var(&inviteLimit, "invite-limit", 0, "how many unused invite places a user can have out at once")
 	settings.AddCommand(set)
 	return settings
 }

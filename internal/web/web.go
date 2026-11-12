@@ -102,6 +102,7 @@ type site struct {
 	// oidc is nil when logging in with a provider is off.
 	oidc       *oidcLogin
 	oidcLogins *prometheus.CounterVec
+	inviteUses *prometheus.CounterVec
 }
 
 // New returns the website's handler.
@@ -130,6 +131,10 @@ func New(opts Options) http.Handler {
 			Name: "andante_oidc_logins_total",
 			Help: "Logins with the OpenID provider, by result: ok, created, linked, refused or failed.",
 		}, []string{"result"}),
+		inviteUses: promauto.With(opts.Registry).NewCounterVec(prometheus.CounterOpts{
+			Name: "andante_invite_uses_total",
+			Help: "Invites used, by result: ok, or refused when the link was used up, withdrawn or out of date.",
+		}, []string{"result"}),
 	}
 	if opts.OIDC != nil {
 		s.oidc = newOIDCLogin(*opts.OIDC, opts.BaseURL)
@@ -143,6 +148,8 @@ func New(opts Options) http.Handler {
 	}
 	mux.Handle("GET /static/", staticHandler())
 	mux.HandleFunc("GET /invite/{token}", s.showInvite)
+	// It's mounted even without passwords, for picking a name before single sign-on.
+	mux.HandleFunc("POST /invite/{token}", s.useInvite)
 	mux.HandleFunc("POST /logout", s.logout)
 	mux.HandleFunc("GET /login", s.showLogin)
 	if opts.Bootstrap != nil {
@@ -153,7 +160,6 @@ func New(opts Options) http.Handler {
 		mux.HandleFunc("POST /login", s.login)
 		mux.HandleFunc("GET /login/code", s.showCode)
 		mux.HandleFunc("POST /login/code", s.enterCode)
-		mux.HandleFunc("POST /invite/{token}", s.useInvite)
 	}
 	if s.oidc != nil {
 		mux.HandleFunc("GET /login/oidc", s.loginWithOIDC)
@@ -395,7 +401,8 @@ func (s *site) logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *site) showInvite(w http.ResponseWriter, r *http.Request) {
-	invite, err := s.opts.Store.LookupInvite(r.Context(), r.PathValue("token"), s.opts.Now())
+	raw := r.PathValue("token")
+	invite, err := s.opts.Store.LookupInvite(r.Context(), raw, s.opts.Now())
 	if errors.Is(err, store.ErrNotFound) {
 		http.NotFound(w, r)
 		return
@@ -404,7 +411,23 @@ func (s *site) showInvite(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	s.render(w, http.StatusOK, invitePage, s.inviteData(invite.Name, r.PathValue("token"), ""))
+	s.render(w, http.StatusOK, invitePage, s.inviteData(raw, invite.Name))
+}
+
+// pickName checks a name someone picked for themselves on an invite page. It's a
+// message for them when the name won't do, and empty when it will.
+func (s *site) pickName(ctx context.Context, name string) (string, int, error) {
+	if !store.ValidName(name) {
+		return "A username is 1 to 64 lower-case letters, digits, dots, dashes or underscores, starting with a letter or digit.", http.StatusUnprocessableEntity, nil
+	}
+	_, err := s.opts.Store.GetUserByName(ctx, name)
+	switch {
+	case err == nil:
+		return "That name has been taken.", http.StatusConflict, nil
+	case errors.Is(err, store.ErrNotFound):
+		return "", 0, nil
+	}
+	return "", 0, err
 }
 
 func (s *site) useInvite(w http.ResponseWriter, r *http.Request) {
@@ -415,6 +438,7 @@ func (s *site) useInvite(w http.ResponseWriter, r *http.Request) {
 	ctx, raw, client := r.Context(), r.PathValue("token"), s.client(r)
 	invite, err := s.opts.Store.LookupInvite(ctx, raw, s.opts.Now())
 	if errors.Is(err, store.ErrNotFound) {
+		s.inviteUses.WithLabelValues("refused").Inc()
 		http.NotFound(w, r)
 		return
 	}
@@ -422,9 +446,34 @@ func (s *site) useInvite(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
+	data := s.inviteData(raw, invite.Name)
+	if invite.Name == "" {
+		// An invite without a name asks for one first, and carries it along after.
+		name := strings.ToLower(strings.TrimSpace(r.PostForm.Get("name")))
+		problem, status, err := s.pickName(ctx, name)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		if problem != "" {
+			data.Chosen, data.Error = name, problem
+			s.render(w, status, invitePage, data)
+			return
+		}
+		data.Name, data.Picked = name, true
+		if !r.PostForm.Has("password") {
+			s.render(w, http.StatusOK, invitePage, data)
+			return
+		}
+	}
+	if !s.opts.PasswordLogin {
+		http.Error(w, "passwords are turned off here", http.StatusMethodNotAllowed)
+		return
+	}
 	chosen := r.PostForm.Get("password")
-	if err := password.Check(chosen, invite.Name); err != nil {
-		s.render(w, http.StatusUnprocessableEntity, invitePage, s.inviteData(invite.Name, raw, err.Error()))
+	if err := password.Check(chosen, data.Name); err != nil {
+		data.Error = err.Error()
+		s.render(w, http.StatusUnprocessableEntity, invitePage, data)
 		return
 	}
 	hashCtx, cancel := context.WithTimeout(ctx, hashTimeout)
@@ -435,28 +484,38 @@ func (s *site) useInvite(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "too busy; try again in a moment", http.StatusServiceUnavailable)
 		return
 	}
-	user, session, err := s.opts.Store.RedeemInvite(ctx, raw, hash, client, s.opts.Now())
+	user, session, err := s.opts.Store.RedeemInvite(ctx, raw, data.Name, hash, client, s.opts.Now())
 	switch {
 	case errors.Is(err, store.ErrNotFound):
+		s.inviteUses.WithLabelValues("refused").Inc()
 		http.NotFound(w, r)
 		return
 	case errors.Is(err, store.ErrConflict):
-		s.render(w, http.StatusConflict, invitePage, s.inviteData(invite.Name, raw, "That name has been taken."))
+		picked := data.Name
+		data = s.inviteData(raw, invite.Name)
+		data.Chosen, data.Error = picked, "That name has been taken."
+		s.render(w, http.StatusConflict, invitePage, data)
 		return
 	case err != nil:
 		s.fail(w, err)
 		return
 	}
+	s.inviteUses.WithLabelValues("ok").Inc()
 	s.audit(ctx, user.Name, "invite.used", user.Name, client)
 	s.setSession(w, session)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 type inviteData struct {
+	// Name is who the invite is for, or the name they picked.
 	Name, Token, Error string
-	Password, OIDC     bool
+	// Chosen is a name they tried that won't do.
+	Chosen string
+	// Picked means they picked Name themselves, so the form carries it along.
+	Picked         bool
+	Password, OIDC bool
 }
 
-func (s *site) inviteData(name, token, problem string) inviteData {
-	return inviteData{Name: name, Token: token, Error: problem, Password: s.opts.PasswordLogin, OIDC: s.oidc != nil}
+func (s *site) inviteData(token, name string) inviteData {
+	return inviteData{Name: name, Token: token, Password: s.opts.PasswordLogin, OIDC: s.oidc != nil}
 }
