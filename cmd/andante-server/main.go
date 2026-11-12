@@ -18,6 +18,7 @@ import (
 	"github.com/alecthomas/kong"
 	"github.com/gerrowadat/andante/internal/api"
 	"github.com/gerrowadat/andante/internal/app"
+	"github.com/gerrowadat/andante/internal/bootstrap"
 	"github.com/gerrowadat/andante/internal/buildinfo"
 	"github.com/gerrowadat/andante/internal/clientip"
 	"github.com/gerrowadat/andante/internal/config"
@@ -27,6 +28,7 @@ import (
 	"github.com/gerrowadat/andante/internal/seal"
 	"github.com/gerrowadat/andante/internal/server"
 	"github.com/gerrowadat/andante/internal/store"
+	"github.com/gerrowadat/andante/internal/throttle"
 	"github.com/gerrowadat/andante/internal/web"
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -213,20 +215,20 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	if err := st.UseBox(ctx, box); err != nil {
 		return err
 	}
-	users, err := st.CountUsers(ctx)
-	if err != nil {
-		return err
-	}
-	if users == 0 {
-		logger.Warn("there are no users yet, so nothing can use the API; run andante-server user add <name> --admin")
-	}
-
 	if cfg.TestClockOffset != 0 {
 		logger.Warn("running ahead of the real clock, which is only for tests", "offset", cfg.TestClockOffset)
 	}
 	now := func() time.Time { return time.Now().Add(cfg.TestClockOffset) }
 
 	reg := prometheus.NewRegistry()
+	guesses := throttle.New()
+	setup := bootstrap.New(bootstrap.Options{
+		Store: st, Token: cfg.BootstrapToken, Throttle: guesses, BaseURL: cfg.BaseURL,
+		Registry: reg, Logger: logger, Now: now,
+	})
+	if err := setup.Announce(ctx); err != nil {
+		return err
+	}
 	readService := reads.New(reads.Options{
 		Store:           st,
 		DefaultTimezone: cfg.DefaultTimezone,
@@ -255,6 +257,7 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		Registry:     reg,
 		Logger:       logger,
 		ProbeTimeout: cfg.ProbeTimeout,
+		Bootstrap:    setup,
 	})
 	if err != nil {
 		return err
@@ -271,6 +274,8 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		DefaultTimezone: cfg.DefaultTimezone,
 		Box:             box,
 		OIDC:            oidcOptions(cfg),
+		Throttle:        guesses,
+		Bootstrap:       setup,
 	})
 
 	public := server.NewPublic(server.PublicOptions{

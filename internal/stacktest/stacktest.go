@@ -15,6 +15,7 @@ import (
 
 	"github.com/gerrowadat/andante/internal/api"
 	"github.com/gerrowadat/andante/internal/app"
+	"github.com/gerrowadat/andante/internal/bootstrap"
 	catalogueapi "github.com/gerrowadat/andante/internal/catalogue/api"
 	catalogue "github.com/gerrowadat/andante/internal/catalogue/store"
 	"github.com/gerrowadat/andante/internal/clientip"
@@ -70,6 +71,8 @@ type Options struct {
 	Store     *store.Store // By default, a new one.
 	Lookahead int          // By default, 50.
 	Now       func() time.Time
+	// BootstrapToken turns on POST /bootstrap with this token.
+	BootstrapToken string
 }
 
 // New starts both services.
@@ -106,9 +109,16 @@ func NewWith(t *testing.T, opts Options) *Stack {
 		t.Fatal(err)
 	}
 	s.App = &app.App{Store: s.Store, Reads: s.Reads, Catalogue: client, Sync: s.Sync, Logger: slog.New(slog.DiscardHandler)}
+	var setup *bootstrap.Service
+	if opts.BootstrapToken != "" {
+		setup = bootstrap.New(bootstrap.Options{
+			Store: s.Store, Token: opts.BootstrapToken, BaseURL: "https://andante.example/",
+			Registry: s.Registry, Logger: slog.New(slog.DiscardHandler), Now: opts.Now,
+		})
+	}
 	handler, err := api.New(api.Options{
 		Store: s.Store, Catalogue: client, Sync: s.Sync, Reads: s.Reads, Clients: clients, BaseURL: "https://andante.example/",
-		Registry: s.Registry, Logger: slog.New(slog.DiscardHandler), ProbeTimeout: time.Minute,
+		Registry: s.Registry, Logger: slog.New(slog.DiscardHandler), ProbeTimeout: time.Minute, Bootstrap: setup,
 	})
 	if err != nil {
 		t.Fatal(err)

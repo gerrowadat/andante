@@ -527,6 +527,24 @@ type AuditList struct {
 	Next nullable.Nullable[NextLink] `json:"next"`
 }
 
+// BootstrapRequest defines model for BootstrapRequest.
+type BootstrapRequest struct {
+	Name string `json:"name"`
+
+	// Token The bootstrap token.
+	Token string `json:"token"`
+}
+
+// BootstrapResult defines model for BootstrapResult.
+type BootstrapResult struct {
+	// PasswordURL A link, good for a week, where the new admin sets a password.
+	PasswordURL *string `json:"password_url,omitempty"`
+
+	// Token The new admin's first API token, shown only here.
+	Token string `json:"token"`
+	User  User   `json:"user"`
+}
+
 // Candidate A way of reading a site, tried with a probe. If existing_source_id is set, the catalogue already has it and the sample is empty.
 type Candidate struct {
 	// Config How the source's archive is discovered.
@@ -1244,6 +1262,9 @@ type ListUsersParams struct {
 // CreateAPITokenJSONRequestBody defines body for CreateAPIToken for application/json ContentType.
 type CreateAPITokenJSONRequestBody = APITokenCreate
 
+// BootstrapJSONRequestBody defines body for Bootstrap for application/json ContentType.
+type BootstrapJSONRequestBody = BootstrapRequest
+
 // CreateDiscoveryJSONRequestBody defines body for CreateDiscovery for application/json ContentType.
 type CreateDiscoveryJSONRequestBody = DiscoveryRequest
 
@@ -1912,6 +1933,24 @@ type ClientInterface interface {
 	// Corresponds with GET /audit (the `ListAudit` operationId).
 	ListAudit(ctx context.Context, params *ListAuditParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// BootstrapWithBody Make the first admin
+	//
+	// Needs no API token, because the bootstrap token is the authentication. It's --bootstrap-token, or the one the server logs while there's no admin. Makes a new admin and returns their first API token and a link where they set a password. Works only while there's no active admin, and is a 404 otherwise. The name has to be free: this never takes over an existing account. Wrong tokens are throttled by address.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /bootstrap (the `Bootstrap` operationId).
+	BootstrapWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// Bootstrap Make the first admin
+	//
+	// Needs no API token, because the bootstrap token is the authentication. It's --bootstrap-token, or the one the server logs while there's no admin. Makes a new admin and returns their first API token and a link where they set a password. Works only while there's no active admin, and is a 404 otherwise. The name has to be free: this never takes over an existing account. Wrong tokens are throttled by address.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /bootstrap (the `Bootstrap` operationId).
+	Bootstrap(ctx context.Context, body BootstrapJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// CreateDiscoveryWithBody Work out how to read a site
 	//
 	// Takes a site's address and returns ranked candidate sources, each tried with a probe. Saves nothing. If the catalogue already has the serial it says so, without making a request. This keeps to the crawl interval, so it can take minutes.
@@ -2350,6 +2389,44 @@ func (c *Client) RevokeAPIToken(ctx context.Context, id ID, reqEditors ...Reques
 // Corresponds with GET /audit (the `ListAudit` operationId).
 func (c *Client) ListAudit(ctx context.Context, params *ListAuditParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListAuditRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// BootstrapWithBody Make the first admin
+//
+// Needs no API token, because the bootstrap token is the authentication. It's --bootstrap-token, or the one the server logs while there's no admin. Makes a new admin and returns their first API token and a link where they set a password. Works only while there's no active admin, and is a 404 otherwise. The name has to be free: this never takes over an existing account. Wrong tokens are throttled by address.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /bootstrap (the `Bootstrap` operationId).
+func (c *Client) BootstrapWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewBootstrapRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// Bootstrap Make the first admin
+//
+// Needs no API token, because the bootstrap token is the authentication. It's --bootstrap-token, or the one the server logs while there's no admin. Makes a new admin and returns their first API token and a link where they set a password. Works only while there's no active admin, and is a 404 otherwise. The name has to be free: this never takes over an existing account. Wrong tokens are throttled by address.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /bootstrap (the `Bootstrap` operationId).
+func (c *Client) Bootstrap(ctx context.Context, body BootstrapJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewBootstrapRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -3360,6 +3437,46 @@ func NewListAuditRequest(server string, params *ListAuditParams) (*http.Request,
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewBootstrapRequest calls the generic Bootstrap builder with application/json body
+func NewBootstrapRequest(server string, body BootstrapJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewBootstrapRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewBootstrapRequestWithBody constructs an http.Request for the Bootstrap method, with any body, and a specified content type
+func NewBootstrapRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/bootstrap")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -4896,6 +5013,24 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /audit (the `ListAudit` operationId).
 	ListAuditWithResponse(ctx context.Context, params *ListAuditParams, reqEditors ...RequestEditorFn) (*ListAuditResponse, error)
 
+	// BootstrapWithBodyWithResponse Make the first admin
+	//
+	// Needs no API token, because the bootstrap token is the authentication. It's --bootstrap-token, or the one the server logs while there's no admin. Makes a new admin and returns their first API token and a link where they set a password. Works only while there's no active admin, and is a 404 otherwise. The name has to be free: this never takes over an existing account. Wrong tokens are throttled by address.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /bootstrap (the `Bootstrap` operationId).
+	BootstrapWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*BootstrapResponse, error)
+
+	// BootstrapWithResponse Make the first admin
+	//
+	// Needs no API token, because the bootstrap token is the authentication. It's --bootstrap-token, or the one the server logs while there's no admin. Makes a new admin and returns their first API token and a link where they set a password. Works only while there's no active admin, and is a 404 otherwise. The name has to be free: this never takes over an existing account. Wrong tokens are throttled by address.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /bootstrap (the `Bootstrap` operationId).
+	BootstrapWithResponse(ctx context.Context, body BootstrapJSONRequestBody, reqEditors ...RequestEditorFn) (*BootstrapResponse, error)
+
 	// CreateDiscoveryWithBodyWithResponse Work out how to read a site
 	//
 	// Takes a site's address and returns ranked candidate sources, each tried with a probe. Saves nothing. If the catalogue already has the serial it says so, without making a request. This keeps to the crawl interval, so it can take minutes.
@@ -5486,6 +5621,68 @@ func (r ListAuditResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r ListAuditResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// BootstrapResponse429Headers the declared response headers of an HTTP 429 response for Bootstrap
+type BootstrapResponse429Headers struct {
+	RetryAfter *int
+}
+
+type BootstrapResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *BootstrapResult
+	// ApplicationProblemJSON429 the response for an HTTP 429 `application/problem+json` response
+	ApplicationProblemJSON429 *Problem
+	// ApplicationProblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationProblemJSONDefault *Problem
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *BootstrapResponse429Headers
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r BootstrapResponse) GetJSON201() *BootstrapResult {
+	return r.JSON201
+}
+
+// GetApplicationProblemJSON429 returns the response for an HTTP 429 `application/problem+json` response
+func (r BootstrapResponse) GetApplicationProblemJSON429() *Problem {
+	return r.ApplicationProblemJSON429
+}
+
+// GetApplicationProblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r BootstrapResponse) GetApplicationProblemJSONDefault() *Problem {
+	return r.ApplicationProblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r BootstrapResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r BootstrapResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r BootstrapResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r BootstrapResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -7103,6 +7300,36 @@ func (c *ClientWithResponses) ListAuditWithResponse(ctx context.Context, params 
 	return ParseListAuditResponse(rsp)
 }
 
+// BootstrapWithBodyWithResponse Make the first admin
+//
+// Needs no API token, because the bootstrap token is the authentication. It's --bootstrap-token, or the one the server logs while there's no admin. Makes a new admin and returns their first API token and a link where they set a password. Works only while there's no active admin, and is a 404 otherwise. The name has to be free: this never takes over an existing account. Wrong tokens are throttled by address.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /bootstrap (the `Bootstrap` operationId).
+func (c *ClientWithResponses) BootstrapWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*BootstrapResponse, error) {
+	rsp, err := c.BootstrapWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseBootstrapResponse(rsp)
+}
+
+// BootstrapWithResponse Make the first admin
+//
+// Needs no API token, because the bootstrap token is the authentication. It's --bootstrap-token, or the one the server logs while there's no admin. Makes a new admin and returns their first API token and a link where they set a password. Works only while there's no active admin, and is a 404 otherwise. The name has to be free: this never takes over an existing account. Wrong tokens are throttled by address.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /bootstrap (the `Bootstrap` operationId).
+func (c *ClientWithResponses) BootstrapWithResponse(ctx context.Context, body BootstrapJSONRequestBody, reqEditors ...RequestEditorFn) (*BootstrapResponse, error) {
+	rsp, err := c.Bootstrap(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseBootstrapResponse(rsp)
+}
+
 // CreateDiscoveryWithBodyWithResponse Work out how to read a site
 //
 // Takes a site's address and returns ranked candidate sources, each tried with a probe. Saves nothing. If the catalogue already has the serial it says so, without making a request. This keeps to the crawl interval, so it can take minutes.
@@ -7912,6 +8139,59 @@ func ParseListAuditResponse(rsp *http.Response) (*ListAuditResponse, error) {
 			headers.Link = &value
 		}
 		response.Headers200 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseBootstrapResponse parses an HTTP response from a BootstrapWithResponse call
+func ParseBootstrapResponse(rsp *http.Response) (*BootstrapResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &BootstrapResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest BootstrapResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationProblemJSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationProblemJSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 429:
+		var headers BootstrapResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
 	}
 
 	return response, nil

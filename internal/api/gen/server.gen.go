@@ -32,6 +32,9 @@ type ServerInterface interface {
 	// ListAudit Read the audit log
 	// (GET /audit)
 	ListAudit(w http.ResponseWriter, r *http.Request, params ListAuditParams)
+	// Bootstrap Make the first admin
+	// (POST /bootstrap)
+	Bootstrap(w http.ResponseWriter, r *http.Request)
 	// CreateDiscovery Work out how to read a site
 	// (POST /discoveries)
 	CreateDiscovery(w http.ResponseWriter, r *http.Request)
@@ -262,6 +265,20 @@ func (siw *ServerInterfaceWrapper) ListAudit(w http.ResponseWriter, r *http.Requ
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListAudit(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// Bootstrap operation middleware
+func (siw *ServerInterfaceWrapper) Bootstrap(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.Bootstrap(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1287,6 +1304,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/openapi.json", wrapper.GetSpec)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/version", wrapper.GetVersion)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/bootstrap", wrapper.Bootstrap)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/me", wrapper.GetMe)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/invites", wrapper.CreateInvite)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/users", wrapper.ListUsers)
@@ -1486,6 +1504,69 @@ type ListAuditdefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response ListAuditdefaultApplicationProblemPlusJSONResponse) VisitListAuditResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type BootstrapRequestObject struct {
+	Body *BootstrapJSONRequestBody
+}
+
+type BootstrapResponseObject interface {
+	VisitBootstrapResponse(w http.ResponseWriter) error
+}
+
+type Bootstrap201JSONResponse BootstrapResult
+
+func (response Bootstrap201JSONResponse) VisitBootstrapResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type Bootstrap429ResponseHeaders struct {
+	RetryAfter *int
+}
+
+type Bootstrap429ApplicationProblemPlusJSONResponse struct {
+	Body    Problem
+	Headers Bootstrap429ResponseHeaders
+}
+
+func (response Bootstrap429ApplicationProblemPlusJSONResponse) VisitBootstrapResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type BootstrapdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response BootstrapdefaultApplicationProblemPlusJSONResponse) VisitBootstrapResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -2803,6 +2884,9 @@ type StrictServerInterface interface {
 	// ListAudit Read the audit log
 	// (GET /audit)
 	ListAudit(ctx context.Context, request ListAuditRequestObject) (ListAuditResponseObject, error)
+	// Bootstrap Make the first admin
+	// (POST /bootstrap)
+	Bootstrap(ctx context.Context, request BootstrapRequestObject) (BootstrapResponseObject, error)
 	// CreateDiscovery Work out how to read a site
 	// (POST /discoveries)
 	CreateDiscovery(ctx context.Context, request CreateDiscoveryRequestObject) (CreateDiscoveryResponseObject, error)
@@ -3042,6 +3126,37 @@ func (sh *strictHandler) ListAudit(w http.ResponseWriter, r *http.Request, param
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ListAuditResponseObject); ok {
 		if err := validResponse.VisitListAuditResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// Bootstrap operation middleware
+func (sh *strictHandler) Bootstrap(w http.ResponseWriter, r *http.Request) {
+	var request BootstrapRequestObject
+
+	var body BootstrapJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.Bootstrap(ctx, request.(BootstrapRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "Bootstrap")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(BootstrapResponseObject); ok {
+		if err := validResponse.VisitBootstrapResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

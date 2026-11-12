@@ -4,9 +4,46 @@
 package main
 
 import (
+	"bufio"
+	"errors"
+	"os"
+	"strings"
+
 	"github.com/gerrowadat/andante/pkg/client"
 	"github.com/spf13/cobra"
 )
+
+func (a *app) bootstrapCmd() *cobra.Command {
+	return operation(&cobra.Command{
+		Use:   "bootstrap <name>",
+		Short: "Make the first admin with the bootstrap token, and print their API token.",
+		Long: "Make the first admin with the bootstrap token, and print their API token and a link to set a password. " +
+			"The token comes from ANDANTE_BOOTSTRAP_TOKEN, or the first line of standard input, so that it stays out of process listings. " +
+			"It only works while the server has no admin.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			token := os.Getenv("ANDANTE_BOOTSTRAP_TOKEN")
+			if token == "" {
+				line, err := bufio.NewReader(cmd.InOrStdin()).ReadString('\n')
+				token = strings.TrimSpace(line)
+				if token == "" {
+					return errors.Join(errors.New("give the bootstrap token in ANDANTE_BOOTSTRAP_TOKEN or on standard input"), err)
+				}
+			}
+			resp, err := a.client.BootstrapWithResponse(cmd.Context(), client.BootstrapRequest{Token: token, Name: args[0]})
+			if err != nil {
+				return err
+			}
+			return a.show(resp.StatusCode(), resp.Body, func(w *table) {
+				result := resp.JSON201
+				w.printf("Name:\t%s\nRole:\t%s\nAPI token:\t%s\n", result.User.Name, result.User.Role, result.Token)
+				if result.PasswordURL != nil {
+					w.printf("Password link:\t%s\n", *result.PasswordURL)
+				}
+			})
+		},
+	}, "bootstrap")
+}
 
 func (a *app) inviteCmd() *cobra.Command {
 	invites := &cobra.Command{Use: "invite", Short: "Invite people."}

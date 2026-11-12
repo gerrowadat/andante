@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gerrowadat/andante/internal/bootstrap"
 	"github.com/gerrowadat/andante/internal/clientip"
 	"github.com/gerrowadat/andante/internal/password"
 	"github.com/gerrowadat/andante/internal/seal"
@@ -69,6 +70,7 @@ type fixture struct {
 	registry *prometheus.Registry
 	server   *httptest.Server
 	oidc     *web.OIDCOptions
+	setup    *bootstrap.Service
 	mu       sync.Mutex
 	now      time.Time
 }
@@ -101,7 +103,7 @@ func (f *fixture) serve(t *testing.T, baseURL string, passwordLogin bool) {
 	f.server = httptest.NewServer(web.New(web.Options{
 		Store: f.store, Hasher: f.hasher, Clients: clients, BaseURL: baseURL, PasswordLogin: passwordLogin,
 		Registry: f.registry, Logger: slog.New(slog.DiscardHandler), Now: f.clock,
-		App: f.stack.App, DefaultTimezone: "UTC", Box: box, OIDC: f.oidc,
+		App: f.stack.App, DefaultTimezone: "UTC", Box: box, OIDC: f.oidc, Bootstrap: f.setup,
 	}))
 	t.Cleanup(f.server.Close)
 }

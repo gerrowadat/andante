@@ -74,6 +74,7 @@ func TestEnvVars(t *testing.T) {
 		"ANDANTE_OIDC_CLIENT_SECRET":     "shh",
 		"ANDANTE_OIDC_ALLOWED_DOMAIN":    "example.com,example.org",
 		"ANDANTE_OIDC_ALLOWED_GROUP":     "readers",
+		"ANDANTE_BOOTSTRAP_TOKEN":        secret,
 	}
 	for k, v := range envs {
 		t.Setenv(k, v)
@@ -92,6 +93,7 @@ func TestEnvVars(t *testing.T) {
 		CatalogueURL: "http://catalogue.env:8082/v1", CatalogueToken: "catalogue-token", DemandInterval: 17 * time.Second, ReplayMinDatedShare: 0.5, FeedRateLimit: 16,
 		OIDCIssuer: "https://idp.example", OIDCClientID: "andante", OIDCClientSecret: "shh",
 		OIDCAllowedDomain: []string{"example.com", "example.org"}, OIDCAllowedGroup: []string{"readers"},
+		BootstrapToken: secret,
 	}
 	if !reflect.DeepEqual(*got, want) {
 		t.Errorf("got %+v\nwant %+v", *got, want)
@@ -126,6 +128,7 @@ func TestRejected(t *testing.T) {
 		{"missing secret", []string{db, base, cat, tok}, "secret"},
 		{"bad trusted proxy", []string{db, base, cat, tok, key, "--trusted-proxies=nonsense"}, "trusted-proxies"},
 		{"short secret", []string{db, base, cat, tok, "--secret=short"}, "secret"},
+		{"short bootstrap token", []string{db, base, cat, tok, key, "--bootstrap-token=short"}, "bootstrap-token"},
 		{"bad DSN", []string{"--database-url=postgres://u:hunter2@host:notaport/db", base, cat, tok, key}, "database-url"},
 		{"negative test clock", []string{db, base, cat, tok, key, "--test-clock-offset=-1h"}, "test-clock-offset"},
 		{"relative base URL", []string{db, cat, tok, key, "--base-url=/feeds"}, "base-url"},

@@ -20,11 +20,13 @@ import (
 	"time"
 
 	"github.com/gerrowadat/andante/internal/app"
+	"github.com/gerrowadat/andante/internal/bootstrap"
 	"github.com/gerrowadat/andante/internal/clientip"
 	"github.com/gerrowadat/andante/internal/password"
 	"github.com/gerrowadat/andante/internal/seal"
 	"github.com/gerrowadat/andante/internal/store"
 	"github.com/gerrowadat/andante/internal/store/db"
+	"github.com/gerrowadat/andante/internal/throttle"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -56,7 +58,7 @@ const (
 // someone else's.
 var Paths = []string{
 	"/{$}", "/login", "/login/", "/logout", "/invite/{token}", "/invite/{token}/oidc", "/static/", "/sources", "/sources/", "/reads/", "/tokens/",
-	"/add", "/add/", "/users", "/users/", "/account", "/account/",
+	"/add", "/add/", "/users", "/users/", "/account", "/account/", "/setup",
 }
 
 // Hasher hashes and checks passwords.
@@ -83,13 +85,17 @@ type Options struct {
 	Box *seal.Box
 	// OIDC turns on logging in with an OpenID provider. Nil is off.
 	OIDC *OIDCOptions
+	// Throttle is shared with the API. Nil makes one of its own.
+	Throttle *throttle.Throttle
+	// Bootstrap makes the first admin. Nil leaves /setup out.
+	Bootstrap *bootstrap.Service
 }
 
 type site struct {
 	opts     Options
 	secure   bool
 	cookie   string
-	throttle *throttle
+	throttle *throttle.Throttle
 	jobs     *jobs
 	logins   *prometheus.CounterVec
 	codes    *prometheus.CounterVec
@@ -103,11 +109,14 @@ func New(opts Options) http.Handler {
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
+	if opts.Throttle == nil {
+		opts.Throttle = throttle.New()
+	}
 	s := &site{
 		opts:     opts,
 		secure:   strings.HasPrefix(opts.BaseURL, "https://"),
 		cookie:   cookieName,
-		throttle: newThrottle(),
+		throttle: opts.Throttle,
 		jobs:     newJobs(),
 		logins: promauto.With(opts.Registry).NewCounterVec(prometheus.CounterOpts{
 			Name: "andante_logins_total",
@@ -136,6 +145,10 @@ func New(opts Options) http.Handler {
 	mux.HandleFunc("GET /invite/{token}", s.showInvite)
 	mux.HandleFunc("POST /logout", s.logout)
 	mux.HandleFunc("GET /login", s.showLogin)
+	if opts.Bootstrap != nil {
+		mux.HandleFunc("GET /setup", s.showSetup)
+		mux.HandleFunc("POST /setup", s.setup)
+	}
 	if opts.PasswordLogin {
 		mux.HandleFunc("POST /login", s.login)
 		mux.HandleFunc("GET /login/code", s.showCode)
@@ -284,11 +297,11 @@ func (s *site) login(w http.ResponseWriter, r *http.Request) {
 	if len(name) > maxNameLength {
 		name = name[:maxNameLength]
 	}
-	if wait := s.throttle.wait(client.IP, name, now); wait > 0 {
+	if wait := s.throttle.Wait(client.IP, name, now); wait > 0 {
 		s.tooMany(w, loginPage, wait)
 		return
 	}
-	if wait := s.throttle.accountWait(name, now); wait > 0 {
+	if wait := s.throttle.AccountWait(name, now); wait > 0 {
 		known := false
 		if user, err := s.opts.Store.GetUserByName(ctx, name); err == nil {
 			if known, err = s.opts.Store.HasLoggedInFrom(ctx, user.ID, client.IP, now); err != nil {
@@ -309,7 +322,7 @@ func (s *site) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !ok {
-		s.throttle.failed(client.IP, name, now)
+		s.throttle.Failed(client.IP, name, now)
 		s.refuse(ctx, w, user.Name, client)
 		return
 	}
@@ -346,7 +359,7 @@ func (s *site) startSession(w http.ResponseWriter, r *http.Request, userID int64
 		s.fail(w, err)
 		return
 	}
-	s.throttle.succeeded(client.IP, name)
+	s.throttle.Succeeded(client.IP, name)
 	s.logins.WithLabelValues("ok").Inc()
 	s.audit(ctx, name, "login", "", client)
 	s.setSession(w, raw)

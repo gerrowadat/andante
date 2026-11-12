@@ -29,6 +29,12 @@ type AuditLog struct {
 	Ip     string
 }
 
+type BootstrapToken struct {
+	OnlyRow   bool
+	Sealed    []byte
+	CreatedAt time.Time
+}
+
 type Entry struct {
 	ID           int64
 	SourceID     int64
@@ -78,6 +84,7 @@ type Invite struct {
 	CreatedAt time.Time
 	ExpiresAt time.Time
 	UsedAt    *time.Time
+	Bootstrap bool
 }
 
 type Read struct {

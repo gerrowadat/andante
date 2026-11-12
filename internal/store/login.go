@@ -206,9 +206,27 @@ func (s *Store) redeem(ctx context.Context, raw, method string, client Client, n
 	)
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		q := s.queries.WithTx(tx)
+		// The users lock comes first, as everywhere else, so that a bootstrap invite and
+		// anything else making an admin can't cross.
+		if err := q.LockUsers(ctx, usersLockID); err != nil {
+			return err
+		}
 		invite, err := q.GetLiveInviteForUpdate(ctx, db.GetLiveInviteForUpdateParams{TokenHash: hash[:], ExpiresAt: now})
 		if err != nil {
 			return err
+		}
+		if invite.Bootstrap {
+			// A bootstrap invite is dead once someone else has become an admin.
+			admins, err := q.CountActiveAdmins(ctx)
+			if err != nil {
+				return err
+			}
+			if admins > 0 {
+				return pgx.ErrNoRows
+			}
+			if err := q.DeleteBootstrapToken(ctx); err != nil {
+				return err
+			}
 		}
 		if invite.UserID == nil {
 			user, err = q.InsertUser(ctx, db.InsertUserParams{Name: invite.Name, Role: invite.Role})

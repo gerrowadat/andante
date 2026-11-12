@@ -10,9 +10,6 @@ SELECT * FROM users WHERE id = $1;
 -- name: GetUserByName :one
 SELECT * FROM users WHERE name = $1;
 
--- name: CountUsers :one
-SELECT count(*) FROM users;
-
 -- name: SecretCheck :one
 SELECT sealed FROM secret_check;
 
