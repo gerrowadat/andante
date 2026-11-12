@@ -19,6 +19,8 @@ PROMETHEUS_IMAGE ?= prom/prometheus:v3.7.3@sha256:49214755b6153f90a597adcbff0252
 # The compose.yaml database, for make run and make test-db.
 DEV_DATABASE_URL ?= postgres://andante:andante@localhost:5432/andante?sslmode=disable
 DEV_CATALOGUE_DATABASE_URL ?= postgres://andante:andante@localhost:5432/catalogue?sslmode=disable
+# make run's --secret. Fine for a throwaway database, and nothing else.
+DEV_SECRET ?= dev-secret-for-make-run-and-nothing-else
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
@@ -41,7 +43,7 @@ run: ## Run both services against the compose.yaml Postgres with text logs
 	  --log-format=text & \
 	trap "kill $$!" EXIT; \
 	$(GO) run -ldflags='$(LDFLAGS)' ./cmd/andante-server \
-	  --database-url='$(DEV_DATABASE_URL)' --base-url=http://localhost:8080 --log-format=text \
+	  --database-url='$(DEV_DATABASE_URL)' --base-url=http://localhost:8080 --log-format=text --secret='$(DEV_SECRET)' \
 	  --catalogue-url=http://127.0.0.1:8082/v1 --catalogue-token=dev-catalogue-token
 
 .PHONY: help

@@ -1,6 +1,6 @@
 # Phase 16: OIDC and TOTP
 
-Read first: `CLAUDE.md`, the login section of `docs/proposals/web-ui.md`.
+Read first: `CLAUDE.md`, the login section of `docs/design/web-ui.md`.
 
 ## Goal
 

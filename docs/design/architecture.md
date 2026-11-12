@@ -226,11 +226,11 @@ crawl_log (                               -- catalogue only
 )
 ```
 
-Feed tokens are high-entropy and looked up by hash, so the raw token exists
-only in the URL the user holds. A token is shown once, at creation, and is
-never stored or recoverable; that is why an OPML export issues new tokens.
+Feed tokens are high-entropy and looked up by hash. The server also keeps a copy
+sealed with `--secret`, so that a feed URL can be shown again. An OPML export
+still issues new tokens, because each person should get their own.
 
-## Admin API (v1)
+## API (v1)
 
 OpenAPI 3.1 document at `api/openapi.yaml`, served at
 `GET /api/v1/openapi.json`. Server interface and client are

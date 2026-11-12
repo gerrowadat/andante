@@ -18,7 +18,7 @@ version CI pins. A different local version can disagree with CI.
 | Target | What it does |
 |---|---|
 | `make build` | Builds `andante-server`, `andante-catalogue` and `andante` into `out/`, stamped with version, commit and date |
-| `make run` | Starts the `compose.yaml` Postgres, then both services against it with text logs |
+| `make run` | Starts the `compose.yaml` Postgres, then both services against it with text logs and a fixed `--secret` (`DEV_SECRET`) |
 | `make test` | `go test -race -count=1 ./...`. Database tests skip |
 | `make test-db` | The same tests against the `compose.yaml` Postgres, with no skips |
 | `make e2e` | The end-to-end suite (build tag `e2e`), against the `compose.yaml` Postgres |

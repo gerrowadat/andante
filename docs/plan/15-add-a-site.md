@@ -1,6 +1,6 @@
 # Phase 15: Adding a Site
 
-Read first: `CLAUDE.md`, the discovery and duplicates sections of `docs/proposals/web-ui.md`.
+Read first: `CLAUDE.md`, the discovery and duplicates sections of `docs/design/web-ui.md`.
 
 ## Goal
 

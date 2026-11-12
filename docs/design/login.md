@@ -2,7 +2,7 @@
 
 Passwords, sessions and invites shipped in phase 13 of the [build plan](../plan/README.md), and
 two-factor and OpenID Connect in phase 16, following the OWASP cheat sheets and NIST SP 800-63B. How
-to use it is in [`running.md`](../running.md) and [`configuration.md`](../configuration.md).
+to use it is in [`bootstrap.md`](../bootstrap.md) and [`configuration.md`](../configuration.md).
 
 There's no public sign-up, so there's never an unclaimed page on the internet. A provider's allowed
 domains and groups are the nearest thing to one.

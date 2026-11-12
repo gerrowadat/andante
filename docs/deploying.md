@@ -1,8 +1,8 @@
 # Deploying
 
-andante is two services and a Postgres with a database for each. If you just want it running, go to
-[running andante](running.md), which walks through Docker Compose and Nomad. This page is
-the rest of it.
+andante is two services and a Postgres with a database for each. [Installing](install.md) gets it
+running with Docker Compose, Nomad, plain Docker or a binary. This page is the rest of it: what to
+expose, and backups.
 
 Postgres has to exist already, unless you're using the Compose stack, and any recent
 version will do (CI uses 18). Migrations run on start, under a lock, so there's nothing to
@@ -12,7 +12,7 @@ run by hand.
 
 | Listener | Default | Carries | Who should reach it |
 |---|---|---|---|
-| Public | `:8080` | Feeds and the API | Feed readers and the CLI |
+| Public | `:8080` | The website, feeds and the API | Browsers, feed readers and the CLI |
 | Ops | `127.0.0.1:8081` | `/healthz`, `/readyz`, `/metrics` | Prometheus, and nobody else |
 | Catalogue | `127.0.0.1:8082` | Its private API, `/healthz`, `/readyz`, `/metrics` | `andante-server` and Prometheus |
 
@@ -26,54 +26,8 @@ Each login can take 64 MiB, and two run at once, so leave room for that. The Nom
 
 Set `--base-url` to the address readers will use, because feed links are built from it.
 
-A new database has no admin. The server logs where its setup page is, with a bootstrap token to give
-it, or set your own with `--bootstrap-token`.
-[Configuration](configuration.md) has that and every other setting.
-
-## Nomad
-
-See [running andante](running.md#with-nomad) for the job itself. One thing to be aware of:
-the job maps all its ports onto the host, so limit who can reach the ops and catalogue ports with
-your cluster's firewall, or remove those mappings.
-
-## Docker
-
-Compose is covered in [running andante](running.md#with-docker-compose). If you already have a
-Postgres, bare containers will do, on a network they share:
-
-```sh
-docker network create andante
-docker run -d --name catalogue --network andante \
-  --entrypoint /usr/local/bin/andante-catalogue \
-  -e ANDANTE_CATALOGUE_DATABASE_URL='postgres://.../catalogue' \
-  -e ANDANTE_CATALOGUE_LISTEN=:8082 \
-  -e ANDANTE_CATALOGUE_TOKEN="$TOKEN" \
-  -e ANDANTE_BASE_URL=https://feeds.example.com \
-  ghcr.io/gerrowadat/andante:0.0.1
-docker run -d --name andante --network andante \
-  -p 8080:8080 -p 127.0.0.1:8081:8081 \
-  -e ANDANTE_DATABASE_URL='postgres://.../andante' \
-  -e ANDANTE_BASE_URL=https://feeds.example.com \
-  -e ANDANTE_OPS_LISTEN=:8081 \
-  -e ANDANTE_SECRET="$SECRET" \
-  -e ANDANTE_CATALOGUE_URL=http://catalogue:8082/v1 \
-  -e ANDANTE_CATALOGUE_TOKEN="$TOKEN" \
-  ghcr.io/gerrowadat/andante:0.0.1
-```
-
-Inside a container the ops listener has to bind to all interfaces to be published, so
-`-p 127.0.0.1:` is the bit that keeps it private. The image holds the `andante` CLI too.
-
-## Binary
-
-Download an archive from the [releases page](https://github.com/gerrowadat/andante/releases),
-[verify it](releasing.md#verifying-an-artifact), then:
-
-```sh
-export ANDANTE_BASE_URL=https://feeds.example.com ANDANTE_CATALOGUE_TOKEN="$TOKEN"
-ANDANTE_CATALOGUE_DATABASE_URL='postgres://.../catalogue' ./andante-catalogue &
-ANDANTE_DATABASE_URL='postgres://.../andante' ANDANTE_SECRET="$SECRET" ANDANTE_CATALOGUE_URL=http://127.0.0.1:8082/v1 ./andante-server
-```
+A new database has no admin. [Bootstrapping](bootstrap.md) covers making one.
+[Configuration](configuration.md) has every setting.
 
 ## Exposing Only the Feeds
 
@@ -97,7 +51,7 @@ ingress:
 ```
 
 Then set `--base-url` to whatever name you chose. Don't route anything to the ops or catalogue
-listeners. Note that this publishes the API too.
+listeners. That publishes the website and the API as well, which is what you want if anyone else logs in.
 
 ## Backups
 

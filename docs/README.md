@@ -4,7 +4,9 @@ Start at the [project README](../README.md) if you don't know what andante is ye
 
 ## Using It
 
-- [Running andante](running.md): start here. Docker Compose or Nomad, then add a serial and subscribe.
+- [Installing](install.md): start here. Docker Compose, Nomad, plain Docker, a release archive or source.
+- [Bootstrapping](bootstrap.md): the first admin, the CLI, invites, and what to do before going public.
+- [Using andante](using.md): add a serial, make a read, subscribe, on the website or the CLI.
 - [Sources](sources.md): choosing a strategy, adding a serial, what the warnings mean, selectors, politeness.
 - [Reads](reads.md): the two pacing modes, adjustments, catch-up, downtime.
 - [Feeds](feeds.md): subscribing, sharing, revoking, the "next one now" link.
@@ -13,7 +15,7 @@ Start at the [project README](../README.md) if you don't know what andante is ye
 
 ## Operating It
 
-- [Deploying](deploying.md): the listeners, Docker or a binary, exposing feeds, backups.
+- [Deploying](deploying.md): the listeners, exposing andante, backups.
 - [Monitoring](monitoring.md): metrics, alerts, health endpoints.
 - [Configuration](configuration.md): flags, environment variables, and what isn't configured here.
 - [API](api.md): authentication, errors, pagination, versioning, generating a client.

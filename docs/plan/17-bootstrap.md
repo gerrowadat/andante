@@ -14,7 +14,7 @@ The first admin can be made from a browser, with no shell on the server.
 - `GET` and `POST /setup`, making a bootstrap invite and handing over to the invite page.
 - `POST /bootstrap` in `api/openapi.yaml`, and `andante bootstrap` in the CLI.
 - The login throttle shared with the API, audit lines, and `andante_bootstrap_attempts_total`.
-- `docs/configuration.md` and `docs/running.md` lead with the token. Move the proposal to
+- `docs/configuration.md` and `docs/running.md` (now `docs/bootstrap.md`) lead with the token. Move the proposal to
   `docs/design/`, or fold it into `docs/design/login.md`.
 
 ## Acceptance Criteria

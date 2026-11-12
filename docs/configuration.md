@@ -73,7 +73,7 @@ fit together is in [sources](sources.md).
 
 ## Users
 
-There's no admin on a new database. While that's the case, the server logs a warning on every start
+[Bootstrapping](bootstrap.md) walks through this. There's no admin on a new database. While that's the case, the server logs a warning on every start
 with the address of the setup page, `/setup` under `--base-url`. Go there, give it the bootstrap
 token and the name you want, and it hands you on to the invite page, where you pick a password or
 sign in with the provider. That account is the first admin.
