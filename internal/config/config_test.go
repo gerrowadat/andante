@@ -225,3 +225,16 @@ func TestLoginFlags(t *testing.T) {
 		t.Errorf("password login = %v, trusted proxies = %v", c.PasswordLogin, c.TrustedProxies)
 	}
 }
+
+// A blank ANDANTE_BOOTSTRAP_TOKEN is how a templated deployment retires the
+// token once there's an admin, so it has to be accepted.
+func TestBlankBootstrapToken(t *testing.T) {
+	t.Setenv("ANDANTE_BOOTSTRAP_TOKEN", "")
+	c, err := parse(t, required...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.BootstrapToken != "" {
+		t.Errorf("bootstrap token = %q", c.BootstrapToken)
+	}
+}

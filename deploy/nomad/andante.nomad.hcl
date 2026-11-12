@@ -12,6 +12,10 @@
 #     secret='...' \
 #     catalogue_token='...'
 #
+# Add bootstrap_token='...' to pick the bootstrap token yourself
+# (docs/bootstrap.md). Once there's an admin, blank it or delete the key; the
+# template renders nothing for either.
+#
 # Change datacenters and ANDANTE_BASE_URL, and pin the image to a release.
 
 job "andante" {
@@ -139,6 +143,7 @@ job "andante" {
           ANDANTE_DATABASE_URL={{ .database_url }}
           ANDANTE_SECRET={{ .secret }}
           ANDANTE_CATALOGUE_TOKEN={{ .catalogue_token }}
+          {{ with .bootstrap_token }}ANDANTE_BOOTSTRAP_TOKEN={{ . }}{{ end }}
           {{ with .oidc_client_secret }}ANDANTE_OIDC_CLIENT_SECRET={{ . }}{{ end }}
           {{- end }}
         EOT

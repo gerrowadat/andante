@@ -20,11 +20,14 @@ That account is the first admin, and you're logged in as it.
 
 A token the server made lasts a day, and restarting the server after that makes a new one. To pick
 your own instead, set `--bootstrap-token` (`ANDANTE_BOOTSTRAP_TOKEN`) to at least 32 characters.
-`openssl rand -hex 32` makes a good one. Under Nomad, put `bootstrap_token` in the job's Variable
-and pass it to the server.
+`openssl rand -hex 32` makes a good one. Under Nomad, put `bootstrap_token` in the job's Variable,
+and the example job passes it to the server.
 
 Once there's an admin the token does nothing, and the server logs that `--bootstrap-token` can come
-out. The token never takes over an account that's already there, and wrong tokens are throttled
+out. The server is happy with it set to nothing, so in a templated deployment blanking the value is
+the safe way to do that. The example Nomad job copes with the key being deleted too, but if your
+own template reads it without a `{{ with }}`, deleting the key breaks the next deploy, which can be
+weeks later. The token never takes over an account that's already there, and wrong tokens are throttled
 like wrong passwords.
 
 ### Without a Browser
