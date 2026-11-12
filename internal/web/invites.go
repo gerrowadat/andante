@@ -13,6 +13,9 @@ import (
 	"github.com/gerrowadat/andante/internal/store"
 )
 
+// invitesPage is how many invites the page lists at once.
+const invitesPage = 100
+
 type inviteRow struct {
 	ID                  int64
 	Name, Role, Expires string
@@ -27,7 +30,9 @@ type madeInvite struct {
 }
 
 func (s *site) showInvites(w http.ResponseWriter, r *http.Request, v visitor, status int, problem string, made *madeInvite) {
-	invites, err := s.opts.Store.ListInvites(r.Context(), v.actor, 0, maxReads, s.opts.Now())
+	// ?after= pages through them, since an admin sees everyone's.
+	after, _ := strconv.ParseInt(r.URL.Query().Get("after"), 10, 64)
+	invites, err := s.opts.Store.ListInvites(r.Context(), v.actor, after, invitesPage, s.opts.Now())
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -37,20 +42,27 @@ func (s *site) showInvites(w http.ResponseWriter, r *http.Request, v visitor, st
 		s.fail(w, err)
 		return
 	}
+	out, err := s.opts.Store.InvitePlaces(r.Context(), v.actor, s.opts.Now())
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
 	data := struct {
 		Invites     []inviteRow
 		Made        *madeInvite
 		Limit, Left int32
-	}{Made: made, Limit: settings.Limit, Left: settings.Limit}
+		More        int64
+	}{Made: made, Limit: settings.Limit, Left: max(settings.Limit-out, 0)}
 	for _, i := range invites {
 		expires := i.ExpiresAt
 		data.Invites = append(data.Invites, inviteRow{
 			ID: i.ID, Name: i.Name, Role: i.Role, Expires: stamp(&expires), CreatedBy: i.CreatedBy, Reset: i.Reset,
 			MaxUses: i.MaxUses, Uses: i.Uses,
 		})
-		data.Left -= i.MaxUses - i.Uses
 	}
-	data.Left = max(data.Left, 0)
+	if len(invites) == invitesPage {
+		data.More = invites[len(invites)-1].ID
+	}
 	s.show(w, v, status, invitesView, pageData{Title: "Invites", Error: problem, Data: data})
 }
 

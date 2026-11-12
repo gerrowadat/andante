@@ -252,6 +252,16 @@ func (s *Store) ListInvites(ctx context.Context, by Actor, after int64, limit in
 	return out, nil
 }
 
+// InvitePlaces is how many more people the actor's own live invites could let in,
+// which is what counts against the invite limit.
+func (s *Store) InvitePlaces(ctx context.Context, by Actor, now time.Time) (int32, error) {
+	out, err := s.queries.CountInvitePlaces(ctx, db.CountInvitePlacesParams{CreatedBy: &by.UserID, ExpiresAt: now})
+	if err != nil {
+		return 0, fmt.Errorf("count invite places: %w", err)
+	}
+	return out, nil
+}
+
 // DeleteInvite withdraws an invite: the actor's own, or anyone's for an admin.
 // Someone else's is ErrNotFound.
 func (s *Store) DeleteInvite(ctx context.Context, by Actor, id int64) error {

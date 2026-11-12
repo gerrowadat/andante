@@ -5,6 +5,7 @@ package web_test
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -131,6 +132,20 @@ func path(pattern string, id int64) string {
 	p = strings.ReplaceAll(p, "{id}", strconv.FormatInt(id, 10))
 	p = strings.ReplaceAll(p, "{job}", "nojob")
 	return strings.ReplaceAll(p, "{n}", "0")
+}
+
+// The public listener only sends web.Paths to the website, so a page outside them is a 404.
+func TestEveryPageIsInPaths(t *testing.T) {
+	mux := http.NewServeMux()
+	for _, p := range web.Paths {
+		mux.Handle(p, http.NotFoundHandler())
+	}
+	for _, rt := range web.Routes() {
+		method, _, _ := strings.Cut(rt.Pattern, " ")
+		if _, matched := mux.Handler(httptest.NewRequest(method, path(rt.Pattern, 1), nil)); matched == "" {
+			t.Errorf("%s isn't in web.Paths", rt.Pattern)
+		}
+	}
 }
 
 func TestEveryPageNeedsALogin(t *testing.T) {

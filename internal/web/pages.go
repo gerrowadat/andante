@@ -47,11 +47,11 @@ var (
 
 	invitePage = page(`  <h1>Welcome{{with .Name}}, {{.}}{{end}}</h1>
   {{with .Error}}<p role="alert">{{.}}</p>{{end}}
-  {{if not .Name}}<form method="post">
+  {{if not .Name}}<form method="post" action="/invite/{{.Token}}">
     <p><label>Pick a username <input name="name" value="{{.Chosen}}" autocomplete="username" maxlength="64" required autofocus></label></p>
     <p><button>Carry on</button></p>
   </form>{{else}}
-  {{if .Password}}<form method="post">{{if .Picked}}<input type="hidden" name="name" value="{{.Name}}">{{end}}
+  {{if .Password}}<form method="post" action="/invite/{{.Token}}">{{if .Picked}}<input type="hidden" name="name" value="{{.Name}}">{{end}}
     <p><label>Choose a password <input name="password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required autofocus></label></p>
     <p><button>Set password</button></p>
   </form>{{end}}

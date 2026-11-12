@@ -4,6 +4,7 @@
 package web_test
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -148,8 +149,9 @@ func TestPickingANameBeforeSingleSignOn(t *testing.T) {
 	if page := f.do(t, http.MethodGet, "/invite/"+raw, nil, home, ""); strings.Contains(page.body, "/oidc") {
 		t.Errorf("single sign-on before a name was picked: %s", page.body)
 	}
-	if got := f.do(t, http.MethodGet, "/invite/"+raw+"/oidc", nil, home, ""); got.status != http.StatusUnprocessableEntity {
-		t.Errorf("no name: %d", got.status)
+	// Turned away at the single sign-on link, the form to pick again goes back to the invite.
+	if got := f.do(t, http.MethodGet, "/invite/"+raw+"/oidc", nil, home, ""); got.status != http.StatusUnprocessableEntity || !strings.Contains(got.body, `action="/invite/`+raw+`"`) {
+		t.Errorf("no name: %d %s", got.status, got.body)
 	}
 	picked := f.do(t, http.MethodPost, "/invite/"+raw, url.Values{"name": {"sam"}}, home, "")
 	if !strings.Contains(picked.body, "/invite/"+raw+"/oidc?name=sam") {
@@ -165,5 +167,34 @@ func TestPickingANameBeforeSingleSignOn(t *testing.T) {
 	}
 	if sam, err := f.store.GetUserByName(t.Context(), "sam"); err != nil || sam.ID != f.whoIs(t, in.cookie.Value).UserID {
 		t.Errorf("sam = %+v, %v", sam, err)
+	}
+}
+
+func TestTheInvitesPageGoesPastOnePage(t *testing.T) {
+	f := newFixture(t)
+	f.person(t, "dave", true)
+	bob := f.person(t, "bob", false)
+	who, limit := store.InvitesByUsers, int32(150)
+	if err := f.store.SetInviteSettings(t.Context(), &who, &limit); err != nil {
+		t.Fatal(err)
+	}
+	var last int64
+	for range 101 {
+		i, _, err := f.store.CreateInvite(t.Context(), bob.actor, store.InviteRequest{Role: store.RoleUser, MaxUses: 1}, f.clock())
+		if err != nil {
+			t.Fatal(err)
+		}
+		last = i.ID
+	}
+	first := f.get(t, bob, "/invites")
+	more := regexp.MustCompile(`href="/invites\?after=(\d+)"`).FindStringSubmatch(first.body)
+	if more == nil || strings.Count(first.body, "/withdraw") != 100 || !strings.Contains(first.body, "you have 49 left") {
+		t.Fatalf("the first page: %s", first.body)
+	}
+	// Places are counted across every invite, whichever page is showing.
+	second := f.get(t, bob, "/invites?after="+more[1])
+	if strings.Count(second.body, "/withdraw") != 1 || !strings.Contains(second.body, fmt.Sprintf("/invites/%d/withdraw", last)) ||
+		strings.Contains(second.body, "after=") || !strings.Contains(second.body, "you have 49 left") {
+		t.Errorf("the second page: %s", second.body)
 	}
 }

@@ -71,6 +71,9 @@ func TestAUserCanOnlyInviteUsers(t *testing.T) {
 	if got, err := s.LookupInvite(ctx, raw, now); err != nil || got.CreatedBy != "bob" || got.Name != "" {
 		t.Errorf("looked up = %+v, %v", got, err)
 	}
+	if places, err := s.InvitePlaces(ctx, bob, now); err != nil || places != 2 {
+		t.Errorf("bob's places = %d, %v", places, err)
+	}
 
 	// The invite stops working once bob couldn't make it any more, and comes back
 	// with the setting.
