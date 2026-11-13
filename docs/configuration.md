@@ -151,8 +151,10 @@ The server migrates the database before it starts listening. Migrations are embe
 binary and run under a Postgres advisory lock, so several servers starting together apply them
 once. `/readyz` returns 200 once the database is reachable with every migration applied.
 
-The ops listener carries `/healthz`, `/readyz` and `/metrics`, which have no auth, so don't expose it
-publicly. The public listener has the feeds and the API. Don't expose the catalogue's listener either.
+The ops listener carries `/healthz`, `/readyz` and `/metrics`, which have no auth. The public
+listener has the feeds and the API. The catalogue's listener has the same three endpoints and its
+API, which needs `--api-token`. [Deploying](deploying.md#the-listeners) says what each would give
+away to someone who could reach it.
 
 The server doesn't need the catalogue to start, and `/readyz` doesn't depend on it, because feeds
 work without it.
