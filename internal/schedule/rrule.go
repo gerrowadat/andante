@@ -26,7 +26,8 @@ var ErrTooManyOccurrences = errors.New("too many occurrences to count")
 
 // rule is a compiled RRULE, anchored at its segment's start.
 type rule struct {
-	option rrule.ROption
+	option rrule.ROption // In floating time: see floating.
+	loc    *time.Location
 	start  time.Time // Occurrences at or before this do not count.
 
 	// For a rule counted in whole periods. periodDays is 0 for one that is not.
@@ -37,7 +38,8 @@ type rule struct {
 }
 
 // parse reads the rule. It fills in what RFC 5545 would otherwise take from
-// DTSTART, so that moving the start does not change the rule.
+// DTSTART, so that moving the start does not change the rule. UNTIL comes back
+// in floating time.
 func parse(p RRulePacing, start time.Time) (rrule.ROption, *time.Location, error) {
 	loc, err := time.LoadLocation(p.TimeZone)
 	if err != nil {
@@ -68,7 +70,28 @@ func parse(p RRulePacing, start time.Time) (rrule.ROption, *time.Location, error
 	if option.Freq == rrule.WEEKLY && len(option.Byweekday) == 0 && len(option.Bymonthday) == 0 {
 		option.Byweekday = []rrule.Weekday{weekdays[local.Weekday()]}
 	}
+	if !option.Until.IsZero() {
+		option.Until = floating(option.Until, loc)
+	}
 	return *option, loc, nil
+}
+
+// floating returns t's wall clock in loc, as the same wall clock in UTC.
+//
+// rrule-go finds each occurrence's date from local midnight, which does not
+// exist on the day a zone such as America/Havana moves its clocks forward at
+// midnight, and so it puts that day's occurrence on the day before. UTC never
+// changes its clocks, so the rule runs on wall clocks there and each occurrence
+// goes back to loc after (see local). An RRULE describes wall clocks anyway.
+func floating(t time.Time, loc *time.Location) time.Time {
+	t = t.In(loc)
+	return time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), time.UTC)
+}
+
+// local is the inverse of floating. A wall clock that loc skips or repeats
+// resolves as time.Date resolves it, which is what rrule-go did itself.
+func local(t time.Time, loc *time.Location) time.Time {
+	return time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), loc)
 }
 
 var weekdays = map[time.Weekday]rrule.Weekday{
@@ -101,7 +124,7 @@ func compile(p RRulePacing, start time.Time) (*rule, error) {
 	if err != nil {
 		return nil, err
 	}
-	r := &rule{option: option, start: start.In(loc)}
+	r := &rule{option: option, loc: loc, start: start.In(loc)}
 	if !repeats(option) {
 		return r, nil
 	}
@@ -124,12 +147,19 @@ func compile(p RRulePacing, start time.Time) (*rule, error) {
 // iterate returns the occurrences after from, for a rule anchored at from.
 func (r *rule) iterate(from time.Time) (rrule.Next, error) {
 	option := r.option
-	option.Dtstart = from
+	option.Dtstart = floating(from, r.loc)
 	parsed, err := rrule.NewRRule(option)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrInvalidPacing, err)
 	}
-	return parsed.Iterator(), nil
+	next := parsed.Iterator()
+	return func() (time.Time, bool) {
+		at, ok := next()
+		if !ok {
+			return time.Time{}, false
+		}
+		return local(at, r.loc), true
+	}, nil
 }
 
 // walk counts the occurrences in (from, to].
