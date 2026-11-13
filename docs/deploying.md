@@ -18,8 +18,22 @@ too old that error won't mention the version.
 | Ops | `127.0.0.1:8081` | `/healthz`, `/readyz`, `/metrics` | Prometheus, and nobody else |
 | Catalogue | `127.0.0.1:8082` | Its private API, `/healthz`, `/readyz`, `/metrics` | `andante-server` and Prometheus |
 
-Keep the ops listener on loopback or a private network, because `/metrics` and the health endpoints
-have no auth. The public listener is fine on the internet, behind a proxy that does TLS. Set
+`/healthz`, `/readyz` and `/metrics` have no auth, on either service. The health checks say `ok` or
+`not ready` and nothing else. The metrics ([monitoring](monitoring.md) lists them) carry the running
+version and commit, each source's slug and state, counts of requests, crawls, feed fetches and
+logins, and Go's runtime and process stats. They never carry tokens, read IDs, usernames or URLs.
+So someone who can reach them learns which serials you've added, roughly how busy the instance is
+and which version to look up advisories for. That's fine on a private network. I wouldn't put it
+on the internet.
+
+The rest of the catalogue's listener is its API, and every call needs `--api-token`. That token
+goes over plain HTTP, though, so keep the catalogue on loopback or a network you trust, for the
+token's sake more than the metrics'.
+
+Where you can't use loopback, such as Nomad with host networking, bind these to an address that
+only the server and Prometheus can reach, or firewall the ports to them.
+
+The public listener is fine on the internet, behind a proxy that does TLS. Set
 `--trusted-proxies` to the proxy's address, or every login looks like it came from the proxy, and
 throttling treats them all as one address. Under Compose, that and the OpenID settings go in an
 `andante.env` next to `.env`. Copy it from `andante.env.example`.
