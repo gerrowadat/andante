@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/teambition/rrule-go"
 	"pgregory.net/rapid"
 )
 
@@ -216,20 +215,18 @@ func TestPauseThenResumeChangesNothing(t *testing.T) {
 	})
 }
 
-// bruteCount is what the closed form has to match.
+// bruteCount is what the closed form has to match: every occurrence, walked
+// one at a time from start.
 func bruteCount(t *rapid.T, p RRulePacing, start, to time.Time) int {
-	option, _, err := parse(p, start)
+	option, loc, err := parse(p, start)
 	if err != nil {
 		t.Fatal(err)
 	}
-	loc, _ := time.LoadLocation(p.TimeZone)
-	option.Dtstart = start.In(loc)
-	parsed, err := rrule.NewRRule(option)
+	next, err := (&rule{option: option, loc: loc}).iterate(start)
 	if err != nil {
 		t.Fatal(err)
 	}
 	count := 0
-	next := parsed.Iterator()
 	for {
 		at, ok := next()
 		if !ok || at.After(to) {

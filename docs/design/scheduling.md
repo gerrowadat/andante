@@ -27,6 +27,13 @@ across daylight saving changes. A local time that does not exist on a DST day
 (01:30 on the spring-forward day in Europe/Dublin) is handled as the RRULE
 library and RFC 5545 define it; tests pin that behaviour down.
 
+The library works out each occurrence's date from local midnight, which some
+zones skip: America/Havana moves its clocks forward at midnight, and on that day
+the library puts the occurrence on the day before. So andante runs the rule on
+the wall clock in UTC, which never changes its clocks, and puts each occurrence
+back into the schedule's zone after. An RRULE describes wall-clock times anyway,
+and the library's newest release (v1.8.2) has the bug.
+
 ## Pacing Mode `replay`: the Original Run
 
 Entries are released with the same gaps between them as when they were first
@@ -173,7 +180,8 @@ func NextRelease(segs []Segment, t time.Time, idx Index) (time.Time, bool, error
 
 - Table tests for each action, in both pacing modes, and for switching between
   them mid-read.
-- DST transitions in Europe/Dublin and America/New_York, both directions.
+- DST transitions in Europe/Dublin and America/New_York, both directions, and
+  America/Havana, whose clocks go forward at midnight.
 - Replay: speed 1 reproduces the original gaps exactly; clamps apply per gap;
   undated entries use `default_gap`; a hiatus longer than `max_gap` is clamped.
 - Property tests (rapid or `testing/quick`), for both modes: `released` is

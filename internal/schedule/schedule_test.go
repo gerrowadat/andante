@@ -209,6 +209,14 @@ func TestDST(t *testing.T) {
 		// second one, which is the one Go's time.Date picks here.
 		{"Dublin's repeated 01:30", "Europe/Dublin", at1,
 			time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC), 2, "2026-10-25T01:30:00Z"},
+		// Havana moves its clocks forward at midnight, so 8 March 2026 has no
+		// midnight. rrule-go, left to itself, puts that day's release on the
+		// 7th.
+		{"Havana's 8 March has a release", "America/Havana", dailyAt7,
+			time.Date(2026, 3, 6, 12, 0, 0, 0, time.UTC), 2, "2026-03-08T07:00:00-04:00"},
+		{"every other day in Havana stays every other day", "America/Havana",
+			"FREQ=DAILY;INTERVAL=2;BYHOUR=19;BYMINUTE=0;BYSECOND=0",
+			time.Date(2026, 3, 4, 12, 0, 0, 0, time.UTC), 3, "2026-03-08T19:00:00-04:00"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -372,5 +380,27 @@ func TestValidatePacing(t *testing.T) {
 		if err := ValidatePacing(p); !errors.Is(err, ErrInvalidPacing) {
 			t.Errorf("%s: %v", name, err)
 		}
+	}
+}
+
+// UNTIL is inclusive, whether it is written in UTC or in the schedule's zone.
+func TestUntilInZone(t *testing.T) {
+	start := time.Date(2026, 6, 29, 12, 0, 0, 0, time.UTC)
+	last := time.Date(2026, 7, 2, 6, 0, 0, 0, time.UTC) // 07:00 in Dublin.
+	for _, until := range []string{"20260702T060000Z", "20260702T070000"} {
+		t.Run(until, func(t *testing.T) {
+			p := RRulePacing{RRule: dailyAt7 + ";UNTIL=" + until, TimeZone: "Europe/Dublin", PerRelease: 1}
+			segs := []Segment{New(p, 0, 1, start)}
+			at, err := ReleaseTime(segs, 3, weekly(50))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !at.Equal(last) {
+				t.Errorf("seq 3 released at %s, want %s", at, last)
+			}
+			if _, err := ReleaseTime(segs, 4, weekly(50)); !errors.Is(err, ErrNotScheduled) {
+				t.Errorf("seq 4: got %v, want ErrNotScheduled", err)
+			}
+		})
 	}
 }
