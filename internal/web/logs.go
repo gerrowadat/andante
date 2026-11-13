@@ -16,8 +16,11 @@ import (
 )
 
 const (
-	logPage      = 100
-	fetchesShown = 20
+	logPage       = 100
+	crawlLogShown = 50
+	// pageShown is as much of a kept page as the source page shows. The API
+	// has all of it.
+	pageShown = 256 * 1024
 )
 
 var logLevels = []string{"debug", "info", "warn", "error"}
@@ -94,26 +97,45 @@ func (s *site) logs(w http.ResponseWriter, r *http.Request, v visitor) {
 	s.show(w, v, http.StatusOK, logsView, pageData{Title: "Logs", Error: problem, Data: data})
 }
 
-type fetchRow struct {
-	At, URL, Status, Error string
+type crawlRow struct {
+	At, URL, Status, Error, Level, Message string
+	Event                                  bool
+	// Page is the page the crawl gave up on, for the one event that kept it,
+	// and Cut says it was too long to show all of.
+	Page string
+	Cut  bool
 }
 
-// fetches is a source's latest crawl requests, for an admin. ok is false when the
+// crawlLog is a source's latest crawl log, for an admin. ok is false when the
 // catalogue couldn't say.
-func (s *site) fetches(r *http.Request, v visitor, sourceID int64) ([]fetchRow, bool) {
-	fetches, _, err := s.opts.App.Fetches(r.Context(), v.actor, sourceID, 0, fetchesShown)
+func (s *site) crawlLog(r *http.Request, v visitor, sourceID int64) ([]crawlRow, bool) {
+	items, _, err := s.opts.App.CrawlLog(r.Context(), v.actor, sourceID, 0, "", crawlLogShown)
 	if err != nil {
 		s.opts.Logger.Warn("could not read the crawl log", "source_id", sourceID, "error", err)
 		return nil, false
 	}
-	rows := make([]fetchRow, 0, len(fetches))
-	for _, f := range fetches {
-		row := fetchRow{At: stamp(&f.FetchedAt), URL: f.URL}
-		if status, err := f.Status.Get(); err == nil {
+	rows := make([]crawlRow, 0, len(items))
+	for _, item := range items {
+		row := crawlRow{At: stamp(&item.At), Event: item.Kind == client.CrawlLogKindEvent}
+		row.URL, _ = item.URL.Get()
+		row.Error, _ = item.Error.Get()
+		row.Message, _ = item.Message.Get()
+		if status, err := item.Status.Get(); err == nil {
 			row.Status = strconv.Itoa(int(status))
 		}
-		if message, err := f.Error.Get(); err == nil {
-			row.Error = message
+		if item.Level != nil {
+			row.Level = string(*item.Level)
+		}
+		if item.HasPage {
+			page, err := s.opts.App.CrawledPage(r.Context(), v.actor, sourceID, item.ID)
+			if err != nil {
+				s.opts.Logger.Warn("could not read a crawled page", "source_id", sourceID, "entry", item.ID, "error", err)
+			} else {
+				row.Page, row.Cut = page.Body, len(page.Body) > pageShown
+				if row.Cut {
+					row.Page = strings.ToValidUTF8(page.Body[:pageShown], "")
+				}
+			}
 		}
 		rows = append(rows, row)
 	}

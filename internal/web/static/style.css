@@ -20,3 +20,6 @@ button { font: inherit; padding: .25rem .8rem; cursor: pointer; }
 .note { border-left: 4px solid #39c; padding: .25rem .75rem; }
 code, .url { overflow-wrap: anywhere; }
 img.art { max-width: 6rem; max-height: 6rem; float: right; margin-left: 1rem; }
+tr.warn { background: #c902; }
+tr.error { background: #c332; }
+pre.page { max-height: 30rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .85em; }

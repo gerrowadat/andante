@@ -239,23 +239,76 @@ func (s *Store) RecordFetch(ctx context.Context, params db.InsertCrawlLogParams)
 	return nil
 }
 
-// ListFetches returns a source's crawl log, newest first, from before down. A
-// before of zero starts at the newest.
-func (s *Store) ListFetches(ctx context.Context, sourceID, before int64, limit int32) ([]db.CrawlLog, error) {
+// CrawlEvent is something the crawl decided or ran into, for the crawl log.
+type CrawlEvent struct {
+	SourceID int64
+	Level    string
+	Message  string
+	URL      string
+	// Page is the body of the page the event is about, kept only when the crawl
+	// gave up on it. Only a source's latest one is kept.
+	Page []byte
+}
+
+// RecordEvent adds an event to the crawl log.
+func (s *Store) RecordEvent(ctx context.Context, e CrawlEvent) error {
+	params := db.InsertCrawlEventParams{SourceID: e.SourceID, Level: &e.Level, Message: &e.Message, Body: e.Page}
+	if e.URL != "" {
+		params.Url = &e.URL
+	}
+	if e.Page == nil {
+		if _, err := s.queries.InsertCrawlEvent(ctx, params); err != nil {
+			return fmt.Errorf("record crawl event: %w", err)
+		}
+		return nil
+	}
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		q := s.queries.WithTx(tx)
+		id, err := q.InsertCrawlEvent(ctx, params)
+		if err != nil {
+			return err
+		}
+		return q.ClearCrawlPages(ctx, db.ClearCrawlPagesParams{SourceID: e.SourceID, Keep: id})
+	})
+	if err != nil {
+		return fmt.Errorf("record crawl event: %w", err)
+	}
+	return nil
+}
+
+// ListCrawlLog returns a source's crawl log, newest first, from before down. A
+// before of zero starts at the newest, and an empty kind means every kind.
+func (s *Store) ListCrawlLog(ctx context.Context, sourceID, before int64, kind string, limit int32) ([]db.ListCrawlLogRow, error) {
 	if before <= 0 {
 		before = math.MaxInt64
 	}
-	rows, err := s.queries.ListFetches(ctx, db.ListFetchesParams{SourceID: sourceID, Before: before, RowLimit: limit})
+	params := db.ListCrawlLogParams{SourceID: sourceID, Before: before, RowLimit: limit}
+	if kind != "" {
+		params.Kind = &kind
+	}
+	rows, err := s.queries.ListCrawlLog(ctx, params)
 	if err != nil {
-		return nil, fmt.Errorf("list fetches of source %d: %w", sourceID, err)
+		return nil, fmt.Errorf("list crawl log of source %d: %w", sourceID, err)
 	}
 	return rows, nil
+}
+
+// CrawledPage returns the page a crawl log event kept, or ErrNotFound.
+func (s *Store) CrawledPage(ctx context.Context, sourceID, id int64) (db.GetCrawlPageRow, error) {
+	row, err := s.queries.GetCrawlPage(ctx, db.GetCrawlPageParams{SourceID: sourceID, ID: id})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return db.GetCrawlPageRow{}, fmt.Errorf("crawled page %d of source %d: %w", id, sourceID, ErrNotFound)
+	}
+	if err != nil {
+		return db.GetCrawlPageRow{}, fmt.Errorf("crawled page %d of source %d: %w", id, sourceID, err)
+	}
+	return row, nil
 }
 
 // Validators returns the ETag and Last-Modified of the last good fetch of url,
 // for a conditional request.
 func (s *Store) Validators(ctx context.Context, sourceID int64, url string) (etag, lastModified *string, err error) {
-	row, err := s.queries.LatestValidators(ctx, db.LatestValidatorsParams{SourceID: sourceID, Url: url})
+	row, err := s.queries.LatestValidators(ctx, db.LatestValidatorsParams{SourceID: sourceID, Url: &url})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil, nil
 	}

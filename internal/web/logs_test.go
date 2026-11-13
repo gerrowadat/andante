@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	catalogue "github.com/gerrowadat/andante/internal/catalogue/store"
 	"github.com/gerrowadat/andante/internal/catalogue/store/db"
 	"github.com/gerrowadat/andante/internal/stacktest"
 )
@@ -70,20 +71,34 @@ func TestAnAdminSeesTheCrawlLog(t *testing.T) {
 	source := f.source(t, "Crawled")
 	status, problem := int32(200), "connection refused"
 	for _, row := range []db.InsertCrawlLogParams{
-		{SourceID: source, Url: "https://comic.example/fine", Status: &status},
-		{SourceID: source, Url: "https://comic.example/broken", Error: &problem},
+		{SourceID: source, Url: ptr("https://comic.example/fine"), Status: &status},
+		{SourceID: source, Url: ptr("https://comic.example/broken"), Error: &problem},
 	} {
 		if err := f.stack.Catalogue.RecordFetch(t.Context(), row); err != nil {
 			t.Fatal(err)
 		}
 	}
+	err := f.stack.Catalogue.RecordEvent(t.Context(), catalogue.CrawlEvent{
+		SourceID: source, Level: "warn", Message: "no next link on https://comic.example/fine", URL: "https://comic.example/fine",
+		Page: []byte(`<script>alert("hi")</script>`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	page := "/sources/" + strconv.FormatInt(source, 10)
 
 	got := f.get(t, dave, page)
-	for _, want := range []string{"Crawl log", "https://comic.example/fine", "connection refused", "/logs?service=catalogue&amp;source="} {
+	for _, want := range []string{
+		"Crawl log", "https://comic.example/fine", "connection refused", "/logs?service=catalogue&amp;source=",
+		`<tr class="warn">`, "no next link on https://comic.example/fine", "<details>",
+		"&lt;script&gt;alert(&#34;hi&#34;)&lt;/script&gt;",
+	} {
 		if !strings.Contains(got.body, want) {
 			t.Errorf("an admin's source page has no %q", want)
 		}
+	}
+	if strings.Contains(got.body, "<script>alert") {
+		t.Error("the kept page is not escaped")
 	}
 	if got := f.get(t, bob, page); strings.Contains(got.body, "Crawl log") {
 		t.Error("a user sees the crawl log")
@@ -108,3 +123,5 @@ func TestAnAdminsReadLinksToItsFeedRequests(t *testing.T) {
 		t.Error("a user is offered the logs")
 	}
 }
+
+func ptr[T any](v T) *T { return &v }

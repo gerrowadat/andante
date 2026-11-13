@@ -196,7 +196,7 @@ func kindOf(raw string) (client.Kind, error) {
 func (a *app) sourceCmd() *cobra.Command {
 	source := &cobra.Command{Use: "source", Short: "Manage sources."}
 	source.AddCommand(a.sourceDiscover(), a.sourceProbe(), a.sourceAdd(), a.sourceList(), a.sourceGet(), a.sourceEdit(),
-		a.sourceRemove(), a.sourceCrawl(), a.sourceEntries(), a.sourceFetches())
+		a.sourceRemove(), a.sourceCrawl(), a.sourceEntries(), a.sourceFetches(), a.sourceCrawlLog(), a.sourceCrawledPage())
 	return source
 }
 
@@ -589,6 +589,97 @@ func (a *app) sourceEntries() *cobra.Command {
 	}, "listEntries")
 	p.add(cmd)
 	return cmd
+}
+
+func (a *app) sourceCrawlLog() *cobra.Command {
+	var (
+		p    page
+		kind string
+	)
+	cmd := operation(&cobra.Command{
+		Use:   "crawl-log <id|slug>",
+		Short: "List what the crawl fetched, decided and ran into for a source, newest first. Admins only.",
+		Long: "List what the crawl fetched, decided and ran into for a source, newest first. " +
+			"An event marked with * kept the page the crawl gave up on, which crawled-page prints. Admins only.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := a.resolveSource(cmd.Context(), args[0])
+			if err != nil {
+				return err
+			}
+			params := &client.ListCrawlLogParams{Cursor: p.cursorParam(), Limit: p.limitParam()}
+			if kind != "" {
+				k := client.CrawlLogKind(kind)
+				params.Kind = &k
+			}
+			resp, err := a.client.ListCrawlLogWithResponse(cmd.Context(), id, params)
+			if err != nil {
+				return err
+			}
+			return a.show(resp.StatusCode(), resp.Body, func(w *table) {
+				w.println("ID\tAT\tSTATUS\tWHAT")
+				for _, item := range resp.JSON200.Items {
+					url, _ := item.URL.Get()
+					if item.Kind == client.CrawlLogKindEvent {
+						level := "-"
+						if item.Level != nil {
+							level = string(*item.Level)
+						}
+						if item.HasPage {
+							level += "*"
+						}
+						w.printf("%d\t%s\t%s\t%s\n", item.ID, item.At.Format(time.RFC3339), level, text(item.Message))
+						continue
+					}
+					status := "-"
+					if s, err := item.Status.Get(); err == nil {
+						status = strconv.Itoa(int(s))
+					}
+					what := url
+					if message, err := item.Error.Get(); err == nil {
+						what += " " + message
+					}
+					w.printf("%d\t%s\t%s\t%s\n", item.ID, item.At.Format(time.RFC3339), status, what)
+				}
+				a.more(resp.JSON200.Next)
+			})
+		},
+	}, "listCrawlLog")
+	p.add(cmd)
+	cmd.Flags().StringVar(&kind, "kind", "", "only fetch or event")
+	return cmd
+}
+
+func (a *app) sourceCrawledPage() *cobra.Command {
+	return operation(&cobra.Command{
+		Use:   "crawled-page <id|slug> <event-id>",
+		Short: "Print the page a crawl log event kept, as the crawl fetched it. Admins only.",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := a.resolveSource(cmd.Context(), args[0])
+			if err != nil {
+				return err
+			}
+			entry, err := strconv.ParseInt(args[1], 10, 64)
+			if err != nil {
+				return fmt.Errorf("event ID %q is not a number", args[1])
+			}
+			resp, err := a.client.GetCrawledPageWithResponse(cmd.Context(), id, entry)
+			if err != nil {
+				return err
+			}
+			if err := check(resp.StatusCode(), resp.Body); err != nil {
+				return err
+			}
+			// Not through a table: a tabwriter would line up the page's tabs.
+			out := resp.JSON200.Body
+			if a.output == outputJSON {
+				out = string(resp.Body)
+			}
+			_, err = fmt.Fprintln(a.stdout, out)
+			return err
+		},
+	}, "getCrawledPage")
 }
 
 func (a *app) sourceFetches() *cobra.Command {

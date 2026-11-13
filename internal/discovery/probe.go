@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 )
 
@@ -121,6 +122,11 @@ func (p *Prober) run(ctx context.Context, req ProbeRequest) (ProbeResult, error)
 		room := min(req.Limit-len(result.Entries), len(batch.Entries))
 		result.Entries = append(result.Entries, batch.Entries[:room]...)
 		result.Warnings = append(result.Warnings, batch.Warnings...)
+		for _, note := range batch.Notes {
+			if note.Level >= slog.LevelWarn {
+				result.Warnings = append(result.Warnings, note.Message)
+			}
+		}
 		if batch.LiveEnd || len(batch.Entries) == 0 {
 			break
 		}

@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"slices"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -102,6 +104,26 @@ func (h *harness) entries(t *testing.T, id int64) []db.Entry {
 		t.Fatal(err)
 	}
 	return entries
+}
+
+// events returns a source's crawl log events, oldest first, as "level message".
+func (h *harness) events(t *testing.T, id int64) []string {
+	t.Helper()
+	rows, err := h.store.ListCrawlLog(t.Context(), id, 0, "event", 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := make([]string, 0, len(rows))
+	for _, row := range slices.Backward(rows) {
+		out = append(out, *row.Level+" "+*row.Message)
+	}
+	return out
+}
+
+// logged reports whether a source's crawl log has an event that starts with prefix.
+func (h *harness) logged(t *testing.T, id int64, prefix string) bool {
+	t.Helper()
+	return slices.ContainsFunc(h.events(t, id), func(e string) bool { return strings.HasPrefix(e, prefix) })
 }
 
 func TestIndexesToTheLiveEndThenTails(t *testing.T) {
@@ -259,6 +281,9 @@ func TestStoppingConditions(t *testing.T) {
 		if got.State != "error" || got.LastError == nil {
 			t.Fatalf("state = %q, error %v", got.State, got.LastError)
 		}
+		if !h.logged(t, s.ID, "error stopped: ") {
+			t.Errorf("events = %q", h.events(t, s.ID))
+		}
 		if site.Count("/comics/1.html") != 0 {
 			t.Error("a disallowed page was requested")
 		}
@@ -317,6 +342,9 @@ func TestStoppingConditions(t *testing.T) {
 		}
 		if got.LastError == nil {
 			t.Error("last_error is empty")
+		}
+		if !h.logged(t, s.ID, "warn waiting until ") {
+			t.Errorf("events = %q", h.events(t, s.ID))
 		}
 
 		limited.Store(false)
@@ -414,6 +442,79 @@ func TestCrawlLogAndConditionalRequests(t *testing.T) {
 	h.settle(t)
 	if conditional.Load() == 0 {
 		t.Error("the tail check was not conditional")
+	}
+}
+
+func TestCrawlLogSaysWhy(t *testing.T) {
+	h := newHarness(t, 50)
+	h.hasRead.Store(true)
+	site := sitetest.Serve(t, "comiccontrol")
+	s := h.source(t, site.URL+"/1.html")
+	h.settle(t)
+
+	want := []string{
+		"info looking for up to 10 entries: the furthest read is at 0 and it keeps 50 entries ahead, but has up to -1",
+		"info starting at " + site.URL + "/1.html",
+		"warn next link points to the current page on " + site.URL + "/5.html",
+		"info the next link on " + site.URL + "/5.html points back at it, so this is the live end",
+		"info indexed 5 entries; at the live end, checking again at " + h.clock.Now().Add(6*time.Hour).UTC().Format(time.RFC3339),
+	}
+	if got := h.events(t, s.ID); !slices.Equal(got, want) {
+		t.Errorf("events = %q\nwant %q", got, want)
+	}
+	rows, err := h.store.ListCrawlLog(t.Context(), s.ID, 0, "", 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var kept []int64
+	for _, row := range rows {
+		if row.HasPage {
+			kept = append(kept, row.ID)
+		}
+	}
+	if len(kept) != 1 {
+		t.Fatalf("kept pages = %v, want one", kept)
+	}
+	page, err := h.store.CrawledPage(t.Context(), s.ID, kept[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if *page.Url != site.URL+"/5.html" || !strings.Contains(string(page.Body), "<html") {
+		t.Errorf("kept page = %s: %.80s", *page.Url, page.Body)
+	}
+
+	h.clock.Advance(7 * time.Hour)
+	h.settle(t)
+	events := h.events(t, s.ID)
+	if got := events[len(want):]; len(got) < 2 || got[0] != "info looking for up to 10 entries: checking the live end for new entries" || got[1] != "info "+site.URL+"/5.html has not changed since the last check" ||
+		!strings.HasPrefix(got[2], "info found nothing new; at the live end") {
+		t.Errorf("tail check events = %q", got)
+	}
+}
+
+func TestCrawlLogKeepsThePageWithNoNextLink(t *testing.T) {
+	h := newHarness(t, 50)
+	site := sitetest.Serve(t, "missing-next")
+	s := h.source(t, site.URL+"/1.html")
+	h.settle(t)
+
+	rows, err := h.store.ListCrawlLog(t.Context(), s.ID, 0, "event", 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	i := slices.IndexFunc(rows, func(r db.ListCrawlLogRow) bool { return r.HasPage })
+	if i < 0 {
+		t.Fatalf("no page kept: %q", h.events(t, s.ID))
+	}
+	if got := *rows[i].Level + " " + *rows[i].Message; !strings.HasPrefix(got, "warn no next link on ") {
+		t.Errorf("event = %q", got)
+	}
+	page, err := h.store.CrawledPage(t.Context(), s.ID, rows[i].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(page.Body), "Gap 3") {
+		t.Errorf("kept page = %.200s", page.Body)
 	}
 }
 

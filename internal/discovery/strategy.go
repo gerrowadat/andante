@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 )
 
@@ -66,6 +67,18 @@ type Batch struct {
 	Cursor   Cursor
 	LiveEnd  bool // The strategy reached the end of the serial as it stands.
 	Warnings []string
+	// Notes say what the strategy decided and why, for the crawl log.
+	Notes []Note
+}
+
+// Note is something a strategy decided or ran into. One about a page it gave
+// up on, such as one with no next link, carries the page, so that someone can
+// see what the crawl saw.
+type Note struct {
+	Level   slog.Level
+	Message string
+	URL     string
+	Page    []byte
 }
 
 // PageFetcher is how a strategy requests pages.

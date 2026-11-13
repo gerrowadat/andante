@@ -21,6 +21,7 @@ import (
 
 	specfile "github.com/gerrowadat/andante/api"
 	"github.com/gerrowadat/andante/internal/buildinfo"
+	cstore "github.com/gerrowadat/andante/internal/catalogue/store"
 	catalogue "github.com/gerrowadat/andante/internal/catalogue/store/db"
 	"github.com/gerrowadat/andante/internal/discovery/sitetest"
 	"github.com/gerrowadat/andante/internal/stacktest"
@@ -763,11 +764,37 @@ func TestLogCommands(t *testing.T) {
 		t.Fatalf("sources = %v, %v", sources, err)
 	}
 	failed := "connection refused"
-	if err := stack.Catalogue.RecordFetch(t.Context(), catalogue.InsertCrawlLogParams{SourceID: sources[0], Url: "https://comic.example/1", Error: &failed}); err != nil {
+	if err := stack.Catalogue.RecordFetch(t.Context(), catalogue.InsertCrawlLogParams{SourceID: sources[0], Url: ptr("https://comic.example/1"), Error: &failed}); err != nil {
 		t.Fatal(err)
 	}
 	if got := h.ok(t, "source", "fetches", "comic"); !strings.Contains(got, "https://comic.example/1") || !strings.Contains(got, failed) {
 		t.Errorf("fetches = %s", got)
+	}
+	err = stack.Catalogue.RecordEvent(t.Context(), cstore.CrawlEvent{
+		SourceID: sources[0], Level: "warn", Message: "no next link on https://comic.example/1", URL: "https://comic.example/1",
+		Page: []byte("<p>one\tpage</p>"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := h.ok(t, "source", "crawl-log", "comic")
+	if !strings.Contains(got, "warn*") || !strings.Contains(got, "no next link on https://comic.example/1") || !strings.Contains(got, failed) {
+		t.Errorf("crawl-log = %s", got)
+	}
+	if got := h.ok(t, "source", "crawl-log", "comic", "--kind", "fetch"); strings.Contains(got, "no next link") {
+		t.Errorf("crawl-log --kind fetch = %s", got)
+	}
+	var id string
+	for _, line := range strings.Split(got, "\n") {
+		if strings.Contains(line, "warn*") {
+			id = strings.Fields(line)[0]
+		}
+	}
+	if got := h.ok(t, "source", "crawled-page", "comic", id); got != "<p>one\tpage</p>\n" {
+		t.Errorf("crawled-page = %q", got)
+	}
+	if r := h.run("source", "crawled-page", "comic", "x"); r.err == nil {
+		t.Error("accepted an event ID that is not a number")
 	}
 }
 
@@ -863,3 +890,5 @@ func TestURLWithAPath(t *testing.T) {
 		t.Errorf("asked for %q", got)
 	}
 }
+
+func ptr[T any](v T) *T { return &v }

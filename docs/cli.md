@@ -63,7 +63,9 @@ andante source probe 'https://comic.example/{n}' --strategy numeric --start-id 1
 andante source edit my-comic --selector image="#strip img"    # replaces the selectors
 andante source crawl my-comic                                 # ask for a crawl now
 andante source entries my-comic
-andante source fetches my-comic                               # the crawl log. Admins only
+andante source crawl-log my-comic                             # the crawl log. Admins only
+andante source crawled-page my-comic 812                      # the page event 812 kept
+andante source fetches my-comic                               # just the crawl log's requests
 andante source rm my-comic
 ```
 

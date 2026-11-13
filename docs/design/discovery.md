@@ -199,7 +199,8 @@ tail check can use a 304, because only it already holds the page's content.
 - **Probes can outlive `--write-timeout`,** because they wait out `--crawl-interval`
   between pages. They extend their own deadline, up to `--probe-timeout`.
 - **A probe's entries have an `id` of 0,** because they are not saved.
-- **`crawl_log` has no pruning yet.** It grows by one row per request.
+- **`crawl_log` has no pruning yet.** It grows by one row per request, and a few per pass for
+  events. Only the page bodies are bounded, at one per source.
 
 Read positions reach the loop through `LoopOptions.Furthest`, which reads the demand the server
 reported. See [architecture](architecture.md#demand-flows-up).

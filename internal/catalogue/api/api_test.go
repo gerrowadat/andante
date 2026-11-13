@@ -365,44 +365,76 @@ func TestLogs(t *testing.T) {
 	}
 }
 
-func TestFetches(t *testing.T) {
+func TestCrawlLog(t *testing.T) {
 	f := newFixture(t)
 	s := f.source(t, "a")
 	ctx := t.Context()
 	ok, failed := int32(200), "connection refused"
+	pages := []string{"https://a.example/1", "https://a.example/2", "https://a.example/3"}
 	for _, row := range []db.InsertCrawlLogParams{
-		{SourceID: s.ID, Url: "https://a.example/1", Status: &ok},
-		{SourceID: s.ID, Url: "https://a.example/2", Error: &failed},
-		{SourceID: s.ID, Url: "https://a.example/3", Status: &ok},
+		{SourceID: s.ID, Url: &pages[0], Status: &ok},
+		{SourceID: s.ID, Url: &pages[1], Error: &failed},
 	} {
 		if err := f.store.RecordFetch(ctx, row); err != nil {
 			t.Fatal(err)
 		}
 	}
+	if err := f.store.RecordEvent(ctx, store.CrawlEvent{SourceID: s.ID, Level: "warn", Message: "no next link", URL: pages[1], Page: []byte("old\xffpage")}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.store.RecordFetch(ctx, db.InsertCrawlLogParams{SourceID: s.ID, Url: &pages[2], Status: &ok}); err != nil {
+		t.Fatal(err)
+	}
 
 	limit := int32(2)
-	resp, err := f.client.ListFetchesWithResponse(ctx, s.ID, &client.ListFetchesParams{Limit: &limit})
+	resp, err := f.client.ListCrawlLogWithResponse(ctx, s.ID, &client.ListCrawlLogParams{Limit: &limit})
 	if err != nil || resp.JSON200 == nil {
-		t.Fatalf("list fetches: %v %s", err, resp.Body)
+		t.Fatalf("list crawl log: %v %s", err, resp.Body)
 	}
 	page := resp.JSON200
-	if len(page.Items) != 2 || !page.More || page.Items[0].URL != "https://a.example/3" {
+	if len(page.Items) != 2 || !page.More || page.Items[0].URL.MustGet() != pages[2] || page.Items[0].Kind != client.Fetch {
 		t.Fatalf("page = %+v", page)
 	}
-	if e := page.Items[1]; e.Error.MustGet() != failed || !e.Status.IsNull() {
-		t.Errorf("failed fetch = %+v", e)
+	event := page.Items[1]
+	if event.Kind != client.Event || *event.Level != client.LogLevelWarn || event.Message.MustGet() != "no next link" || !event.HasPage {
+		t.Errorf("event = %+v", event)
 	}
-	before := page.Items[1].ID
-	resp, err = f.client.ListFetchesWithResponse(ctx, s.ID, &client.ListFetchesParams{Before: &before})
+	before := event.ID
+	resp, err = f.client.ListCrawlLogWithResponse(ctx, s.ID, &client.ListCrawlLogParams{Before: &before})
 	if err != nil || resp.JSON200 == nil {
-		t.Fatalf("list fetches: %v %s", err, resp.Body)
+		t.Fatalf("list crawl log: %v %s", err, resp.Body)
 	}
-	if page := resp.JSON200; len(page.Items) != 1 || page.More || page.Items[0].Status.MustGet() != 200 {
+	if page := resp.JSON200; len(page.Items) != 2 || page.More || page.Items[0].Error.MustGet() != failed || !page.Items[0].Status.IsNull() {
 		t.Errorf("older = %+v", page)
 	}
 
-	resp, err = f.client.ListFetchesWithResponse(ctx, s.ID+1000, nil)
-	if err != nil || resp.StatusCode() != http.StatusNotFound {
-		t.Errorf("unknown source: %v %d", err, resp.StatusCode())
+	kind := client.Fetch
+	resp, err = f.client.ListCrawlLogWithResponse(ctx, s.ID, &client.ListCrawlLogParams{Kind: &kind})
+	if err != nil || resp.JSON200 == nil || len(resp.JSON200.Items) != 3 {
+		t.Errorf("only fetches: %v %s", err, resp.Body)
+	}
+
+	got, err := f.client.GetCrawledPageWithResponse(ctx, s.ID, event.ID)
+	if err != nil || got.JSON200 == nil {
+		t.Fatalf("crawled page: %v %s", err, got.Body)
+	}
+	if got.JSON200.URL != pages[1] || got.JSON200.Body != "old\uFFFDpage" {
+		t.Errorf("crawled page = %+v", got.JSON200)
+	}
+
+	// A newer page replaces it.
+	if err := f.store.RecordEvent(ctx, store.CrawlEvent{SourceID: s.ID, Level: "info", Message: "still no next link", URL: pages[2], Page: []byte("new")}); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := f.client.GetCrawledPageWithResponse(ctx, s.ID, event.ID); err != nil || got.StatusCode() != http.StatusNotFound {
+		t.Errorf("the replaced page: %v %d", err, got.StatusCode())
+	}
+	if got, err := f.client.GetCrawledPageWithResponse(ctx, s.ID, page.Items[0].ID); err != nil || got.StatusCode() != http.StatusNotFound {
+		t.Errorf("a fetch's page: %v %d", err, got.StatusCode())
+	}
+
+	missing, err := f.client.ListCrawlLogWithResponse(ctx, s.ID+1000, nil)
+	if err != nil || missing.StatusCode() != http.StatusNotFound {
+		t.Errorf("unknown source: %v %d", err, missing.StatusCode())
 	}
 }

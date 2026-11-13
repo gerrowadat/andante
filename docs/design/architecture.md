@@ -217,12 +217,16 @@ api_tokens (
 crawl_log (                               -- catalogue only
   id            bigint generated always as identity primary key,
   source_id     bigint not null references sources on delete cascade,
-  url           text not null,
+  kind          text not null default 'fetch', -- fetch | event
+  url           text,                     -- not null for a fetch
   status        integer,
   etag          text,
   last_modified text,
   fetched_at    timestamptz not null default now(),
-  error         text
+  error         text,
+  level         text,                     -- an event's: debug | info | warn | error
+  message       text,                     -- an event's
+  body          bytea                     -- the page an event gave up on; one per source
 )
 ```
 
