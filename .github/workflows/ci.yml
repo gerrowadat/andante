@@ -77,6 +77,40 @@ jobs:
       - name: Property tests with a fixed seed
         run: go test -count=1 ./internal/schedule/ -rapid.seed=1
 
+  # The tests again, against the oldest Postgres andante supports
+  # (docs/deploying.md), so a migration or query that needs a newer one fails
+  # here rather than on someone's server.
+  postgres-minimum:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: andante
+          POSTGRES_PASSWORD: andante
+          POSTGRES_DB: andante
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U andante -d andante"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Test
+        env:
+          ANDANTE_TEST_DATABASE_URL: postgres://andante:andante@localhost:55432/andante?sslmode=disable
+          ANDANTE_REQUIRE_DB: "1"
+        run: go test -count=1 ./...
+
   lint:
     runs-on: ubuntu-latest
     steps:

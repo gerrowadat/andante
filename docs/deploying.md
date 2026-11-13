@@ -4,9 +4,11 @@ andante is two services and a Postgres with a database for each. [Installing](in
 running with Docker Compose, Nomad, plain Docker or a binary. This page is the rest of it: what to
 expose, and backups.
 
-Postgres has to exist already, unless you're using the Compose stack, and any recent
-version will do (CI uses 18). Migrations run on start, under a lock, so there's nothing to
-run by hand.
+Postgres has to exist already, unless you're using the Compose stack, and has to be 15 or newer.
+CI runs the tests against 15 and 18. That's the oldest version Postgres itself still supports, and
+the migrations don't need anything newer. Migrations run on start, under a lock, so there's nothing
+to run by hand. If one fails, the service logs Postgres's error and exits, and on a server that's
+too old that error won't mention the version.
 
 ## The Listeners
 
