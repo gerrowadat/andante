@@ -204,6 +204,23 @@ func (q *Queries) GetLiveSession(ctx context.Context, arg GetLiveSessionParams) 
 	return i, err
 }
 
+const getPasswordPolicy = `-- name: GetPasswordPolicy :one
+SELECT coalesce((SELECT password_min_length FROM settings), 15)::integer AS password_min_length,
+       coalesce((SELECT password_classes FROM settings), 0)::integer AS password_classes
+`
+
+type GetPasswordPolicyRow struct {
+	PasswordMinLength int32
+	PasswordClasses   int32
+}
+
+func (q *Queries) GetPasswordPolicy(ctx context.Context) (GetPasswordPolicyRow, error) {
+	row := q.db.QueryRow(ctx, getPasswordPolicy)
+	var i GetPasswordPolicyRow
+	err := row.Scan(&i.PasswordMinLength, &i.PasswordClasses)
+	return i, err
+}
+
 const hasLoggedInFrom = `-- name: HasLoggedInFrom :one
 SELECT EXISTS (
     SELECT 1 FROM sessions WHERE user_id = $1 AND ip = $2 AND created_at > $3
@@ -612,6 +629,24 @@ type SetPasswordParams struct {
 // Copyright (C) 2026 Dave O'Connor
 func (q *Queries) SetPassword(ctx context.Context, arg SetPasswordParams) error {
 	_, err := q.db.Exec(ctx, setPassword, arg.ID, arg.PasswordHash)
+	return err
+}
+
+const setPasswordPolicy = `-- name: SetPasswordPolicy :exec
+INSERT INTO settings (password_min_length, password_classes)
+VALUES (coalesce($1::integer, 15), coalesce($2::integer, 0))
+ON CONFLICT (only_row) DO UPDATE SET
+    password_min_length = coalesce($1::integer, settings.password_min_length),
+    password_classes = coalesce($2::integer, settings.password_classes)
+`
+
+type SetPasswordPolicyParams struct {
+	PasswordMinLength *int32
+	PasswordClasses   *int32
+}
+
+func (q *Queries) SetPasswordPolicy(ctx context.Context, arg SetPasswordPolicyParams) error {
+	_, err := q.db.Exec(ctx, setPasswordPolicy, arg.PasswordMinLength, arg.PasswordClasses)
 	return err
 }
 

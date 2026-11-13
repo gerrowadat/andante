@@ -209,7 +209,8 @@ func (a *app) auditCmd() *cobra.Command {
 
 func (a *app) settingsCmd() *cobra.Command {
 	showSettings := func(w *table, s *client.Settings) {
-		w.printf("Require two-factor:\t%t\nWho can invite:\t%s\nInvite limit:\t%d\n", s.RequireTwoFactor, s.WhoCanInvite, s.InviteLimit)
+		w.printf("Require two-factor:\t%t\nWho can invite:\t%s\nInvite limit:\t%d\nPassword min length:\t%d\nPassword classes:\t%d\n",
+			s.RequireTwoFactor, s.WhoCanInvite, s.InviteLimit, s.PasswordMinLength, s.PasswordClasses)
 	}
 	settings := operation(&cobra.Command{
 		Use:   "settings",
@@ -228,6 +229,8 @@ func (a *app) settingsCmd() *cobra.Command {
 		requireTwoFactor bool
 		whoCanInvite     string
 		inviteLimit      int32
+		minLength        int32
+		classes          int32
 	)
 	set := operation(&cobra.Command{
 		Use:   "set",
@@ -245,6 +248,12 @@ func (a *app) settingsCmd() *cobra.Command {
 			if cmd.Flags().Changed("invite-limit") {
 				patch.InviteLimit = &inviteLimit
 			}
+			if cmd.Flags().Changed("password-min-length") {
+				patch.PasswordMinLength = &minLength
+			}
+			if cmd.Flags().Changed("password-classes") {
+				patch.PasswordClasses = &classes
+			}
 			resp, err := a.client.UpdateSettingsWithApplicationMergePatchPlusJSONBodyWithResponse(cmd.Context(), patch)
 			if err != nil {
 				return err
@@ -255,6 +264,9 @@ func (a *app) settingsCmd() *cobra.Command {
 	set.Flags().BoolVar(&requireTwoFactor, "require-two-factor", false, "make everyone who logs in to the website with a password set up two-factor")
 	set.Flags().StringVar(&whoCanInvite, "who-can-invite", "", "who can invite people: admins or users")
 	set.Flags().Int32Var(&inviteLimit, "invite-limit", 0, "how many unused invite places a user can have out at once")
+	set.Flags().Int32Var(&minLength, "password-min-length", 0, "the fewest characters a new password can have, 8 to 128")
+	set.Flags().Int32Var(&classes, "password-classes", 0,
+		"how many of lower-case letters, capitals, digits and anything else a new password needs, 0 to 4")
 	settings.AddCommand(set)
 	return settings
 }

@@ -468,6 +468,8 @@ paths:
                 require_two_factor: false
                 who_can_invite: admins
                 invite_limit: 5
+                password_min_length: 15
+                password_classes: 0
         default:
           $ref: "#/components/responses/Problem"
     patch:
@@ -479,7 +481,8 @@ paths:
         password has to set up two-factor before they can do anything else there. Logins
         with an OpenID provider are left to the provider, and API tokens aren't affected.
         With who_can_invite set to users, anyone with an account can invite people, up to
-        invite_limit unused places each.
+        invite_limit unused places each. password_min_length and password_classes apply to
+        passwords set from then on, not to ones people already have.
       requestBody:
         required: true
         content:
@@ -499,6 +502,8 @@ paths:
                 require_two_factor: true
                 who_can_invite: admins
                 invite_limit: 5
+                password_min_length: 15
+                password_classes: 0
         default:
           $ref: "#/components/responses/Problem"
   /sources:
@@ -1269,7 +1274,7 @@ components:
           type: boolean
     Settings:
       type: object
-      required: [require_two_factor, who_can_invite, invite_limit]
+      required: [require_two_factor, who_can_invite, invite_limit, password_min_length, password_classes]
       properties:
         require_two_factor:
           type: boolean
@@ -1277,6 +1282,10 @@ components:
           $ref: "#/components/schemas/WhoCanInvite"
         invite_limit:
           $ref: "#/components/schemas/InviteLimit"
+        password_min_length:
+          $ref: "#/components/schemas/PasswordMinLength"
+        password_classes:
+          $ref: "#/components/schemas/PasswordClasses"
     SettingsPatch:
       type: object
       additionalProperties: false
@@ -1287,6 +1296,28 @@ components:
           $ref: "#/components/schemas/WhoCanInvite"
         invite_limit:
           $ref: "#/components/schemas/InviteLimit"
+        password_min_length:
+          $ref: "#/components/schemas/PasswordMinLength"
+        password_classes:
+          $ref: "#/components/schemas/PasswordClasses"
+    PasswordMinLength:
+      type: integer
+      format: int32
+      minimum: 8
+      maximum: 128
+      description: >-
+        The fewest characters a new password can have. It's 15 to start with, which is
+        what NIST SP 800-63B asks of a password that can be the only factor. Eight is
+        enough with two-factor required. Passwords can always have up to 128.
+    PasswordClasses:
+      type: integer
+      format: int32
+      minimum: 0
+      maximum: 4
+      description: >-
+        How many kinds of character a new password needs, out of lower-case letters,
+        capitals, digits and anything else. It's 0 to start with, because NIST SP 800-63B
+        advises against composition rules.
     WhoCanInvite:
       type: string
       enum: [admins, users]

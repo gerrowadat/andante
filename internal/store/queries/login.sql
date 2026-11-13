@@ -104,6 +104,17 @@ ON CONFLICT (only_row) DO UPDATE SET
     who_can_invite = coalesce(sqlc.narg(who_can_invite)::text, settings.who_can_invite),
     invite_limit = coalesce(sqlc.narg(invite_limit)::integer, settings.invite_limit);
 
+-- name: GetPasswordPolicy :one
+SELECT coalesce((SELECT password_min_length FROM settings), 15)::integer AS password_min_length,
+       coalesce((SELECT password_classes FROM settings), 0)::integer AS password_classes;
+
+-- name: SetPasswordPolicy :exec
+INSERT INTO settings (password_min_length, password_classes)
+VALUES (coalesce(sqlc.narg(password_min_length)::integer, 15), coalesce(sqlc.narg(password_classes)::integer, 0))
+ON CONFLICT (only_row) DO UPDATE SET
+    password_min_length = coalesce(sqlc.narg(password_min_length)::integer, settings.password_min_length),
+    password_classes = coalesce(sqlc.narg(password_classes)::integer, settings.password_classes);
+
 -- name: InsertAudit :exec
 INSERT INTO audit_log (at, who, action, target, ip) VALUES ($1, $2, $3, $4, $5);
 

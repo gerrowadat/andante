@@ -23,11 +23,32 @@ sessions and clears the password.
 
 Argon2id, 64 MiB and 3 passes, in the PHC string format, so that the cost can go up later without
 breaking old hashes. A hash costs 64 MiB, so only two run at once, and a login waits up to 10 seconds for
-a turn and then gets a 503. Passwords are 12 to 128 characters with no composition rules. They're
-normalised to NFC, so that the same password typed on a different keyboard still matches.
+a turn and then gets a 503. Passwords are normalised to NFC, so that the same password typed on a
+different keyboard still matches.
 
-The common-password list is small and hand-written, because only passwords of 12 characters or more
-matter here. It could do with a bigger one.
+What a new password has to be is two settings, `password_min_length` and `password_classes`, in the
+`settings` row with the others, so an admin changes them on the Users page or with `PATCH
+/settings`. They're in the database and not flags because they're something an admin decides, not
+something the server needs to start.
+
+The minimum length is 15 to start with, from NIST SP 800-63B revision 4: 15 for a password that can
+be the only factor, 8 when it's only ever part of two-factor. It was 12 before these were settings,
+and went up to match. It can be set from 8, NIST's floor, to 128. The most is fixed at 128, because
+that's well past NIST's 64 and it's there to stop someone handing the hasher a megabyte, so it isn't
+something to tune.
+
+`password_classes` is how many of lower-case letters, capitals, digits and anything else a password
+needs, 0 to 4. It's 0 to start with, because NIST says not to have composition rules and OWASP agrees:
+people meet them with `Password1!`. It's there for sites that have a policy to follow. A letter with
+no case, as in Chinese or Arabic, counts as anything else, and capitals in Greek or Cyrillic count as
+capitals.
+
+A rule only applies when a password is set. Checking existing ones would mean knowing them, so
+someone who has to meet a new rule needs a new password link.
+
+The common-password list is small and hand-written. It has passwords from 8 characters, so that it
+still means something with the minimum turned down, but it could do with a bigger one. The
+person's name and one repeated character are refused whatever the settings say.
 
 ## Failing the Same Way
 

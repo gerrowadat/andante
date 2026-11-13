@@ -34,4 +34,12 @@
   <button>Save</button>
 </form>
 <p class="muted">What a user invites is always a user. A place is one use left on one of their links, so a link for three people takes three. Admins have no limit. Make links on the <a href="{{root}}/invites">invites page</a>, and find whose invites let who in with the invited by column.</p>
+<h2>Passwords</h2>
+<form method="post" action="{{root}}/users/password-policy">
+  <input type="hidden" name="csrf" value="{{$.CSRF}}">
+  <label class="choice">Fewest characters <input type="number" name="min_length" value="{{.Policy.MinLength}}" min="{{.Shortest}}" max="{{.Most}}"></label>
+  <label class="choice">Kinds of character <input type="number" name="classes" value="{{.Policy.Classes}}" min="0" max="{{.Kinds}}"></label>
+  <button>Save</button>
+</form>
+<p class="muted">The kinds are lower-case letters, capitals, digits and anything else. This applies to passwords set from now on, not to ones people already have. NIST's advice is 15 characters and no rules about kinds; with two-factor required, 8 characters is enough. Passwords on a common list, ones with the person's name in and ones of one repeated character are always refused.</p>
 {{end}}{{end}}

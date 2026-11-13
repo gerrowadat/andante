@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gerrowadat/andante/internal/api/gen"
+	"github.com/gerrowadat/andante/internal/password"
 	"github.com/gerrowadat/andante/internal/store"
 	"github.com/gerrowadat/andante/internal/store/db"
 	"github.com/gerrowadat/andante/pkg/client"
@@ -104,8 +105,13 @@ func (h *handler) settings(ctx context.Context) (client.Settings, error) {
 	if err != nil {
 		return client.Settings{}, err
 	}
+	policy, err := h.store.GetPasswordPolicy(ctx)
+	if err != nil {
+		return client.Settings{}, err
+	}
 	return client.Settings{
 		RequireTwoFactor: on, WhoCanInvite: client.WhoCanInvite(invites.Who), InviteLimit: invites.Limit,
+		PasswordMinLength: int32(policy.MinLength), PasswordClasses: int32(policy.Classes), //nolint:gosec // Validated.
 	}, nil
 }
 
@@ -148,6 +154,21 @@ func (h *handler) UpdateSettings(ctx context.Context, r gen.UpdateSettingsReques
 		}
 		if l := r.Body.InviteLimit; l != nil {
 			h.audit(ctx, "settings.changed", fmt.Sprintf("invite-limit.%d", *l))
+		}
+	}
+	if length, classes := r.Body.PasswordMinLength, r.Body.PasswordClasses; length != nil || classes != nil {
+		err := h.store.SetPasswordPolicy(ctx, length, classes)
+		if errors.Is(err, password.ErrBadPolicy) {
+			return nil, invalidRequest(err.Error())
+		}
+		if err != nil {
+			return nil, err
+		}
+		if length != nil {
+			h.audit(ctx, "settings.changed", fmt.Sprintf("password-min-length.%d", *length))
+		}
+		if classes != nil {
+			h.audit(ctx, "settings.changed", fmt.Sprintf("password-classes.%d", *classes))
 		}
 	}
 	body, err := h.settings(ctx)

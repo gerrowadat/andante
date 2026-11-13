@@ -18,6 +18,7 @@ import (
 	specfile "github.com/gerrowadat/andante/api"
 	"github.com/gerrowadat/andante/internal/api"
 	"github.com/gerrowadat/andante/internal/discovery/sitetest"
+	"github.com/gerrowadat/andante/internal/password"
 	"github.com/gerrowadat/andante/internal/stacktest"
 	"github.com/gerrowadat/andante/internal/store"
 	"github.com/gerrowadat/andante/internal/store/storetest"
@@ -2136,5 +2137,22 @@ func TestSettings(t *testing.T) {
 	limit := int32(-1)
 	if bad, err := f.client.UpdateSettingsWithApplicationMergePatchPlusJSONBodyWithResponse(ctx, client.SettingsPatch{InviteLimit: &limit}); err != nil || bad.StatusCode() != http.StatusBadRequest {
 		t.Errorf("a negative limit: %v %d", err, bad.StatusCode())
+	}
+
+	if got.JSON200.PasswordMinLength != 15 || got.JSON200.PasswordClasses != 0 {
+		t.Errorf("passwords by default: %+v", got.JSON200)
+	}
+	length, classes := int32(20), int32(3)
+	policy, err := f.client.UpdateSettingsWithApplicationMergePatchPlusJSONBodyWithResponse(ctx, client.SettingsPatch{PasswordMinLength: &length, PasswordClasses: &classes})
+	if err != nil || policy.JSON200 == nil || policy.JSON200.PasswordMinLength != 20 || policy.JSON200.PasswordClasses != 3 {
+		t.Fatalf("password policy: %v %d", err, policy.StatusCode())
+	}
+	if stored, err := f.store.GetPasswordPolicy(ctx); err != nil || stored != (password.Policy{MinLength: 20, Classes: 3}) {
+		t.Errorf("stored policy = %+v, %v", stored, err)
+	}
+	for _, patch := range []client.SettingsPatch{{PasswordMinLength: ptr(int32(7))}, {PasswordMinLength: ptr(int32(129))}, {PasswordClasses: ptr(int32(5))}} {
+		if bad, err := f.client.UpdateSettingsWithApplicationMergePatchPlusJSONBodyWithResponse(ctx, patch); err != nil || bad.StatusCode() != http.StatusBadRequest {
+			t.Errorf("%+v: %v %d", patch, err, bad.StatusCode())
+		}
 	}
 }

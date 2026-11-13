@@ -428,7 +428,12 @@ func (s *site) showInvite(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	s.render(w, http.StatusOK, invitePage, s.inviteData(raw, invite.Name))
+	data, err := s.inviteData(r.Context(), raw, invite.Name)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	s.render(w, http.StatusOK, invitePage, data)
 }
 
 // pickName checks a name someone picked for themselves on an invite page. It's a
@@ -463,7 +468,11 @@ func (s *site) useInvite(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	data := s.inviteData(raw, invite.Name)
+	data, err := s.inviteData(ctx, raw, invite.Name)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
 	if invite.Name == "" {
 		// An invite without a name asks for one first, and carries it along after.
 		name := strings.ToLower(strings.TrimSpace(r.PostForm.Get("name")))
@@ -488,7 +497,7 @@ func (s *site) useInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	chosen := r.PostForm.Get("password")
-	if err := password.Check(chosen, data.Name); err != nil {
+	if err := data.Policy.Check(chosen, data.Name); err != nil {
 		data.Error = err.Error()
 		s.render(w, http.StatusUnprocessableEntity, invitePage, data)
 		return
@@ -508,9 +517,7 @@ func (s *site) useInvite(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	case errors.Is(err, store.ErrConflict):
-		picked := data.Name
-		data = s.inviteData(raw, invite.Name)
-		data.Chosen, data.Error = picked, "That name has been taken."
+		data.Name, data.Picked, data.Chosen, data.Error = invite.Name, false, data.Name, "That name has been taken."
 		s.render(w, http.StatusConflict, invitePage, data)
 		return
 	case err != nil:
@@ -531,8 +538,14 @@ type inviteData struct {
 	// Picked means they picked Name themselves, so the form carries it along.
 	Picked         bool
 	Password, OIDC bool
+	// Policy is what the password has to be.
+	Policy password.Policy
 }
 
-func (s *site) inviteData(token, name string) inviteData {
-	return inviteData{Name: name, Token: token, Password: s.opts.PasswordLogin, OIDC: s.oidc != nil}
+func (s *site) inviteData(ctx context.Context, token, name string) (inviteData, error) {
+	policy, err := s.opts.Store.GetPasswordPolicy(ctx)
+	if err != nil {
+		return inviteData{}, err
+	}
+	return inviteData{Name: name, Token: token, Password: s.opts.PasswordLogin, OIDC: s.oidc != nil, Policy: policy}, nil
 }
