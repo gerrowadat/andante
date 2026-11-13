@@ -22,6 +22,7 @@ type Catalogue struct {
 	UserAgent   string `name:"user-agent" env:"ANDANTE_USER_AGENT" help:"Crawler identity. Default: andante/<version> (+<base-url>)."`
 	LogFormat   string `name:"log-format" env:"ANDANTE_LOG_FORMAT" default:"json" enum:"json,text" help:"Log format: json or text."`
 	LogLevel    string `name:"log-level" env:"ANDANTE_LOG_LEVEL" default:"info" enum:"debug,info,warn,error" help:"Log level."`
+	LogHistory  int    `name:"log-history" env:"ANDANTE_LOG_HISTORY" default:"1000" help:"How many log records to keep in memory for admins to read. 0 keeps none."`
 
 	ReadHeaderTimeout time.Duration `name:"read-header-timeout" env:"ANDANTE_READ_HEADER_TIMEOUT" default:"5s" help:"Time allowed to read request headers."`
 	ReadTimeout       time.Duration `name:"read-timeout" env:"ANDANTE_READ_TIMEOUT" default:"30s" help:"Time allowed to read a whole request."`
@@ -48,6 +49,9 @@ const longestChangeWait = 30 * time.Second
 // Validate checks what the flags' types cannot. kong calls it after parsing.
 func (c *Catalogue) Validate() error {
 	var errs []error
+	if c.LogHistory < 0 {
+		errs = append(errs, errors.New("--log-history must not be negative"))
+	}
 	if c.DatabaseURL == "" {
 		errs = append(errs, errors.New("--database-url is required"))
 	} else if _, err := pgxpool.ParseConfig(c.DatabaseURL); err != nil {

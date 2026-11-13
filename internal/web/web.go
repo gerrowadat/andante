@@ -61,7 +61,7 @@ const (
 // someone else's.
 var Paths = []string{
 	"/{$}", "/login", "/login/", "/logout", "/invite/{token}", "/invite/{token}/oidc", "/static/", "/sources", "/sources/", "/reads/", "/tokens/",
-	"/add", "/add/", "/users", "/users/", "/invites", "/invites/", "/account", "/account/", "/setup",
+	"/add", "/add/", "/users", "/users/", "/invites", "/invites/", "/account", "/account/", "/setup", "/logs",
 }
 
 // Hasher hashes and checks passwords.

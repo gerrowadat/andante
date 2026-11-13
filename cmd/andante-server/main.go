@@ -22,6 +22,7 @@ import (
 	"github.com/gerrowadat/andante/internal/buildinfo"
 	"github.com/gerrowadat/andante/internal/clientip"
 	"github.com/gerrowadat/andante/internal/config"
+	"github.com/gerrowadat/andante/internal/logring"
 	"github.com/gerrowadat/andante/internal/password"
 	"github.com/gerrowadat/andante/internal/reads"
 	"github.com/gerrowadat/andante/internal/replica"
@@ -221,10 +222,15 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	now := func() time.Time { return time.Now().Add(cfg.TestClockOffset) }
 
 	reg := prometheus.NewRegistry()
+	// Bootstrap logs its token, which has no business in a log that admins read in a
+	// browser, so it writes only to the output.
+	plain := logger
+	logs := logring.New(cfg.LogHistory, reg)
+	logger = slog.New(logs.Handler(logger.Handler()))
 	guesses := throttle.New()
 	setup := bootstrap.New(bootstrap.Options{
 		Store: st, Token: cfg.BootstrapToken, Throttle: guesses, BaseURL: cfg.BaseURL,
-		Registry: reg, Logger: logger, Now: now,
+		Registry: reg, Logger: plain, Now: now,
 	})
 	if err := setup.Announce(ctx); err != nil {
 		return err
@@ -258,6 +264,7 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		Logger:       logger,
 		ProbeTimeout: cfg.ProbeTimeout,
 		Bootstrap:    setup,
+		Logs:         logs,
 	})
 	if err != nil {
 		return err
@@ -270,7 +277,7 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	site := web.New(web.Options{
 		Store: st, Hasher: hasher, Clients: clients, BaseURL: cfg.BaseURL, PasswordLogin: cfg.PasswordLogin,
 		Registry: reg, Logger: logger, Now: now,
-		App:             &app.App{Store: st, Reads: readService, Catalogue: catalogue, Sync: syncer, Logger: logger},
+		App:             &app.App{Store: st, Reads: readService, Catalogue: catalogue, Sync: syncer, Logger: logger, LogRing: logs},
 		DefaultTimezone: cfg.DefaultTimezone,
 		Box:             box,
 		OIDC:            oidcOptions(cfg),

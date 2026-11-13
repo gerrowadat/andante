@@ -112,6 +112,13 @@ whose invite made them. `GET /sessions` lists your logged-in browsers, and
 `DELETE /sessions/{id}` ends one. Someone else's session is a 404, even for an admin. `GET /audit` is
 for admins.
 
+## Logs
+
+`GET /logs` returns what a service logged lately, newest first: the server's, or with
+`service=catalogue` the catalogue's. `level`, `source` (a slug) and `read` (the server's log only)
+filter it. `GET /sources/{id}/fetches` is the catalogue's crawl log for a source. Both are for
+admins. See [monitoring](monitoring.md#logs).
+
 ## Users
 
 `GET /users`, `PATCH /users/{id}` and `DELETE /users/{id}` are for admins. A patch is a JSON merge

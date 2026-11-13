@@ -16,6 +16,7 @@ import (
 	"github.com/gerrowadat/andante/internal/catalogue/store"
 	"github.com/gerrowadat/andante/internal/catalogue/store/db"
 	"github.com/gerrowadat/andante/internal/discovery/sitetest"
+	"github.com/gerrowadat/andante/internal/logring"
 	"github.com/gerrowadat/andante/internal/stacktest"
 	"github.com/gerrowadat/andante/internal/store/storetest"
 	"github.com/prometheus/client_golang/prometheus"
@@ -25,13 +26,15 @@ type fixture struct {
 	store  *store.Store
 	client *client.ClientWithResponses
 	url    string
+	logs   *logring.Ring
 }
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	st := storetest.Catalogue(t)
+	logs := logring.New(10, prometheus.NewRegistry())
 	mux := http.NewServeMux()
-	mux.Handle(catalogueapi.BasePath+"/", stacktest.CatalogueHandler(t, st, prometheus.NewRegistry()))
+	mux.Handle(catalogueapi.BasePath+"/", stacktest.CatalogueHandler(t, st, prometheus.NewRegistry(), logs))
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	c, err := client.NewClientWithResponses(srv.URL+catalogueapi.BasePath, client.WithRequestEditorFn(
@@ -42,7 +45,7 @@ func newFixture(t *testing.T) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &fixture{store: st, client: c, url: srv.URL + catalogueapi.BasePath}
+	return &fixture{store: st, client: c, url: srv.URL + catalogueapi.BasePath, logs: logs}
 }
 
 func feedConfig(t *testing.T, url string) client.SourceConfig {
@@ -323,5 +326,83 @@ func TestStoppingLetsGoOfHeldRequests(t *testing.T) {
 	case <-answered:
 	case <-time.After(5 * time.Second):
 		t.Fatal("still held after stopping")
+	}
+}
+
+func TestLogs(t *testing.T) {
+	f := newFixture(t)
+	log := stacktest.Logger(f.logs)
+	log.Debug("looking", "source", "a")
+	log.Info("indexed", "source", "a", "entries", 3)
+	log.Warn("backing off", "source", "b")
+	log.Error("stopped", "source", "a")
+	ctx := t.Context()
+
+	resp, err := f.client.ListLogsWithResponse(ctx, nil)
+	if err != nil || resp.JSON200 == nil {
+		t.Fatalf("list logs: %v %s", err, resp.Body)
+	}
+	// The API's own requests log nothing here, so the four are all there is.
+	if got := resp.JSON200.Items; len(got) != 4 || got[0].Message != "stopped" || got[0].Level != client.LogLevelError || got[3].Level != client.LogLevelDebug {
+		t.Errorf("items = %+v", got)
+	}
+
+	source, level, limit := "a", client.LogLevelInfo, int32(1)
+	resp, err = f.client.ListLogsWithResponse(ctx, &client.ListLogsParams{Source: &source, Level: &level, Limit: &limit})
+	if err != nil || resp.JSON200 == nil {
+		t.Fatalf("list logs: %v %s", err, resp.Body)
+	}
+	if got := resp.JSON200; len(got.Items) != 1 || got.Items[0].Message != "stopped" || !got.More {
+		t.Errorf("filtered = %+v", got)
+	}
+	before := resp.JSON200.Items[0].ID
+	resp, err = f.client.ListLogsWithResponse(ctx, &client.ListLogsParams{Source: &source, Level: &level, Before: &before})
+	if err != nil || resp.JSON200 == nil {
+		t.Fatalf("list logs: %v %s", err, resp.Body)
+	}
+	if items := resp.JSON200.Items; len(items) != 1 || items[0].Message != "indexed" || items[0].Attrs["entries"] != "3" || resp.JSON200.More {
+		t.Errorf("older = %+v", resp.JSON200)
+	}
+}
+
+func TestFetches(t *testing.T) {
+	f := newFixture(t)
+	s := f.source(t, "a")
+	ctx := t.Context()
+	ok, failed := int32(200), "connection refused"
+	for _, row := range []db.InsertCrawlLogParams{
+		{SourceID: s.ID, Url: "https://a.example/1", Status: &ok},
+		{SourceID: s.ID, Url: "https://a.example/2", Error: &failed},
+		{SourceID: s.ID, Url: "https://a.example/3", Status: &ok},
+	} {
+		if err := f.store.RecordFetch(ctx, row); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	limit := int32(2)
+	resp, err := f.client.ListFetchesWithResponse(ctx, s.ID, &client.ListFetchesParams{Limit: &limit})
+	if err != nil || resp.JSON200 == nil {
+		t.Fatalf("list fetches: %v %s", err, resp.Body)
+	}
+	page := resp.JSON200
+	if len(page.Items) != 2 || !page.More || page.Items[0].URL != "https://a.example/3" {
+		t.Fatalf("page = %+v", page)
+	}
+	if e := page.Items[1]; e.Error.MustGet() != failed || !e.Status.IsNull() {
+		t.Errorf("failed fetch = %+v", e)
+	}
+	before := page.Items[1].ID
+	resp, err = f.client.ListFetchesWithResponse(ctx, s.ID, &client.ListFetchesParams{Before: &before})
+	if err != nil || resp.JSON200 == nil {
+		t.Fatalf("list fetches: %v %s", err, resp.Body)
+	}
+	if page := resp.JSON200; len(page.Items) != 1 || page.More || page.Items[0].Status.MustGet() != 200 {
+		t.Errorf("older = %+v", page)
+	}
+
+	resp, err = f.client.ListFetchesWithResponse(ctx, s.ID+1000, nil)
+	if err != nil || resp.StatusCode() != http.StatusNotFound {
+		t.Errorf("unknown source: %v %d", err, resp.StatusCode())
 	}
 }

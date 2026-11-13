@@ -21,6 +21,7 @@ import (
 
 	specfile "github.com/gerrowadat/andante/api"
 	"github.com/gerrowadat/andante/internal/buildinfo"
+	catalogue "github.com/gerrowadat/andante/internal/catalogue/store/db"
 	"github.com/gerrowadat/andante/internal/discovery/sitetest"
 	"github.com/gerrowadat/andante/internal/stacktest"
 	"github.com/gerrowadat/andante/internal/store"
@@ -739,6 +740,34 @@ func TestLoginCommands(t *testing.T) {
 	}
 	if got := h.ok(t, "audit"); !strings.Contains(got, "invite.created") || !strings.Contains(got, "session.revoked") {
 		t.Errorf("audit = %s", got)
+	}
+}
+
+func TestLogCommands(t *testing.T) {
+	stack := stacktest.New(t)
+	_, token := storetest.User(t, stack.Store, "admin", true)
+	h := &harness{url: stack.URL, token: token, store: stack.Store}
+	stacktest.Logger(stack.Logs).Info("feed request", "read", 3, "status", 200)
+	stacktest.Logger(stack.CatalogueLogs).Warn("backing off", "source", "comic")
+
+	if got := h.ok(t, "logs", "--read", "3"); !strings.Contains(got, "feed request") || !strings.Contains(got, "read=3 status=200") {
+		t.Errorf("logs = %s", got)
+	}
+	if got := h.ok(t, "logs", "--catalogue", "--level", "warn", "--source", "comic"); !strings.Contains(got, "backing off") {
+		t.Errorf("catalogue logs = %s", got)
+	}
+
+	h.ok(t, "source", "add", "https://comic.example/1", "--slug", "comic", "--title", "A Comic")
+	sources, err := stack.Store.ListSourceIDs(t.Context())
+	if err != nil || len(sources) != 1 {
+		t.Fatalf("sources = %v, %v", sources, err)
+	}
+	failed := "connection refused"
+	if err := stack.Catalogue.RecordFetch(t.Context(), catalogue.InsertCrawlLogParams{SourceID: sources[0], Url: "https://comic.example/1", Error: &failed}); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.ok(t, "source", "fetches", "comic"); !strings.Contains(got, "https://comic.example/1") || !strings.Contains(got, failed) {
+		t.Errorf("fetches = %s", got)
 	}
 }
 

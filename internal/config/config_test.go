@@ -45,6 +45,9 @@ func TestDefaults(t *testing.T) {
 	if c.DemandInterval != 30*time.Second {
 		t.Errorf("demand interval = %s", c.DemandInterval)
 	}
+	if c.LogHistory != 1000 {
+		t.Errorf("log history = %d", c.LogHistory)
+	}
 }
 
 func TestEnvVars(t *testing.T) {
@@ -57,6 +60,7 @@ func TestEnvVars(t *testing.T) {
 		"ANDANTE_SECRET":                 secret,
 		"ANDANTE_LOG_FORMAT":             "text",
 		"ANDANTE_LOG_LEVEL":              "debug",
+		"ANDANTE_LOG_HISTORY":            "5",
 		"ANDANTE_READ_HEADER_TIMEOUT":    "2s",
 		"ANDANTE_READ_TIMEOUT":           "3s",
 		"ANDANTE_WRITE_TIMEOUT":          "4s",
@@ -86,7 +90,7 @@ func TestEnvVars(t *testing.T) {
 	want := Config{
 		DatabaseURL: "postgres://db/andante", Listen: ":1", OpsListen: ":2",
 		BaseURL: "https://env.example", DefaultTimezone: "Europe/Dublin",
-		Secret: secret, PasswordLogin: true, LogFormat: "text", LogLevel: "debug",
+		Secret: secret, PasswordLogin: true, LogFormat: "text", LogLevel: "debug", LogHistory: 5,
 		ReadHeaderTimeout: 2 * time.Second, ReadTimeout: 3 * time.Second,
 		WriteTimeout: 4 * time.Second, IdleTimeout: 5 * time.Second, ShutdownTimeout: 6 * time.Second,
 		ReadinessTimeout: 7 * time.Second, ProbeTimeout: 15 * time.Second,
@@ -141,6 +145,7 @@ func TestRejected(t *testing.T) {
 		{"unknown log format", []string{db, base, cat, tok, key, "--log-format=xml"}, "log-format"},
 		{"unknown log level", []string{db, base, cat, tok, key, "--log-level=loud"}, "log-level"},
 		{"negative shutdown timeout", []string{db, base, cat, tok, key, "--shutdown-timeout=-1s"}, "shutdown-timeout"},
+		{"negative log history", []string{db, base, cat, tok, key, "--log-history=-1"}, "log-history"},
 		{"zero readiness timeout", []string{db, base, cat, tok, key, "--readiness-timeout=0s"}, "readiness-timeout"},
 		{"share above one", []string{db, base, cat, tok, key, "--replay-min-dated-share=1.5"}, "replay-min-dated-share"},
 		{"zero rate limit", []string{db, base, cat, tok, key, "--feed-rate-limit=0"}, "feed-rate-limit"},
@@ -185,6 +190,7 @@ func TestCatalogueRejected(t *testing.T) {
 		{"non-positive lookahead", []string{db, base, svc, "--crawl-lookahead=0"}, "crawl-lookahead"},
 		{"non-positive body limit", []string{db, base, svc, "--crawl-max-body=0"}, "crawl-max-body"},
 		{"non-positive interval", []string{db, base, svc, "--crawl-interval=0s"}, "crawl-interval"},
+		{"negative log history", []string{db, base, svc, "--log-history=-1"}, "log-history"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

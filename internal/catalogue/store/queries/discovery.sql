@@ -57,3 +57,8 @@ VALUES ($1, $2, $3, $4, $5, $6);
 SELECT etag, last_modified FROM crawl_log
 WHERE source_id = $1 AND url = $2 AND status = 200
 ORDER BY id DESC LIMIT 1;
+
+-- name: ListFetches :many
+SELECT * FROM crawl_log
+WHERE source_id = sqlc.arg(source_id) AND id < sqlc.arg(before)
+ORDER BY id DESC LIMIT sqlc.arg(row_limit);

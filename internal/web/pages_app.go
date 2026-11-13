@@ -44,6 +44,7 @@ var (
 	twoFactorView = view("two_factor")
 	recoveryView  = view("recovery")
 	invitesView   = view("invites")
+	logsView      = view("logs")
 )
 
 // owns says what a route's ID belongs to, so that a test can try every route with
@@ -120,6 +121,7 @@ var routes = []route{
 	{pattern: "GET /add/{job}", handle: (*site).found},
 	{pattern: "POST /add/{job}/{n}", handle: (*site).addCandidate},
 	{pattern: "GET /users", admin: true, handle: (*site).users},
+	{pattern: "GET /logs", admin: true, handle: (*site).logs},
 	{pattern: "POST /users/invite", admin: true, handle: (*site).resetLink},
 	{pattern: "POST /users/invite-settings", admin: true, handle: (*site).inviteSettings},
 	{pattern: "POST /users/password-policy", admin: true, handle: (*site).passwordPolicy},

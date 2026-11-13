@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gerrowadat/andante/pkg/client"
 	"github.com/oapi-codegen/nullable"
@@ -195,7 +196,7 @@ func kindOf(raw string) (client.Kind, error) {
 func (a *app) sourceCmd() *cobra.Command {
 	source := &cobra.Command{Use: "source", Short: "Manage sources."}
 	source.AddCommand(a.sourceDiscover(), a.sourceProbe(), a.sourceAdd(), a.sourceList(), a.sourceGet(), a.sourceEdit(),
-		a.sourceRemove(), a.sourceCrawl(), a.sourceEntries())
+		a.sourceRemove(), a.sourceCrawl(), a.sourceEntries(), a.sourceFetches())
 	return source
 }
 
@@ -586,6 +587,38 @@ func (a *app) sourceEntries() *cobra.Command {
 			})
 		},
 	}, "listEntries")
+	p.add(cmd)
+	return cmd
+}
+
+func (a *app) sourceFetches() *cobra.Command {
+	var p page
+	cmd := operation(&cobra.Command{
+		Use:   "fetches <id|slug>",
+		Short: "List the crawl's requests for a source, newest first. Admins only.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := a.resolveSource(cmd.Context(), args[0])
+			if err != nil {
+				return err
+			}
+			resp, err := a.client.ListFetchesWithResponse(cmd.Context(), id, &client.ListFetchesParams{Cursor: p.cursorParam(), Limit: p.limitParam()})
+			if err != nil {
+				return err
+			}
+			return a.show(resp.StatusCode(), resp.Body, func(w *table) {
+				w.println("AT\tSTATUS\tURL\tERROR")
+				for _, f := range resp.JSON200.Items {
+					status := "-"
+					if s, err := f.Status.Get(); err == nil {
+						status = strconv.Itoa(int(s))
+					}
+					w.printf("%s\t%s\t%s\t%s\n", f.FetchedAt.Format(time.RFC3339), status, f.URL, text(f.Error))
+				}
+				a.more(resp.JSON200.Next)
+			})
+		},
+	}, "listFetches")
 	p.add(cmd)
 	return cmd
 }

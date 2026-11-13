@@ -63,6 +63,7 @@ andante source probe 'https://comic.example/{n}' --strategy numeric --start-id 1
 andante source edit my-comic --selector image="#strip img"    # replaces the selectors
 andante source crawl my-comic                                 # ask for a crawl now
 andante source entries my-comic
+andante source fetches my-comic                               # the crawl log. Admins only
 andante source rm my-comic
 ```
 
@@ -153,6 +154,9 @@ andante invite rm 3                      # withdraw it
 andante session list
 andante session rm 4                     # log that browser out
 andante audit                            # admins only
+andante logs --level warn                # what the server logged lately. Admins only
+andante logs --read 3                    # requests for read 3's feed
+andante logs --catalogue --source my-comic
 andante settings                         # admins only
 andante settings set --require-two-factor
 andante settings set --who-can-invite users --invite-limit 5

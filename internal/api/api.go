@@ -17,6 +17,7 @@ import (
 	"github.com/gerrowadat/andante/internal/buildinfo"
 	"github.com/gerrowadat/andante/internal/clientip"
 	"github.com/gerrowadat/andante/internal/httpapi"
+	"github.com/gerrowadat/andante/internal/logring"
 	"github.com/gerrowadat/andante/internal/reads"
 	"github.com/gerrowadat/andante/internal/replica"
 	"github.com/gerrowadat/andante/internal/store"
@@ -51,6 +52,8 @@ type Options struct {
 	ProbeTimeout time.Duration
 	// Bootstrap makes the first admin. Nil makes POST /bootstrap a 404.
 	Bootstrap *bootstrap.Service
+	// Logs is what GET /logs reads of the server's own log. Nil keeps nothing.
+	Logs *logring.Ring
 }
 
 type handler struct {
@@ -88,7 +91,7 @@ func New(opts Options) (http.Handler, error) {
 	}
 
 	h := &handler{
-		app:   &app.App{Store: opts.Store, Reads: opts.Reads, Catalogue: opts.Catalogue, Sync: opts.Sync, Logger: opts.Logger},
+		app:   &app.App{Store: opts.Store, Reads: opts.Reads, Catalogue: opts.Catalogue, Sync: opts.Sync, Logger: opts.Logger, LogRing: opts.Logs},
 		store: opts.Store, catalogue: opts.Catalogue, sync: opts.Sync, reads: opts.Reads, clients: opts.Clients, baseURL: opts.BaseURL, logger: opts.Logger,
 		specJSON: specJSON, bootstrap: opts.Bootstrap,
 	}

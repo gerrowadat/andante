@@ -194,6 +194,30 @@ func (e Kind) Valid() bool {
 	}
 }
 
+// Defines values for LogLevel.
+const (
+	LogLevelDebug LogLevel = "debug"
+	LogLevelError LogLevel = "error"
+	LogLevelInfo  LogLevel = "info"
+	LogLevelWarn  LogLevel = "warn"
+)
+
+// Valid indicates whether the value is a known member of the LogLevel enum.
+func (e LogLevel) Valid() bool {
+	switch e {
+	case LogLevelDebug:
+		return true
+	case LogLevelError:
+		return true
+	case LogLevelInfo:
+		return true
+	case LogLevelWarn:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for NumericConfigFormat.
 const (
 	NumericConfigFormatHTML NumericConfigFormat = "html"
@@ -518,6 +542,24 @@ func (e WhoCanInvite) Valid() bool {
 	}
 }
 
+// Defines values for ListLogsParamsService.
+const (
+	Catalogue ListLogsParamsService = "catalogue"
+	Server    ListLogsParamsService = "server"
+)
+
+// Valid indicates whether the value is a known member of the ListLogsParamsService enum.
+func (e ListLogsParamsService) Valid() bool {
+	switch e {
+	case Catalogue:
+		return true
+	case Server:
+		return true
+	default:
+		return false
+	}
+}
+
 // APIToken defines model for APIToken.
 type APIToken struct {
 	CreatedAt  time.Time                    `json:"created_at"`
@@ -736,6 +778,25 @@ type FeedURLs struct {
 	Rss  string `json:"rss"`
 }
 
+// Fetch defines model for Fetch.
+type Fetch struct {
+	Error     nullable.Nullable[string] `json:"error,omitempty"`
+	FetchedAt time.Time                 `json:"fetched_at"`
+	ID        int64                     `json:"id"`
+
+	// Status The HTTP status. A 304 is recorded as 200. Null when there was no response.
+	Status nullable.Nullable[int32] `json:"status,omitempty"`
+	URL    string                   `json:"url"`
+}
+
+// FetchList defines model for FetchList.
+type FetchList struct {
+	Items []Fetch `json:"items"`
+
+	// Next The next page, or null on the last one.
+	Next nullable.Nullable[NextLink] `json:"next"`
+}
+
 // FieldError defines model for FieldError.
 type FieldError struct {
 	Detail string `json:"detail"`
@@ -864,6 +925,29 @@ type JumpAdjustmentType string
 
 // Kind defines model for Kind.
 type Kind string
+
+// LogLevel defines model for LogLevel.
+type LogLevel string
+
+// LogList defines model for LogList.
+type LogList struct {
+	Items []LogRecord `json:"items"`
+
+	// Next The next page, or null on the last one.
+	Next nullable.Nullable[NextLink] `json:"next"`
+}
+
+// LogRecord defines model for LogRecord.
+type LogRecord struct {
+	// Attrs The record's attributes, with a group's name and a dot in front of the keys in it.
+	Attrs map[string]string `json:"attrs"`
+
+	// ID Goes up by one with each record, and starts again at 1 after a restart.
+	ID      int64     `json:"id"`
+	Level   LogLevel  `json:"level"`
+	Message string    `json:"message"`
+	Time    time.Time `json:"time"`
+}
 
 // NextLink The next page, or null on the last one.
 type NextLink = string
@@ -1318,6 +1402,30 @@ type ListInvitesParams struct {
 	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
+// ListLogsParams defines parameters for ListLogs.
+type ListLogsParams struct {
+	// Service Whose log to read.
+	Service *ListLogsParamsService `form:"service,omitempty" json:"service,omitempty"`
+
+	// Level The least severe level to include.
+	Level *LogLevel `form:"level,omitempty" json:"level,omitempty"`
+
+	// Source Only records about the source with this slug.
+	Source *string `form:"source,omitempty" json:"source,omitempty"`
+
+	// Read Only records about this read. The server's log only.
+	Read *int64 `form:"read,omitempty" json:"read,omitempty"`
+
+	// Cursor An opaque cursor from a previous page's next link.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+
+	// Limit The most items to return.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// ListLogsParamsService defines parameters for ListLogs.
+type ListLogsParamsService string
+
 // ListReadsParams defines parameters for ListReads.
 type ListReadsParams struct {
 	// Cursor An opaque cursor from a previous page's next link.
@@ -1374,6 +1482,15 @@ type ListSourcesParams struct {
 
 // ListEntriesParams defines parameters for ListEntries.
 type ListEntriesParams struct {
+	// Cursor An opaque cursor from a previous page's next link.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+
+	// Limit The most items to return.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// ListFetchesParams defines parameters for ListFetches.
+type ListFetchesParams struct {
 	// Cursor An opaque cursor from a previous page's next link.
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 
@@ -2159,6 +2276,13 @@ type ClientInterface interface {
 	// Corresponds with DELETE /invites/{id} (the `DeleteInvite` operationId).
 	DeleteInvite(ctx context.Context, id ID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ListLogs What the server or the catalogue logged lately
+	//
+	// Admins only. The last --log-history records the service logged, newest first. They are kept in memory, so a restart empties them. The catalogue logs its crawls, and the server logs each feed request with the read it was for.
+	//
+	// Corresponds with GET /logs (the `ListLogs` operationId).
+	ListLogs(ctx context.Context, params *ListLogsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetMe Who this token belongs to
 	//
 	// Returns the user the API token belongs to.
@@ -2407,6 +2531,13 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /sources/{id}/entries (the `ListEntries` operationId).
 	ListEntries(ctx context.Context, id ID, params *ListEntriesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListFetches The crawl's requests for a source
+	//
+	// Admins only. Every request the catalogue's crawl made for the source, newest first, from its crawl log.
+	//
+	// Corresponds with GET /sources/{id}/fetches (the `ListFetches` operationId).
+	ListFetches(ctx context.Context, id ID, params *ListFetchesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RevokeFeedToken Revoke a feed token
 	//
@@ -2739,6 +2870,23 @@ func (c *Client) CreateInvite(ctx context.Context, body CreateInviteJSONRequestB
 // Corresponds with DELETE /invites/{id} (the `DeleteInvite` operationId).
 func (c *Client) DeleteInvite(ctx context.Context, id ID, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewDeleteInviteRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListLogs What the server or the catalogue logged lately
+//
+// Admins only. The last --log-history records the service logged, newest first. They are kept in memory, so a restart empties them. The catalogue logs its crawls, and the server logs each feed request with the read it was for.
+//
+// Corresponds with GET /logs (the `ListLogs` operationId).
+func (c *Client) ListLogs(ctx context.Context, params *ListLogsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListLogsRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -3298,6 +3446,23 @@ func (c *Client) RequestCrawl(ctx context.Context, id ID, reqEditors ...RequestE
 // Corresponds with GET /sources/{id}/entries (the `ListEntries` operationId).
 func (c *Client) ListEntries(ctx context.Context, id ID, params *ListEntriesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListEntriesRequest(c.Server, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListFetches The crawl's requests for a source
+//
+// Admins only. Every request the catalogue's crawl made for the source, newest first, from its crawl log.
+//
+// Corresponds with GET /sources/{id}/fetches (the `ListFetches` operationId).
+func (c *Client) ListFetches(ctx context.Context, id ID, params *ListFetchesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListFetchesRequest(c.Server, id, params)
 	if err != nil {
 		return nil, err
 	}
@@ -3902,6 +4067,120 @@ func NewDeleteInviteRequest(server string, id ID) (*http.Request, error) {
 	}
 
 	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListLogsRequest constructs an http.Request for the ListLogs method
+func NewListLogsRequest(server string, params *ListLogsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/logs")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Service != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "service", *params.Service, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Level != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "level", *params.Level, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Source != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "source", *params.Source, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Read != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "read", *params.Read, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -4995,6 +5274,79 @@ func NewListEntriesRequest(server string, id ID, params *ListEntriesParams) (*ht
 	return req, nil
 }
 
+// NewListFetchesRequest constructs an http.Request for the ListFetches method
+func NewListFetchesRequest(server string, id ID, params *ListFetchesParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/sources/%s/fetches", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewRevokeFeedTokenRequest constructs an http.Request for the RevokeFeedToken method
 func NewRevokeFeedTokenRequest(server string, id ID) (*http.Request, error) {
 	var err error
@@ -5391,6 +5743,15 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with DELETE /invites/{id} (the `DeleteInvite` operationId).
 	DeleteInviteWithResponse(ctx context.Context, id ID, reqEditors ...RequestEditorFn) (*DeleteInviteResponse, error)
 
+	// ListLogsWithResponse What the server or the catalogue logged lately
+	//
+	// Admins only. The last --log-history records the service logged, newest first. They are kept in memory, so a restart empties them. The catalogue logs its crawls, and the server logs each feed request with the read it was for.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /logs (the `ListLogs` operationId).
+	ListLogsWithResponse(ctx context.Context, params *ListLogsParams, reqEditors ...RequestEditorFn) (*ListLogsResponse, error)
+
 	// GetMeWithResponse Who this token belongs to
 	//
 	// Returns the user the API token belongs to.
@@ -5669,6 +6030,15 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /sources/{id}/entries (the `ListEntries` operationId).
 	ListEntriesWithResponse(ctx context.Context, id ID, params *ListEntriesParams, reqEditors ...RequestEditorFn) (*ListEntriesResponse, error)
+
+	// ListFetchesWithResponse The crawl's requests for a source
+	//
+	// Admins only. Every request the catalogue's crawl made for the source, newest first, from its crawl log.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /sources/{id}/fetches (the `ListFetches` operationId).
+	ListFetchesWithResponse(ctx context.Context, id ID, params *ListFetchesParams, reqEditors ...RequestEditorFn) (*ListFetchesResponse, error)
 
 	// RevokeFeedTokenWithResponse Revoke a feed token
 	//
@@ -6261,6 +6631,61 @@ func (r DeleteInviteResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r DeleteInviteResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// ListLogsResponse200Headers the declared response headers of an HTTP 200 response for ListLogs
+type ListLogsResponse200Headers struct {
+	Link *string
+}
+
+type ListLogsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *LogList
+	// ApplicationProblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationProblemJSONDefault *Problem
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *ListLogsResponse200Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListLogsResponse) GetJSON200() *LogList {
+	return r.JSON200
+}
+
+// GetApplicationProblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ListLogsResponse) GetApplicationProblemJSONDefault() *Problem {
+	return r.ApplicationProblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListLogsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListLogsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListLogsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListLogsResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -7385,6 +7810,61 @@ func (r ListEntriesResponse) ContentType() string {
 	return ""
 }
 
+// ListFetchesResponse200Headers the declared response headers of an HTTP 200 response for ListFetches
+type ListFetchesResponse200Headers struct {
+	Link *string
+}
+
+type ListFetchesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *FetchList
+	// ApplicationProblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationProblemJSONDefault *Problem
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *ListFetchesResponse200Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListFetchesResponse) GetJSON200() *FetchList {
+	return r.JSON200
+}
+
+// GetApplicationProblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ListFetchesResponse) GetApplicationProblemJSONDefault() *Problem {
+	return r.ApplicationProblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListFetchesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListFetchesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListFetchesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListFetchesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type RevokeFeedTokenResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -7858,6 +8338,21 @@ func (c *ClientWithResponses) DeleteInviteWithResponse(ctx context.Context, id I
 	return ParseDeleteInviteResponse(rsp)
 }
 
+// ListLogsWithResponse What the server or the catalogue logged lately
+//
+// Admins only. The last --log-history records the service logged, newest first. They are kept in memory, so a restart empties them. The catalogue logs its crawls, and the server logs each feed request with the read it was for.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /logs (the `ListLogs` operationId).
+func (c *ClientWithResponses) ListLogsWithResponse(ctx context.Context, params *ListLogsParams, reqEditors ...RequestEditorFn) (*ListLogsResponse, error) {
+	rsp, err := c.ListLogs(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListLogsResponse(rsp)
+}
+
 // GetMeWithResponse Who this token belongs to
 //
 // Returns the user the API token belongs to.
@@ -8321,6 +8816,21 @@ func (c *ClientWithResponses) ListEntriesWithResponse(ctx context.Context, id ID
 		return nil, err
 	}
 	return ParseListEntriesResponse(rsp)
+}
+
+// ListFetchesWithResponse The crawl's requests for a source
+//
+// Admins only. Every request the catalogue's crawl made for the source, newest first, from its crawl log.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /sources/{id}/fetches (the `ListFetches` operationId).
+func (c *ClientWithResponses) ListFetchesWithResponse(ctx context.Context, id ID, params *ListFetchesParams, reqEditors ...RequestEditorFn) (*ListFetchesResponse, error) {
+	rsp, err := c.ListFetches(ctx, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListFetchesResponse(rsp)
 }
 
 // RevokeFeedTokenWithResponse Revoke a feed token
@@ -8815,6 +9325,52 @@ func ParseDeleteInviteResponse(rsp *http.Response) (*DeleteInviteResponse, error
 		}
 		response.ApplicationProblemJSONDefault = &dest
 
+	}
+
+	return response, nil
+}
+
+// ParseListLogsResponse parses an HTTP response from a ListLogsWithResponse call
+func ParseListLogsResponse(rsp *http.Response) (*ListLogsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListLogsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest LogList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationProblemJSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers ListLogsResponse200Headers
+		if values := rsp.Header.Values("Link"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Link", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.Link = &value
+		}
+		response.Headers200 = &headers
 	}
 
 	return response, nil
@@ -9628,6 +10184,52 @@ func ParseListEntriesResponse(rsp *http.Response) (*ListEntriesResponse, error) 
 	switch {
 	case rsp.StatusCode == 200:
 		var headers ListEntriesResponse200Headers
+		if values := rsp.Header.Values("Link"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Link", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.Link = &value
+		}
+		response.Headers200 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseListFetchesResponse parses an HTTP response from a ListFetchesWithResponse call
+func ParseListFetchesResponse(rsp *http.Response) (*ListFetchesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListFetchesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest FetchList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationProblemJSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers ListFetchesResponse200Headers
 		if values := rsp.Header.Values("Link"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "Link", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {

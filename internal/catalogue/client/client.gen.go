@@ -86,6 +86,30 @@ func (e Kind) Valid() bool {
 	}
 }
 
+// Defines values for LogLevel.
+const (
+	LogLevelDebug LogLevel = "debug"
+	LogLevelError LogLevel = "error"
+	LogLevelInfo  LogLevel = "info"
+	LogLevelWarn  LogLevel = "warn"
+)
+
+// Valid indicates whether the value is a known member of the LogLevel enum.
+func (e LogLevel) Valid() bool {
+	switch e {
+	case LogLevelDebug:
+		return true
+	case LogLevelError:
+		return true
+	case LogLevelInfo:
+		return true
+	case LogLevelWarn:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for NumericConfigFormat.
 const (
 	HTML NumericConfigFormat = "html"
@@ -308,6 +332,25 @@ type FeedPagedConfig struct {
 // FeedPagedConfigStrategy defines model for FeedPagedConfig.Strategy.
 type FeedPagedConfigStrategy string
 
+// Fetch defines model for Fetch.
+type Fetch struct {
+	Error     nullable.Nullable[string] `json:"error,omitempty"`
+	FetchedAt time.Time                 `json:"fetched_at"`
+	ID        int64                     `json:"id"`
+
+	// Status The HTTP status. A 304 is recorded as 200. Null when there was no response.
+	Status nullable.Nullable[int32] `json:"status,omitempty"`
+	URL    string                   `json:"url"`
+}
+
+// FetchList defines model for FetchList.
+type FetchList struct {
+	Items []Fetch `json:"items"`
+
+	// More Whether there are older items past the limit.
+	More bool `json:"more"`
+}
+
 // FieldError defines model for FieldError.
 type FieldError struct {
 	Detail string `json:"detail"`
@@ -329,6 +372,29 @@ type JSONFields struct {
 
 // Kind defines model for Kind.
 type Kind string
+
+// LogLevel defines model for LogLevel.
+type LogLevel string
+
+// LogList defines model for LogList.
+type LogList struct {
+	Items []LogRecord `json:"items"`
+
+	// More Whether there are older items past the limit.
+	More bool `json:"more"`
+}
+
+// LogRecord defines model for LogRecord.
+type LogRecord struct {
+	// Attrs The record's attributes, with a group's name and a dot in front of the keys in it.
+	Attrs map[string]string `json:"attrs"`
+
+	// ID Goes up by one with each record, and starts again at 1 after a restart.
+	ID      int64     `json:"id"`
+	Level   LogLevel  `json:"level"`
+	Message string    `json:"message"`
+	Time    time.Time `json:"time"`
+}
 
 // NumericConfig Walk URLs that carry an incrementing ID.
 type NumericConfig struct {
@@ -450,8 +516,14 @@ type SourcePatch struct {
 // SourcePatchState defines model for SourcePatch.State.
 type SourcePatchState string
 
+// Before defines model for Before.
+type Before = int64
+
 // ID defines model for ID.
 type ID = int64
+
+// Limit defines model for Limit.
+type Limit = int32
 
 // ListChangesParams defines parameters for ListChanges.
 type ListChangesParams struct {
@@ -463,6 +535,30 @@ type ListChangesParams struct {
 
 	// Wait How long to wait for a change, in seconds.
 	Wait *int32 `form:"wait,omitempty" json:"wait,omitempty"`
+}
+
+// ListLogsParams defines parameters for ListLogs.
+type ListLogsParams struct {
+	// Level The least severe level to include.
+	Level *LogLevel `form:"level,omitempty" json:"level,omitempty"`
+
+	// Source Only records about the source with this slug.
+	Source *string `form:"source,omitempty" json:"source,omitempty"`
+
+	// Before Only items older than the one with this ID.
+	Before *Before `form:"before,omitempty" json:"before,omitempty"`
+
+	// Limit The most items to return.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// ListFetchesParams defines parameters for ListFetches.
+type ListFetchesParams struct {
+	// Before Only items older than the one with this ID.
+	Before *Before `form:"before,omitempty" json:"before,omitempty"`
+
+	// Limit The most items to return.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // CreateDiscoveryJSONRequestBody defines body for CreateDiscovery for application/json ContentType.
@@ -752,6 +848,13 @@ type ClientInterface interface {
 	// Corresponds with POST /discoveries (the `CreateDiscovery` operationId).
 	CreateDiscovery(ctx context.Context, body CreateDiscoveryJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ListLogs What the catalogue logged lately
+	//
+	// The last --log-history records the catalogue logged, newest first. They are kept in memory, so a restart empties them.
+	//
+	// Corresponds with GET /logs (the `ListLogs` operationId).
+	ListLogs(ctx context.Context, params *ListLogsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// CreateProbeWithBody Dry-run discovery
 	//
 	// Runs discovery for a proposed source config and returns the first entries with any extraction warnings. Saves nothing.
@@ -844,6 +947,13 @@ type ClientInterface interface {
 	//
 	// Corresponds with PUT /sources/{id}/demand (the `SetDemand` operationId).
 	SetDemand(ctx context.Context, id ID, body SetDemandJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListFetches The crawl's requests for a source
+	//
+	// Every request the crawl made for the source, newest first.
+	//
+	// Corresponds with GET /sources/{id}/fetches (the `ListFetches` operationId).
+	ListFetches(ctx context.Context, id ID, params *ListFetchesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 // ListChanges Changes after a revision
@@ -891,6 +1001,23 @@ func (c *Client) CreateDiscoveryWithBody(ctx context.Context, contentType string
 // Corresponds with POST /discoveries (the `CreateDiscovery` operationId).
 func (c *Client) CreateDiscovery(ctx context.Context, body CreateDiscoveryJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCreateDiscoveryRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListLogs What the catalogue logged lately
+//
+// The last --log-history records the catalogue logged, newest first. They are kept in memory, so a restart empties them.
+//
+// Corresponds with GET /logs (the `ListLogs` operationId).
+func (c *Client) ListLogs(ctx context.Context, params *ListLogsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListLogsRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -1104,6 +1231,23 @@ func (c *Client) SetDemand(ctx context.Context, id ID, body SetDemandJSONRequest
 	return c.Client.Do(req)
 }
 
+// ListFetches The crawl's requests for a source
+//
+// Every request the crawl made for the source, newest first.
+//
+// Corresponds with GET /sources/{id}/fetches (the `ListFetches` operationId).
+func (c *Client) ListFetches(ctx context.Context, id ID, params *ListFetchesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListFetchesRequest(c.Server, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // NewListChangesRequest constructs an http.Request for the ListChanges method
 func NewListChangesRequest(server string, params *ListChangesParams) (*http.Request, error) {
 	var err error
@@ -1218,6 +1362,96 @@ func NewCreateDiscoveryRequestWithBody(server string, contentType string, body i
 	}
 
 	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListLogsRequest constructs an http.Request for the ListLogs method
+func NewListLogsRequest(server string, params *ListLogsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/logs")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Level != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "level", *params.Level, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Source != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "source", *params.Source, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Before != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "before", *params.Before, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
 
 	return req, nil
 }
@@ -1498,6 +1732,79 @@ func NewSetDemandRequestWithBody(server string, id ID, contentType string, body 
 	return req, nil
 }
 
+// NewListFetchesRequest constructs an http.Request for the ListFetches method
+func NewListFetchesRequest(server string, id ID, params *ListFetchesParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/sources/%s/fetches", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Before != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "before", *params.Before, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -1568,6 +1875,15 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with POST /discoveries (the `CreateDiscovery` operationId).
 	CreateDiscoveryWithResponse(ctx context.Context, body CreateDiscoveryJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateDiscoveryResponse, error)
+
+	// ListLogsWithResponse What the catalogue logged lately
+	//
+	// The last --log-history records the catalogue logged, newest first. They are kept in memory, so a restart empties them.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /logs (the `ListLogs` operationId).
+	ListLogsWithResponse(ctx context.Context, params *ListLogsParams, reqEditors ...RequestEditorFn) (*ListLogsResponse, error)
 
 	// CreateProbeWithBodyWithResponse Dry-run discovery
 	//
@@ -1667,6 +1983,15 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with PUT /sources/{id}/demand (the `SetDemand` operationId).
 	SetDemandWithResponse(ctx context.Context, id ID, body SetDemandJSONRequestBody, reqEditors ...RequestEditorFn) (*SetDemandResponse, error)
+
+	// ListFetchesWithResponse The crawl's requests for a source
+	//
+	// Every request the crawl made for the source, newest first.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /sources/{id}/fetches (the `ListFetches` operationId).
+	ListFetchesWithResponse(ctx context.Context, id ID, params *ListFetchesParams, reqEditors ...RequestEditorFn) (*ListFetchesResponse, error)
 }
 
 type ListChangesResponse struct {
@@ -1759,6 +2084,54 @@ func (r CreateDiscoveryResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r CreateDiscoveryResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListLogsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *LogList
+	// ApplicationProblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationProblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListLogsResponse) GetJSON200() *LogList {
+	return r.JSON200
+}
+
+// GetApplicationProblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ListLogsResponse) GetApplicationProblemJSONDefault() *Problem {
+	return r.ApplicationProblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListLogsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListLogsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListLogsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListLogsResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -2073,6 +2446,54 @@ func (r SetDemandResponse) ContentType() string {
 	return ""
 }
 
+type ListFetchesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *FetchList
+	// ApplicationProblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationProblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListFetchesResponse) GetJSON200() *FetchList {
+	return r.JSON200
+}
+
+// GetApplicationProblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ListFetchesResponse) GetApplicationProblemJSONDefault() *Problem {
+	return r.ApplicationProblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListFetchesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListFetchesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListFetchesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListFetchesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // ListChangesWithResponse Changes after a revision
 //
 // Returns changes in revision order. A source appears once, at its latest revision, so an entry can arrive before its source. With wait, an empty answer is held back until something changes or the wait is up.
@@ -2116,6 +2537,21 @@ func (c *ClientWithResponses) CreateDiscoveryWithResponse(ctx context.Context, b
 		return nil, err
 	}
 	return ParseCreateDiscoveryResponse(rsp)
+}
+
+// ListLogsWithResponse What the catalogue logged lately
+//
+// The last --log-history records the catalogue logged, newest first. They are kept in memory, so a restart empties them.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /logs (the `ListLogs` operationId).
+func (c *ClientWithResponses) ListLogsWithResponse(ctx context.Context, params *ListLogsParams, reqEditors ...RequestEditorFn) (*ListLogsResponse, error) {
+	rsp, err := c.ListLogs(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListLogsResponse(rsp)
 }
 
 // CreateProbeWithBodyWithResponse Dry-run discovery
@@ -2283,6 +2719,21 @@ func (c *ClientWithResponses) SetDemandWithResponse(ctx context.Context, id ID, 
 	return ParseSetDemandResponse(rsp)
 }
 
+// ListFetchesWithResponse The crawl's requests for a source
+//
+// Every request the crawl made for the source, newest first.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /sources/{id}/fetches (the `ListFetches` operationId).
+func (c *ClientWithResponses) ListFetchesWithResponse(ctx context.Context, id ID, params *ListFetchesParams, reqEditors ...RequestEditorFn) (*ListFetchesResponse, error) {
+	rsp, err := c.ListFetches(ctx, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListFetchesResponse(rsp)
+}
+
 // ParseListChangesResponse parses an HTTP response from a ListChangesWithResponse call
 func ParseListChangesResponse(rsp *http.Response) (*ListChangesResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -2332,6 +2783,39 @@ func ParseCreateDiscoveryResponse(rsp *http.Response) (*CreateDiscoveryResponse,
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest DiscoveryResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationProblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListLogsResponse parses an HTTP response from a ListLogsWithResponse call
+func ParseListLogsResponse(rsp *http.Response) (*ListLogsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListLogsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest LogList
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -2551,6 +3035,39 @@ func ParseSetDemandResponse(rsp *http.Response) (*SetDemandResponse, error) {
 	switch {
 	case rsp.StatusCode == 204:
 		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationProblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListFetchesResponse parses an HTTP response from a ListFetchesWithResponse call
+func ParseListFetchesResponse(rsp *http.Response) (*ListFetchesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListFetchesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest FetchList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Problem

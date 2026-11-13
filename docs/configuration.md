@@ -34,6 +34,7 @@ has its own.
 | `--secret` | `ANDANTE_SECRET` | required | Key for encrypted fields, at least 32 characters. See [the secret](#the-secret) |
 | `--log-format` | `ANDANTE_LOG_FORMAT` | `json` | `json` or `text` |
 | `--log-level` | `ANDANTE_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
+| `--log-history` | `ANDANTE_LOG_HISTORY` | `1000` | How many log records to keep in memory for admins to read at `/logs`. `0` keeps none. See [monitoring](monitoring.md#logs) |
 | `--read-header-timeout` | `ANDANTE_READ_HEADER_TIMEOUT` | `5s` | Time allowed to read request headers |
 | `--read-timeout` | `ANDANTE_READ_TIMEOUT` | `30s` | Time allowed to read a whole request |
 | `--write-timeout` | `ANDANTE_WRITE_TIMEOUT` | `30s` | Time allowed to write a response |
@@ -67,7 +68,7 @@ Durations use Go's format (`500ms`, `5s`, `2m`) and must be positive.
 
 | `--probe-timeout` | `ANDANTE_PROBE_TIMEOUT` | `5m` | Time allowed for a probe |
 
-It also takes `--log-format`, `--log-level`, `--read-header-timeout`, `--read-timeout`,
+It also takes `--log-format`, `--log-level`, `--log-history`, `--read-header-timeout`, `--read-timeout`,
 `--idle-timeout`, `--shutdown-timeout` and `--readiness-timeout`, as above. How the crawl settings
 fit together is in [sources](sources.md).
 
