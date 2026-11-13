@@ -78,7 +78,8 @@ job "andante" {
     }
 
     # Both tasks are in one network, so the server reaches this on loopback. The port
-    # is there for Prometheus.
+    # is there for Prometheus. Firewall it to Prometheus: the API needs the token,
+    # but the token goes over plain HTTP (docs/deploying.md#the-listeners).
     task "catalogue" {
       driver = "docker"
 
