@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -27,6 +28,7 @@ import (
 
 const (
 	defaultURL     = "http://127.0.0.1:8080"
+	defaultListen  = ":8080" // andante-server's --listen
 	apiPath        = "/api/v1"
 	versionTimeout = 2 * time.Second
 
@@ -56,6 +58,29 @@ func envOr(name, fallback string) string {
 	return fallback
 }
 
+// serverURL is the default --url. Beside andante-server, in its container, the
+// server's own ANDANTE_BASE_URL and ANDANTE_LISTEN are in the environment, and
+// the API is on that listener under the base URL's path. Elsewhere it's
+// defaultURL.
+func serverURL() string {
+	base := os.Getenv("ANDANTE_BASE_URL")
+	if base == "" {
+		return defaultURL
+	}
+	u, err := url.Parse(base)
+	if err != nil {
+		return defaultURL
+	}
+	host, port, err := net.SplitHostPort(envOr("ANDANTE_LISTEN", defaultListen))
+	if err != nil {
+		return defaultURL
+	}
+	if ip := net.ParseIP(host); host == "" || ip != nil && ip.IsUnspecified() {
+		host = "127.0.0.1"
+	}
+	return "http://" + net.JoinHostPort(host, port) + strings.TrimRight(u.EscapedPath(), "/")
+}
+
 func newRootCmd(stdout, stderr io.Writer) *cobra.Command {
 	a := &app{stdout: stdout, stderr: stderr}
 	root := &cobra.Command{
@@ -70,7 +95,7 @@ func newRootCmd(stdout, stderr io.Writer) *cobra.Command {
 	root.SetVersionTemplate("{{.Version}}\n")
 
 	flags := root.PersistentFlags()
-	flags.StringVar(&a.url, "url", envOr("ANDANTE_URL", defaultURL), "API address (ANDANTE_URL)")
+	flags.StringVar(&a.url, "url", envOr("ANDANTE_URL", serverURL()), "API address (ANDANTE_URL)")
 	flags.StringVar(&a.token, "token", os.Getenv("ANDANTE_TOKEN"), "API token (ANDANTE_TOKEN, which keeps it out of process listings)")
 	flags.StringVarP(&a.output, "output", "o", outputTable, "output: table, or json for the API's response unchanged")
 

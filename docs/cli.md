@@ -19,6 +19,10 @@ make build   # out/andante
 | `--url` | `ANDANTE_URL` | `http://127.0.0.1:8080` |
 | `--token` | `ANDANTE_TOKEN` | none |
 
+Inside the server's container, where `ANDANTE_BASE_URL` is set, the default is the server's own
+listener (`ANDANTE_LISTEN`, on loopback) under the base URL's path, so the CLI in the image finds
+the server without a `--url`.
+
 Use the environment variable for the token, which keeps it out of process listings. There's no
 config file, and nothing is stored on disk.
 

@@ -6,6 +6,14 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- The CLI in the image finds the server under a path. With `ANDANTE_BASE_URL` set, which it is in
+  the server's container, `--url` defaults to the server's own listener under the base URL's path,
+  rather than `http://127.0.0.1:8080`.
+- The Nomad CLI alias in the install docs puts `-task` before `-job`, which `nomad alloc exec`
+  needs.
+
 ## [0.1.1] - 2026-11-12
 
 ### Added
