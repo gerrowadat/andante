@@ -593,8 +593,9 @@ func (a *app) sourceEntries() *cobra.Command {
 
 func (a *app) sourceCrawlLog() *cobra.Command {
 	var (
-		p    page
-		kind string
+		p        page
+		kind     string
+		withPage bool
 	)
 	cmd := operation(&cobra.Command{
 		Use:   "crawl-log <id|slug>",
@@ -611,6 +612,9 @@ func (a *app) sourceCrawlLog() *cobra.Command {
 			if kind != "" {
 				k := client.CrawlLogKind(kind)
 				params.Kind = &k
+			}
+			if withPage {
+				params.HasPage = &withPage
 			}
 			resp, err := a.client.ListCrawlLogWithResponse(cmd.Context(), id, params)
 			if err != nil {
@@ -647,6 +651,7 @@ func (a *app) sourceCrawlLog() *cobra.Command {
 	}, "listCrawlLog")
 	p.add(cmd)
 	cmd.Flags().StringVar(&kind, "kind", "", "only fetch or event")
+	cmd.Flags().BoolVar(&withPage, "has-page", false, "only the event that kept a page")
 	return cmd
 }
 

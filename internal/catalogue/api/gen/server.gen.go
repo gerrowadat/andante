@@ -348,6 +348,19 @@ func (siw *ServerInterfaceWrapper) ListCrawlLog(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	// ------------- Optional query parameter "has_page" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "has_page", r.URL.Query(), &params.HasPage, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "has_page"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "has_page", Err: err})
+		}
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListCrawlLog(w, r, id, params)
 	}))

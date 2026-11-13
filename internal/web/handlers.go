@@ -166,9 +166,10 @@ func (s *site) showSource(w http.ResponseWriter, r *http.Request, v visitor, sta
 		Entries     []entryRow
 		Mine        []db.Read
 		Kinds       []string
-		// CrawlLog is for an admin, and Crawled says whether the catalogue could
-		// say what's in it.
+		// CrawlLog and Kept are for an admin, and Crawled says whether the
+		// catalogue could say what's in them.
 		CrawlLog []crawlRow
+		Kept     *keptPage
 		Crawled  bool
 	}{
 		Source: source, Home: webOnly(source.HomeUrl), Image: webOnly(text(source.ImageUrl)), Checked: stamp(source.LastCrawledAt),
@@ -187,7 +188,7 @@ func (s *site) showSource(w http.ResponseWriter, r *http.Request, v visitor, sta
 		}
 	}
 	if v.actor.Admin {
-		data.CrawlLog, data.Crawled = s.crawlLog(r, v, source.ID)
+		data.CrawlLog, data.Kept, data.Crawled = s.crawlLog(r, v, source.ID)
 	}
 	s.show(w, v, status, sourceView, pageData{Title: source.Title, Error: problem, Notice: notice, Data: data})
 }

@@ -20,10 +20,11 @@ means a shell on the host or a log pipeline that a small install may not have.
   keeps 50 entries ahead"), what the strategy decided or found odd, what the pass indexed, and why
   a source stopped or is waiting on a host. Extraction warnings go there too.
 - When the crawl gives up on finding a next page, the event keeps the body of the page it gave up
-  on, at `GET /api/v1/sources/{id}/crawl-log/{entry}/page`. A tail check of a page that changed but
-  still has no next link keeps the new body.
-- The website has a Logs page for admins, the crawl log on a source's page (with the kept page
-  behind a `<details>`), and a link from a read's page to its feed requests. The CLI has
+  on, at `GET /api/v1/sources/{id}/crawl-log/{entry}/page`, and `has_page=true` finds that event.
+  A tail check that gets the whole page again (anything but a 304) and still finds no next link
+  keeps the body it got.
+- The website has a Logs page for admins, the crawl log on a source's page (with the kept page above
+  it, behind a `<details>`, however old its event is), and a link from a read's page to its feed requests. The CLI has
   `andante logs`, `andante source crawl-log`, `andante source crawled-page` and
   `andante source fetches`.
 - The public feed handler logs each request for a token that exists (`feed request`) and each use of
@@ -47,6 +48,11 @@ probes.
 **Events in the same table.** A crawl's events go in `crawl_log` beside its requests, with a `kind`
 column, so that one ID order gives the whole story of a pass and one cursor pages through it. A
 separate table would mean merging two lists by time to show them together.
+
+**Notes go out as they happen.** A strategy says what it decided through its `PageFetcher`, the
+same way it makes requests, so a note lands in the crawl log between the requests either side of
+it, and one made before a strategy fails is still kept. A probe's fetcher turns the warnings into
+the probe's own.
 
 **One kept page per source.** A page body can be up to `--crawl-max-body` (5 MB by default), so
 keeping every one would grow the table fast. The page that matters is the one the crawl is stuck

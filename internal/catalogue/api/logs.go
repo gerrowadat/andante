@@ -50,18 +50,18 @@ func (h *handler) ListCrawlLog(ctx context.Context, r gen.ListCrawlLogRequestObj
 	} else if err != nil {
 		return nil, err
 	}
-	var (
-		before int64
-		kind   string
-	)
+	limit := listLimit(r.Params.Limit)
+	filter := store.CrawlLogFilter{Limit: limit + 1}
 	if r.Params.Before != nil {
-		before = *r.Params.Before
+		filter.Before = *r.Params.Before
 	}
 	if r.Params.Kind != nil {
-		kind = string(*r.Params.Kind)
+		filter.Kind = string(*r.Params.Kind)
 	}
-	limit := listLimit(r.Params.Limit)
-	rows, err := h.store.ListCrawlLog(ctx, r.ID, before, kind, limit+1)
+	if r.Params.HasPage != nil {
+		filter.WithPage = *r.Params.HasPage
+	}
+	rows, err := h.store.ListCrawlLog(ctx, r.ID, filter)
 	if err != nil {
 		return nil, err
 	}

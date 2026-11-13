@@ -224,13 +224,15 @@ SELECT id, kind, url, status, error, level, message, fetched_at, (body IS NOT NU
 FROM crawl_log
 WHERE source_id = $1 AND id < $2
   AND ($3::text IS NULL OR kind = $3)
-ORDER BY id DESC LIMIT $4
+  AND (NOT $4::boolean OR body IS NOT NULL)
+ORDER BY id DESC LIMIT $5
 `
 
 type ListCrawlLogParams struct {
 	SourceID int64
 	Before   int64
 	Kind     *string
+	WithPage bool
 	RowLimit int32
 }
 
@@ -251,6 +253,7 @@ func (q *Queries) ListCrawlLog(ctx context.Context, arg ListCrawlLogParams) ([]L
 		arg.SourceID,
 		arg.Before,
 		arg.Kind,
+		arg.WithPage,
 		arg.RowLimit,
 	)
 	if err != nil {

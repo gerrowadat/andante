@@ -276,15 +276,22 @@ func (s *Store) RecordEvent(ctx context.Context, e CrawlEvent) error {
 	return nil
 }
 
-// ListCrawlLog returns a source's crawl log, newest first, from before down. A
-// before of zero starts at the newest, and an empty kind means every kind.
-func (s *Store) ListCrawlLog(ctx context.Context, sourceID, before int64, kind string, limit int32) ([]db.ListCrawlLogRow, error) {
-	if before <= 0 {
-		before = math.MaxInt64
+// CrawlLogFilter picks out part of a source's crawl log.
+type CrawlLogFilter struct {
+	Before   int64  // Only items older than this ID. Zero starts at the newest.
+	Kind     string // Empty means every kind.
+	WithPage bool   // Only the event that kept a page.
+	Limit    int32
+}
+
+// ListCrawlLog returns a source's crawl log, newest first.
+func (s *Store) ListCrawlLog(ctx context.Context, sourceID int64, f CrawlLogFilter) ([]db.ListCrawlLogRow, error) {
+	if f.Before <= 0 {
+		f.Before = math.MaxInt64
 	}
-	params := db.ListCrawlLogParams{SourceID: sourceID, Before: before, RowLimit: limit}
-	if kind != "" {
-		params.Kind = &kind
+	params := db.ListCrawlLogParams{SourceID: sourceID, Before: f.Before, WithPage: f.WithPage, RowLimit: f.Limit}
+	if f.Kind != "" {
+		params.Kind = &f.Kind
 	}
 	rows, err := s.queries.ListCrawlLog(ctx, params)
 	if err != nil {

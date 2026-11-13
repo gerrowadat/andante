@@ -118,7 +118,7 @@ for admins.
 `service=catalogue` the catalogue's. `level`, `source` (a slug) and `read` (the server's log only)
 filter it. `GET /sources/{id}/crawl-log` is the catalogue's crawl log for a source: its requests
 and what it decided, which `kind` filters. An event with `has_page` kept the page the crawl gave
-up on, at `GET /sources/{id}/crawl-log/{entry}/page`. `GET /sources/{id}/fetches` is the crawl log's
+up on, at `GET /sources/{id}/crawl-log/{entry}/page`, and `has_page=true` finds it. `GET /sources/{id}/fetches` is the crawl log's
 requests alone. All of these are for admins. See [monitoring](monitoring.md#logs).
 
 ## Users

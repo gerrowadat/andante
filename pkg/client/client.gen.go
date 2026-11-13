@@ -1552,6 +1552,9 @@ type ListCrawlLogParams struct {
 
 	// Kind Only items of this kind.
 	Kind *CrawlLogKind `form:"kind,omitempty" json:"kind,omitempty"`
+
+	// HasPage Only the event that kept a page, if any. A source keeps one at most.
+	HasPage *bool `form:"has_page,omitempty" json:"has_page,omitempty"`
 }
 
 // ListEntriesParams defines parameters for ListEntries.
@@ -5351,6 +5354,18 @@ func NewListCrawlLogRequest(server string, id ID, params *ListCrawlLogParams) (*
 		if params.Kind != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "kind", *params.Kind, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.HasPage != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "has_page", *params.HasPage, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {

@@ -85,12 +85,18 @@ func TestAnAdminSeesTheCrawlLog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Tail checks since then push the event out of the latest rows.
+	for range 60 {
+		if err := f.stack.Catalogue.RecordEvent(t.Context(), catalogue.CrawlEvent{SourceID: source, Level: "info", Message: "found nothing new"}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	page := "/sources/" + strconv.FormatInt(source, 10)
 
 	got := f.get(t, dave, page)
 	for _, want := range []string{
-		"Crawl log", "https://comic.example/fine", "connection refused", "/logs?service=catalogue&amp;source=",
-		`<tr class="warn">`, "no next link on https://comic.example/fine", "<details>",
+		"Crawl log", "/logs?service=catalogue&amp;source=", "found nothing new",
+		"couldn't get past", "no next link on https://comic.example/fine", "<details>",
 		"&lt;script&gt;alert(&#34;hi&#34;)&lt;/script&gt;",
 	} {
 		if !strings.Contains(got.body, want) {

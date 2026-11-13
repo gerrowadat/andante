@@ -27,13 +27,14 @@
 <h2>Crawl log</h2>
 <p class="muted">What the crawl fetched, decided and ran into, newest first.</p>
 {{if not .Crawled}}<p class="muted">The catalogue didn't answer.</p>
-{{else if .CrawlLog}}<table>
+{{else}}{{with .Kept}}<p>The last page the crawl couldn't get past, on {{.At}}: {{.Message}}</p>
+<details><summary>The page as the crawl saw it{{if .Cut}} (the start of it){{end}}</summary><pre class="page">{{.Page}}</pre></details>
+{{end}}{{if .CrawlLog}}<table>
 <tr><th>When</th><th>What</th><th>Status</th></tr>
-{{range .CrawlLog}}{{if .Event}}<tr class="{{.Level}}"><td>{{.At}}</td><td>{{.Message}}{{if .Page}}
-<details><summary>The page as the crawl saw it{{if .Cut}} (the start of it){{end}}</summary><pre class="page">{{.Page}}</pre></details>{{end}}</td><td>{{.Level}}</td></tr>
+{{range .CrawlLog}}{{if .Event}}<tr class="{{.Level}}"><td>{{.At}}</td><td>{{.Message}}{{if .HasPage}} <small>(the page is above)</small>{{end}}</td><td>{{.Level}}</td></tr>
 {{else}}<tr><td>{{.At}}</td><td class="url">{{.URL}}</td><td>{{.Status}}{{with .Error}} <small>{{.}}</small>{{end}}</td></tr>
 {{end}}{{end}}</table>
-{{else}}<p class="muted">Nothing crawled yet.</p>{{end}}
+{{else}}<p class="muted">Nothing crawled yet.</p>{{end}}{{end}}
 <p><a href="{{root}}/logs?service=catalogue&amp;source={{.Source.Slug}}">What the catalogue logged about it</a></p>
 {{end}}
 {{end}}{{end}}

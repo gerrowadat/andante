@@ -109,7 +109,7 @@ func (h *harness) entries(t *testing.T, id int64) []db.Entry {
 // events returns a source's crawl log events, oldest first, as "level message".
 func (h *harness) events(t *testing.T, id int64) []string {
 	t.Helper()
-	rows, err := h.store.ListCrawlLog(t.Context(), id, 0, "event", 1000)
+	rows, err := h.store.ListCrawlLog(t.Context(), id, store.CrawlLogFilter{Kind: "event", Limit: 1000})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -445,6 +445,31 @@ func TestCrawlLogAndConditionalRequests(t *testing.T) {
 	}
 }
 
+// crawlLog returns a source's whole crawl log, oldest first, as "fetch path"
+// for a request and "level message" for an event, with " +page" on one that
+// kept its page.
+func (h *harness) crawlLog(t *testing.T, id int64, site string) []string {
+	t.Helper()
+	rows, err := h.store.ListCrawlLog(t.Context(), id, store.CrawlLogFilter{Limit: 1000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := make([]string, 0, len(rows))
+	for _, row := range slices.Backward(rows) {
+		var line string
+		if row.Kind == "event" {
+			line = *row.Level + " " + strings.ReplaceAll(*row.Message, site, "")
+		} else {
+			line = "fetch " + strings.TrimPrefix(*row.Url, site)
+		}
+		if row.HasPage {
+			line += " +page"
+		}
+		out = append(out, line)
+	}
+	return out
+}
+
 func TestCrawlLogSaysWhy(t *testing.T) {
 	h := newHarness(t, 50)
 	h.hasRead.Store(true)
@@ -454,41 +479,41 @@ func TestCrawlLogSaysWhy(t *testing.T) {
 
 	want := []string{
 		"info looking for up to 10 entries: the furthest read is at 0 and it keeps 50 entries ahead, but has up to -1",
-		"info starting at " + site.URL + "/1.html",
-		"warn next link points to the current page on " + site.URL + "/5.html",
-		"info the next link on " + site.URL + "/5.html points back at it, so this is the live end",
+		"info starting at /1.html",
+		"fetch /1.html", "fetch /2.html", "fetch /3.html", "fetch /4.html", "fetch /5.html",
+		"warn next link points to the current page on /5.html",
+		"info the next link on /5.html points back at it, so this is the live end +page",
 		"info indexed 5 entries; at the live end, checking again at " + h.clock.Now().Add(6*time.Hour).UTC().Format(time.RFC3339),
 	}
-	if got := h.events(t, s.ID); !slices.Equal(got, want) {
-		t.Errorf("events = %q\nwant %q", got, want)
-	}
-	rows, err := h.store.ListCrawlLog(t.Context(), s.ID, 0, "", 1000)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var kept []int64
-	for _, row := range rows {
-		if row.HasPage {
-			kept = append(kept, row.ID)
-		}
-	}
-	if len(kept) != 1 {
-		t.Fatalf("kept pages = %v, want one", kept)
-	}
-	page, err := h.store.CrawledPage(t.Context(), s.ID, kept[0])
-	if err != nil {
-		t.Fatal(err)
-	}
-	if *page.Url != site.URL+"/5.html" || !strings.Contains(string(page.Body), "<html") {
-		t.Errorf("kept page = %s: %.80s", *page.Url, page.Body)
+	if got := h.crawlLog(t, s.ID, site.URL); !slices.Equal(got, want) {
+		t.Errorf("crawl log = %q\nwant %q", got, want)
 	}
 
+	// A 304 keeps the page already kept.
 	h.clock.Advance(7 * time.Hour)
 	h.settle(t)
-	events := h.events(t, s.ID)
-	if got := events[len(want):]; len(got) < 2 || got[0] != "info looking for up to 10 entries: checking the live end for new entries" || got[1] != "info "+site.URL+"/5.html has not changed since the last check" ||
-		!strings.HasPrefix(got[2], "info found nothing new; at the live end") {
-		t.Errorf("tail check events = %q", got)
+	got := h.crawlLog(t, s.ID, site.URL)[len(want):]
+	if len(got) != 4 || got[0] != "info looking for up to 10 entries: checking the live end for new entries" ||
+		got[1] != "fetch /5.html" || got[2] != "info /5.html has not changed since the last check" ||
+		!strings.HasPrefix(got[3], "info found nothing new; at the live end") {
+		t.Errorf("tail check = %q", got)
+	}
+
+	// A site that ignores conditional requests sends the page again, and that
+	// one is kept instead.
+	site.Intercept(func(_ http.ResponseWriter, r *http.Request) bool {
+		r.Header.Del("If-Modified-Since")
+		r.Header.Del("If-None-Match")
+		return false
+	})
+	h.clock.Advance(7 * time.Hour)
+	h.settle(t)
+	all := h.crawlLog(t, s.ID, site.URL)
+	if got := all[len(all)-2]; got != "info rechecked /5.html: still no next link +page" {
+		t.Errorf("tail check of a resent page = %q", all[len(want)+4:])
+	}
+	if kept := slices.IndexFunc(all, func(line string) bool { return strings.HasSuffix(line, "+page") }); kept != len(all)-2 {
+		t.Errorf("the earlier page is still kept: %q", all)
 	}
 }
 
@@ -498,7 +523,7 @@ func TestCrawlLogKeepsThePageWithNoNextLink(t *testing.T) {
 	s := h.source(t, site.URL+"/1.html")
 	h.settle(t)
 
-	rows, err := h.store.ListCrawlLog(t.Context(), s.ID, 0, "event", 1000)
+	rows, err := h.store.ListCrawlLog(t.Context(), s.ID, store.CrawlLogFilter{Kind: "event", Limit: 1000})
 	if err != nil {
 		t.Fatal(err)
 	}

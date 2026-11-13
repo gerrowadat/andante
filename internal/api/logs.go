@@ -65,7 +65,7 @@ func (h *handler) ListFetches(ctx context.Context, r gen.ListFetchesRequestObjec
 	if err != nil {
 		return nil, err
 	}
-	items, more, err := h.app.CrawlLog(ctx, actorOf(ctx), r.ID, p.after, client.CrawlLogKindFetch, p.limit)
+	items, more, err := h.app.CrawlLog(ctx, actorOf(ctx), r.ID, app.CrawlLogQuery{Before: p.after, Kind: client.CrawlLogKindFetch, Limit: p.limit})
 	if err != nil {
 		return nil, logError(err)
 	}
@@ -87,15 +87,17 @@ func (h *handler) ListCrawlLog(ctx context.Context, r gen.ListCrawlLogRequestObj
 	if err != nil {
 		return nil, err
 	}
-	var (
-		kind    client.CrawlLogKind
-		filters url.Values
-	)
+	q := app.CrawlLogQuery{Before: p.after, Limit: p.limit}
+	filters := url.Values{}
 	if r.Params.Kind != nil {
-		kind = *r.Params.Kind
-		filters = url.Values{"kind": {string(kind)}}
+		q.Kind = *r.Params.Kind
+		filters.Set("kind", string(q.Kind))
 	}
-	items, more, err := h.app.CrawlLog(ctx, actorOf(ctx), r.ID, p.after, kind, p.limit)
+	if r.Params.HasPage != nil && *r.Params.HasPage {
+		q.WithPage = true
+		filters.Set("has_page", "true")
+	}
+	items, more, err := h.app.CrawlLog(ctx, actorOf(ctx), r.ID, q)
 	if err != nil {
 		return nil, logError(err)
 	}

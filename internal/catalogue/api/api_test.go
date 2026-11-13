@@ -414,6 +414,12 @@ func TestCrawlLog(t *testing.T) {
 		t.Errorf("only fetches: %v %s", err, resp.Body)
 	}
 
+	withPage := true
+	resp, err = f.client.ListCrawlLogWithResponse(ctx, s.ID, &client.ListCrawlLogParams{HasPage: &withPage})
+	if err != nil || resp.JSON200 == nil || len(resp.JSON200.Items) != 1 || resp.JSON200.Items[0].ID != event.ID {
+		t.Errorf("only the kept page: %v %s", err, resp.Body)
+	}
+
 	got, err := f.client.GetCrawledPageWithResponse(ctx, s.ID, event.ID)
 	if err != nil || got.JSON200 == nil {
 		t.Fatalf("crawled page: %v %s", err, got.Body)

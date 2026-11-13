@@ -67,8 +67,6 @@ type Batch struct {
 	Cursor   Cursor
 	LiveEnd  bool // The strategy reached the end of the serial as it stands.
 	Warnings []string
-	// Notes say what the strategy decided and why, for the crawl log.
-	Notes []Note
 }
 
 // Note is something a strategy decided or ran into. One about a page it gave
@@ -81,7 +79,7 @@ type Note struct {
 	Page    []byte
 }
 
-// PageFetcher is how a strategy requests pages.
+// PageFetcher is how a strategy requests pages, and says what it made of them.
 type PageFetcher interface {
 	// Fetch gets a page. It is never conditional: a strategy retrying after a
 	// failed save needs the body, even if the page has not changed.
@@ -91,6 +89,9 @@ type PageFetcher interface {
 	Revalidate(ctx context.Context, url string) (*Response, error)
 	// Head asks about a file without downloading it.
 	Head(ctx context.Context, url string) (*Response, error)
+	// Note records something the strategy decided or ran into, as it happens,
+	// so that the crawl log has it in order with the requests.
+	Note(ctx context.Context, note Note)
 }
 
 // Strategy is one way of discovering a source's archive.

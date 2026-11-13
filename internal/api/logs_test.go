@@ -181,6 +181,12 @@ func TestCrawlLog(t *testing.T) {
 		t.Errorf("only events: %v %s", err, resp.Body)
 	}
 
+	withPage := true
+	resp, err = f.client.ListCrawlLogWithResponse(ctx, source.ID, &client.ListCrawlLogParams{HasPage: &withPage, Limit: &limit})
+	if err != nil || resp.JSON200 == nil || len(resp.JSON200.Items) != 1 || resp.JSON200.Items[0].ID != items[1].ID {
+		t.Errorf("only the kept page: %v %s", err, resp.Body)
+	}
+
 	if refused, err := bob.client.GetCrawledPageWithResponse(ctx, source.ID, items[1].ID); err != nil || refused.StatusCode() != http.StatusForbidden {
 		t.Errorf("a user reading the page: %v %d", err, refused.StatusCode())
 	}

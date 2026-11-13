@@ -784,6 +784,10 @@ func TestLogCommands(t *testing.T) {
 	if got := h.ok(t, "source", "crawl-log", "comic", "--kind", "fetch"); strings.Contains(got, "no next link") {
 		t.Errorf("crawl-log --kind fetch = %s", got)
 	}
+	got = h.ok(t, "source", "crawl-log", "comic", "--has-page")
+	if !strings.Contains(got, "warn*") || strings.Contains(got, failed) {
+		t.Errorf("crawl-log --has-page = %s", got)
+	}
 	var id string
 	for _, line := range strings.Split(got, "\n") {
 		if strings.Contains(line, "warn*") {

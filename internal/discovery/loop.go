@@ -168,14 +168,6 @@ func (l *Loop) process(ctx context.Context, s db.Source) (bool, error) {
 		l.opts.Logger.Warn("extraction warning", "source", s.Slug, "warning", warning)
 		l.event(ctx, s, Note{Level: slog.LevelWarn, Message: warning})
 	}
-	for _, note := range batch.Notes {
-		level := note.Level
-		if level < slog.LevelWarn {
-			level = slog.LevelDebug
-		}
-		l.opts.Logger.Log(ctx, level, note.Message, "source", s.Slug, "url", note.URL)
-		l.event(ctx, s, note)
-	}
 	outcome, err := l.save(ctx, s, batch)
 	if err != nil {
 		return true, l.fail(ctx, s, err)
@@ -369,6 +361,17 @@ func (f *loggingFetcher) Revalidate(ctx context.Context, url string) (*Response,
 		validators.LastModified = *lastModified
 	}
 	return f.fetch(ctx, url, validators, etag, lastModified)
+}
+
+// Note implements PageFetcher. Below a warning, a note is only debug in the
+// service's log, which has no use for every tail check.
+func (f *loggingFetcher) Note(ctx context.Context, note Note) {
+	level := note.Level
+	if level < slog.LevelWarn {
+		level = slog.LevelDebug
+	}
+	f.loop.opts.Logger.Log(ctx, level, note.Message, "source", f.source.Slug, "url", note.URL)
+	f.loop.event(ctx, f.source, note)
 }
 
 // Head implements PageFetcher.

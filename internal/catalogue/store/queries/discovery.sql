@@ -73,6 +73,7 @@ SELECT id, kind, url, status, error, level, message, fetched_at, (body IS NOT NU
 FROM crawl_log
 WHERE source_id = sqlc.arg(source_id) AND id < sqlc.arg(before)
   AND (sqlc.narg(kind)::text IS NULL OR kind = sqlc.narg(kind))
+  AND (NOT sqlc.arg(with_page)::boolean OR body IS NOT NULL)
 ORDER BY id DESC LIMIT sqlc.arg(row_limit);
 
 -- name: GetCrawlPage :one

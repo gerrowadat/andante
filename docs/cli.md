@@ -64,6 +64,7 @@ andante source edit my-comic --selector image="#strip img"    # replaces the sel
 andante source crawl my-comic                                 # ask for a crawl now
 andante source entries my-comic
 andante source crawl-log my-comic                             # the crawl log. Admins only
+andante source crawl-log my-comic --has-page                  # the event that kept a page
 andante source crawled-page my-comic 812                      # the page event 812 kept
 andante source fetches my-comic                               # just the crawl log's requests
 andante source rm my-comic

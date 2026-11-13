@@ -99,24 +99,28 @@ func (s *site) logs(w http.ResponseWriter, r *http.Request, v visitor) {
 
 type crawlRow struct {
 	At, URL, Status, Error, Level, Message string
-	Event                                  bool
-	// Page is the page the crawl gave up on, for the one event that kept it,
-	// and Cut says it was too long to show all of.
-	Page string
-	Cut  bool
+	Event, HasPage                         bool
 }
 
-// crawlLog is a source's latest crawl log, for an admin. ok is false when the
-// catalogue couldn't say.
-func (s *site) crawlLog(r *http.Request, v visitor, sourceID int64) ([]crawlRow, bool) {
-	items, _, err := s.opts.App.CrawlLog(r.Context(), v.actor, sourceID, 0, "", crawlLogShown)
+// keptPage is the page the crawl last gave up on, and Cut says it was too long
+// to show all of.
+type keptPage struct {
+	At, Message, Page string
+	Cut               bool
+}
+
+// crawlLog is a source's latest crawl log, for an admin, and the page the crawl
+// last gave up on, however far back that was. ok is false when the catalogue
+// couldn't say.
+func (s *site) crawlLog(r *http.Request, v visitor, sourceID int64) (rows []crawlRow, kept *keptPage, ok bool) {
+	items, _, err := s.opts.App.CrawlLog(r.Context(), v.actor, sourceID, app.CrawlLogQuery{Limit: crawlLogShown})
 	if err != nil {
 		s.opts.Logger.Warn("could not read the crawl log", "source_id", sourceID, "error", err)
-		return nil, false
+		return nil, nil, false
 	}
-	rows := make([]crawlRow, 0, len(items))
+	rows = make([]crawlRow, 0, len(items))
 	for _, item := range items {
-		row := crawlRow{At: stamp(&item.At), Event: item.Kind == client.CrawlLogKindEvent}
+		row := crawlRow{At: stamp(&item.At), Event: item.Kind == client.CrawlLogKindEvent, HasPage: item.HasPage}
 		row.URL, _ = item.URL.Get()
 		row.Error, _ = item.Error.Get()
 		row.Message, _ = item.Message.Get()
@@ -126,18 +130,28 @@ func (s *site) crawlLog(r *http.Request, v visitor, sourceID int64) ([]crawlRow,
 		if item.Level != nil {
 			row.Level = string(*item.Level)
 		}
-		if item.HasPage {
-			page, err := s.opts.App.CrawledPage(r.Context(), v.actor, sourceID, item.ID)
-			if err != nil {
-				s.opts.Logger.Warn("could not read a crawled page", "source_id", sourceID, "entry", item.ID, "error", err)
-			} else {
-				row.Page, row.Cut = page.Body, len(page.Body) > pageShown
-				if row.Cut {
-					row.Page = strings.ToValidUTF8(page.Body[:pageShown], "")
-				}
-			}
-		}
 		rows = append(rows, row)
 	}
-	return rows, true
+	return rows, s.keptPage(r, v, sourceID), true
+}
+
+// keptPage returns the page the crawl last gave up on, or nil if there is none
+// or the catalogue couldn't say.
+func (s *site) keptPage(r *http.Request, v visitor, sourceID int64) *keptPage {
+	events, _, err := s.opts.App.CrawlLog(r.Context(), v.actor, sourceID, app.CrawlLogQuery{WithPage: true, Limit: 1})
+	if err != nil || len(events) == 0 {
+		return nil
+	}
+	event := events[0]
+	page, err := s.opts.App.CrawledPage(r.Context(), v.actor, sourceID, event.ID)
+	if err != nil {
+		s.opts.Logger.Warn("could not read a crawled page", "source_id", sourceID, "entry", event.ID, "error", err)
+		return nil
+	}
+	kept := &keptPage{At: stamp(&event.At), Page: page.Body, Cut: len(page.Body) > pageShown}
+	kept.Message, _ = event.Message.Get()
+	if kept.Cut {
+		kept.Page = strings.ToValidUTF8(page.Body[:pageShown], "")
+	}
+	return kept
 }

@@ -235,6 +235,11 @@ paths:
           description: Only items of this kind.
           schema:
             $ref: "#/components/schemas/CrawlLogKind"
+        - name: has_page
+          in: query
+          description: Only the event that kept a page, if any. A source keeps one at most.
+          schema:
+            type: boolean
       responses:
         "200":
           description: The crawl log.
