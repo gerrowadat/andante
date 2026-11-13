@@ -105,15 +105,18 @@ ON CONFLICT (only_row) DO UPDATE SET
     invite_limit = coalesce(sqlc.narg(invite_limit)::integer, settings.invite_limit);
 
 -- name: GetPasswordPolicy :one
-SELECT coalesce((SELECT password_min_length FROM settings), 15)::integer AS password_min_length,
+SELECT coalesce((SELECT password_min_length FROM settings), 8)::integer AS password_min_length,
+       coalesce((SELECT password_non_letters FROM settings), 1)::integer AS password_non_letters,
        coalesce((SELECT password_classes FROM settings), 0)::integer AS password_classes;
 
 -- name: SetPasswordPolicy :exec
-INSERT INTO settings (password_min_length, password_classes)
-VALUES (coalesce(sqlc.narg(password_min_length)::integer, 15), coalesce(sqlc.narg(password_classes)::integer, 0))
+-- The store has already checked the whole policy, so this writes all of it.
+INSERT INTO settings (password_min_length, password_non_letters, password_classes)
+VALUES (sqlc.arg(password_min_length)::integer, sqlc.arg(password_non_letters)::integer, sqlc.arg(password_classes)::integer)
 ON CONFLICT (only_row) DO UPDATE SET
-    password_min_length = coalesce(sqlc.narg(password_min_length)::integer, settings.password_min_length),
-    password_classes = coalesce(sqlc.narg(password_classes)::integer, settings.password_classes);
+    password_min_length = excluded.password_min_length,
+    password_non_letters = excluded.password_non_letters,
+    password_classes = excluded.password_classes;
 
 -- name: InsertAudit :exec
 INSERT INTO audit_log (at, who, action, target, ip) VALUES ($1, $2, $3, $4, $5);

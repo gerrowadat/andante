@@ -32,15 +32,17 @@ func TestCheck(t *testing.T) {
 		want            error
 	}{
 		{"fine", phrase, nil},
-		{"shortest", "abcdefghijklmno", nil},
-		{"no composition rules", "alllowercaseletters", nil},
-		{"too short", "abcdefghijklmn", password.ErrTooShort},
-		{"counts characters, not bytes", "éééééééé", password.ErrTooShort},
-		{"longest", strings.Repeat("ab", 64), nil},
-		{"too long", strings.Repeat("ab", 64) + "a", password.ErrTooLong},
+		{"shortest", "abcdefg1", nil},
+		{"a space will do", "ab cdefg", nil},
+		{"only letters", "alllowercaseletters", password.ErrTooSimple},
+		{"letters in any script", "ωμέγαάλφα", password.ErrTooSimple},
+		{"too short", "abcdef1", password.ErrTooShort},
+		{"counts characters, not bytes", "ééééé1", password.ErrTooShort},
+		{"longest", strings.Repeat("a1", 64), nil},
+		{"too long", strings.Repeat("a1", 64) + "a", password.ErrTooLong},
 		{"common", "123456789012345", password.ErrCommon},
 		{"has their name", "dave-dave-dave-dave", password.ErrCommon},
-		{"one character", strings.Repeat("z", 20), password.ErrCommon},
+		{"one character", strings.Repeat("7", 20), password.ErrCommon},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -86,18 +88,27 @@ func TestRejectionsSayWhatsNeeded(t *testing.T) {
 	if got := p.Rule(); !strings.HasPrefix(got, "At least 20 characters, with at least 2 of") {
 		t.Errorf("Rule = %q", got)
 	}
-	if got := password.DefaultPolicy.Rule(); got != "At least 15 characters." {
+	if got := (password.Policy{MinLength: 12, NonLetters: 2}).Rule(); got != "At least 12 characters, and at least 2 that aren't letters." {
+		t.Errorf("Rule = %q", got)
+	}
+	if err := (password.Policy{MinLength: 12, NonLetters: 2}).Check("abcdefghijk1", "dave"); err == nil || err.Error() != "a password needs at least 2 characters that aren't letters, such as digits, symbols or spaces" {
+		t.Errorf("too few non-letters = %v", err)
+	}
+	if err := password.DefaultPolicy.Check("abcdefghij", "dave"); err == nil || err.Error() != "a password needs at least one character that isn't a letter, such as a digit, a symbol or a space" {
+		t.Errorf("no non-letters = %v", err)
+	}
+	if got := password.DefaultPolicy.Rule(); got != "At least 8 characters, and at least one that isn't a letter." {
 		t.Errorf("default Rule = %q", got)
 	}
 }
 
 func TestValidate(t *testing.T) {
-	for _, p := range []password.Policy{password.DefaultPolicy, {MinLength: 8}, {MinLength: 128, Classes: 4}} {
+	for _, p := range []password.Policy{password.DefaultPolicy, {MinLength: 8}, {MinLength: 128, Classes: 4}, {MinLength: 8, NonLetters: 8}} {
 		if err := p.Validate(); err != nil {
 			t.Errorf("%+v: %v", p, err)
 		}
 	}
-	for _, p := range []password.Policy{{MinLength: 7}, {MinLength: 129}, {MinLength: 12, Classes: 5}, {MinLength: 12, Classes: -1}} {
+	for _, p := range []password.Policy{{MinLength: 7}, {MinLength: 129}, {MinLength: 12, Classes: 5}, {MinLength: 12, Classes: -1}, {MinLength: 8, NonLetters: 9}, {MinLength: 8, NonLetters: -1}} {
 		if err := p.Validate(); !errors.Is(err, password.ErrBadPolicy) {
 			t.Errorf("%+v: %v, want ErrBadPolicy", p, err)
 		}

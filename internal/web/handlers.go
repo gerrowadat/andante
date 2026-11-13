@@ -661,27 +661,33 @@ func (s *site) users(w http.ResponseWriter, r *http.Request, v visitor) {
 }
 
 func (s *site) passwordPolicy(w http.ResponseWriter, r *http.Request, v visitor) {
-	length, err := strconv.ParseInt(r.PostForm.Get("min_length"), 10, 32)
-	if err != nil {
-		length = -1
+	// A field that isn't a number becomes -1, which the store refuses.
+	field := func(name string) *int32 {
+		n, err := strconv.ParseInt(r.PostForm.Get(name), 10, 32)
+		if err != nil {
+			n = -1
+		}
+		v := int32(n)
+		return &v
 	}
-	classes, err := strconv.ParseInt(r.PostForm.Get("classes"), 10, 32)
-	if err != nil {
-		classes = -1
-	}
-	l, c := int32(length), int32(classes)
-	err = s.opts.Store.SetPasswordPolicy(r.Context(), &l, &c)
+	change := store.PolicyChange{MinLength: field("min_length"), NonLetters: field("non_letters"), Classes: field("classes")}
+	err := s.opts.Store.SetPasswordPolicy(r.Context(), change)
 	if errors.Is(err, password.ErrBadPolicy) {
-		s.showUsers(w, r, v, http.StatusUnprocessableEntity, "A password's minimum length is "+strconv.Itoa(password.Shortest)+
-			" to "+strconv.Itoa(password.MaxLength)+", and it can need 0 to "+strconv.Itoa(password.Kinds)+" kinds of character.", nil)
+		s.showUsers(w, r, v, http.StatusUnprocessableEntity, "The fewest characters is "+strconv.Itoa(password.Shortest)+
+			" to "+strconv.Itoa(password.MaxLength)+", the characters that aren't letters can't be more than that, and the kinds of character are 0 to "+
+			strconv.Itoa(password.Kinds)+".", nil)
 		return
 	}
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
-	s.audit(r.Context(), v.session.Name, "settings.changed", "password-min-length."+strconv.FormatInt(length, 10), s.client(r))
-	s.audit(r.Context(), v.session.Name, "settings.changed", "password-classes."+strconv.FormatInt(classes, 10), s.client(r))
+	for _, c := range []struct {
+		name string
+		to   *int32
+	}{{"password-min-length", change.MinLength}, {"password-non-letters", change.NonLetters}, {"password-classes", change.Classes}} {
+		s.audit(r.Context(), v.session.Name, "settings.changed", c.name+"."+strconv.Itoa(int(*c.to)), s.client(r))
+	}
 	http.Redirect(w, r, "/users", http.StatusSeeOther)
 }
 

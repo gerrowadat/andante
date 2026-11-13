@@ -156,7 +156,7 @@ andante audit                            # admins only
 andante settings                         # admins only
 andante settings set --require-two-factor
 andante settings set --who-can-invite users --invite-limit 5
-andante settings set --password-min-length 12 --password-classes 3
+andante settings set --password-min-length 12 --password-non-letters 2 --password-classes 3
 ```
 
 ## Users

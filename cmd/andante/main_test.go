@@ -763,8 +763,8 @@ func TestSettingsCommands(t *testing.T) {
 	if r := h.run("settings", "set", "--who-can-invite", "everyone"); r.err == nil {
 		t.Error("accepted who can invite = everyone")
 	}
-	got = h.ok(t, "settings", "set", "--password-min-length", "20", "--password-classes", "3")
-	if !strings.Contains(got, "Password min length:  20") || !strings.Contains(got, "Password classes:     3") {
+	got = h.ok(t, "settings", "set", "--password-min-length", "20", "--password-non-letters", "2", "--password-classes", "3")
+	if !strings.Contains(got, "Password min length:   20") || !strings.Contains(got, "Password non-letters:  2") || !strings.Contains(got, "Password classes:      3") {
 		t.Errorf("set password policy = %s", got)
 	}
 	if r := h.run("settings", "set", "--password-min-length", "6"); r.err == nil {

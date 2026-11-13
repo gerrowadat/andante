@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/gerrowadat/andante/internal/password"
+	"github.com/gerrowadat/andante/internal/store"
 	"github.com/gerrowadat/andante/internal/store/storetest"
 )
 
@@ -17,14 +18,14 @@ func TestPasswordPolicy(t *testing.T) {
 	if got, err := s.GetPasswordPolicy(ctx); err != nil || got != password.DefaultPolicy {
 		t.Errorf("by default = %+v, %v", got, err)
 	}
-	length, classes := int32(20), int32(3)
-	if err := s.SetPasswordPolicy(ctx, &length, nil); err != nil {
+	if err := s.SetPasswordPolicy(ctx, store.PolicyChange{MinLength: ptr(int32(20))}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetPasswordPolicy(ctx, nil, &classes); err != nil {
+	if err := s.SetPasswordPolicy(ctx, store.PolicyChange{NonLetters: ptr(int32(2)), Classes: ptr(int32(3))}); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := s.GetPasswordPolicy(ctx); err != nil || got != (password.Policy{MinLength: 20, Classes: 3}) {
+	want := password.Policy{MinLength: 20, NonLetters: 2, Classes: 3}
+	if got, err := s.GetPasswordPolicy(ctx); err != nil || got != want {
 		t.Errorf("after = %+v, %v", got, err)
 	}
 	// Setting the policy leaves the other settings alone, and the other way round.
@@ -34,13 +35,21 @@ func TestPasswordPolicy(t *testing.T) {
 	if err := s.SetRequireTOTP(ctx, true); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := s.GetPasswordPolicy(ctx); err != nil || got != (password.Policy{MinLength: 20, Classes: 3}) {
+	if got, err := s.GetPasswordPolicy(ctx); err != nil || got != want {
 		t.Errorf("after two-factor = %+v, %v", got, err)
 	}
-	for _, bad := range []struct{ length, classes *int32 }{{ptr(int32(7)), nil}, {ptr(int32(129)), nil}, {nil, ptr(int32(5))}, {nil, ptr(int32(-1))}} {
-		if err := s.SetPasswordPolicy(ctx, bad.length, bad.classes); !errors.Is(err, password.ErrBadPolicy) {
-			t.Errorf("%v, %v: %v, want ErrBadPolicy", bad.length, bad.classes, err)
+	for _, bad := range []store.PolicyChange{
+		{MinLength: ptr(int32(7))}, {MinLength: ptr(int32(129))}, {Classes: ptr(int32(5))}, {Classes: ptr(int32(-1))},
+		{NonLetters: ptr(int32(21))}, {NonLetters: ptr(int32(-1))},
+		// Checked against the length that's already there.
+		{MinLength: ptr(int32(8)), NonLetters: ptr(int32(9))}, {NonLetters: ptr(int32(30))},
+	} {
+		if err := s.SetPasswordPolicy(ctx, bad); !errors.Is(err, password.ErrBadPolicy) {
+			t.Errorf("%+v: %v, want ErrBadPolicy", bad, err)
 		}
+	}
+	if got, err := s.GetPasswordPolicy(ctx); err != nil || got != want {
+		t.Errorf("after refusals = %+v, %v", got, err)
 	}
 }
 
@@ -48,11 +57,10 @@ func TestPasswordPolicyOnItsOwn(t *testing.T) {
 	// The first write to settings can be this one.
 	s := storetest.New(t)
 	ctx := t.Context()
-	classes := int32(2)
-	if err := s.SetPasswordPolicy(ctx, nil, &classes); err != nil {
+	if err := s.SetPasswordPolicy(ctx, store.PolicyChange{Classes: ptr(int32(2))}); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := s.GetPasswordPolicy(ctx); err != nil || got != (password.Policy{MinLength: 15, Classes: 2}) {
+	if got, err := s.GetPasswordPolicy(ctx); err != nil || got != (password.Policy{MinLength: 8, NonLetters: 1, Classes: 2}) {
 		t.Errorf("got %+v, %v", got, err)
 	}
 }

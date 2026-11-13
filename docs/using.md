@@ -23,8 +23,8 @@ Open the base URL and log in.
    account, and opening the link in a browser shows them what it is and how fast it goes.
 
 Pause, skip, jump and change the pace from the same page. The Account page has your password,
-two-factor, your logged-in browsers and API tokens for the CLI. A password needs 15 characters
-unless an admin has said otherwise, and the page asking for one says what it needs.
+two-factor, your logged-in browsers and API tokens for the CLI. A password needs 8 characters, one
+of them not a letter, unless an admin has said otherwise. The page asking for one says what it needs.
 
 Two-factor takes a code from an authenticator app as well as your password. Setting it up gives you
 ten recovery codes, each good for one login without your phone. An admin can require it for

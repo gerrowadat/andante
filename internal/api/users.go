@@ -111,7 +111,8 @@ func (h *handler) settings(ctx context.Context) (client.Settings, error) {
 	}
 	return client.Settings{
 		RequireTwoFactor: on, WhoCanInvite: client.WhoCanInvite(invites.Who), InviteLimit: invites.Limit,
-		PasswordMinLength: int32(policy.MinLength), PasswordClasses: int32(policy.Classes), //nolint:gosec // Validated.
+		PasswordMinLength: int32(policy.MinLength), PasswordNonLetters: int32(policy.NonLetters), //nolint:gosec // Validated.
+		PasswordClasses: int32(policy.Classes), //nolint:gosec // Validated.
 	}, nil
 }
 
@@ -156,19 +157,22 @@ func (h *handler) UpdateSettings(ctx context.Context, r gen.UpdateSettingsReques
 			h.audit(ctx, "settings.changed", fmt.Sprintf("invite-limit.%d", *l))
 		}
 	}
-	if length, classes := r.Body.PasswordMinLength, r.Body.PasswordClasses; length != nil || classes != nil {
-		err := h.store.SetPasswordPolicy(ctx, length, classes)
+	change := store.PolicyChange{MinLength: r.Body.PasswordMinLength, NonLetters: r.Body.PasswordNonLetters, Classes: r.Body.PasswordClasses}
+	if change != (store.PolicyChange{}) {
+		err := h.store.SetPasswordPolicy(ctx, change)
 		if errors.Is(err, password.ErrBadPolicy) {
 			return nil, invalidRequest(err.Error())
 		}
 		if err != nil {
 			return nil, err
 		}
-		if length != nil {
-			h.audit(ctx, "settings.changed", fmt.Sprintf("password-min-length.%d", *length))
-		}
-		if classes != nil {
-			h.audit(ctx, "settings.changed", fmt.Sprintf("password-classes.%d", *classes))
+		for _, c := range []struct {
+			name string
+			to   *int32
+		}{{"password-min-length", change.MinLength}, {"password-non-letters", change.NonLetters}, {"password-classes", change.Classes}} {
+			if c.to != nil {
+				h.audit(ctx, "settings.changed", fmt.Sprintf("%s.%d", c.name, *c.to))
+			}
 		}
 	}
 	body, err := h.settings(ctx)

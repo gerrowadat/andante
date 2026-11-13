@@ -148,12 +148,13 @@ type Session struct {
 }
 
 type Setting struct {
-	OnlyRow           bool
-	RequireTotp       bool
-	WhoCanInvite      string
-	InviteLimit       int32
-	PasswordMinLength int32
-	PasswordClasses   int32
+	OnlyRow            bool
+	RequireTotp        bool
+	WhoCanInvite       string
+	InviteLimit        int32
+	PasswordMinLength  int32
+	PasswordNonLetters int32
+	PasswordClasses    int32
 }
 
 type Source struct {

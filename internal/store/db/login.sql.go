@@ -205,19 +205,21 @@ func (q *Queries) GetLiveSession(ctx context.Context, arg GetLiveSessionParams) 
 }
 
 const getPasswordPolicy = `-- name: GetPasswordPolicy :one
-SELECT coalesce((SELECT password_min_length FROM settings), 15)::integer AS password_min_length,
+SELECT coalesce((SELECT password_min_length FROM settings), 8)::integer AS password_min_length,
+       coalesce((SELECT password_non_letters FROM settings), 1)::integer AS password_non_letters,
        coalesce((SELECT password_classes FROM settings), 0)::integer AS password_classes
 `
 
 type GetPasswordPolicyRow struct {
-	PasswordMinLength int32
-	PasswordClasses   int32
+	PasswordMinLength  int32
+	PasswordNonLetters int32
+	PasswordClasses    int32
 }
 
 func (q *Queries) GetPasswordPolicy(ctx context.Context) (GetPasswordPolicyRow, error) {
 	row := q.db.QueryRow(ctx, getPasswordPolicy)
 	var i GetPasswordPolicyRow
-	err := row.Scan(&i.PasswordMinLength, &i.PasswordClasses)
+	err := row.Scan(&i.PasswordMinLength, &i.PasswordNonLetters, &i.PasswordClasses)
 	return i, err
 }
 
@@ -633,20 +635,23 @@ func (q *Queries) SetPassword(ctx context.Context, arg SetPasswordParams) error 
 }
 
 const setPasswordPolicy = `-- name: SetPasswordPolicy :exec
-INSERT INTO settings (password_min_length, password_classes)
-VALUES (coalesce($1::integer, 15), coalesce($2::integer, 0))
+INSERT INTO settings (password_min_length, password_non_letters, password_classes)
+VALUES ($1::integer, $2::integer, $3::integer)
 ON CONFLICT (only_row) DO UPDATE SET
-    password_min_length = coalesce($1::integer, settings.password_min_length),
-    password_classes = coalesce($2::integer, settings.password_classes)
+    password_min_length = excluded.password_min_length,
+    password_non_letters = excluded.password_non_letters,
+    password_classes = excluded.password_classes
 `
 
 type SetPasswordPolicyParams struct {
-	PasswordMinLength *int32
-	PasswordClasses   *int32
+	PasswordMinLength  int32
+	PasswordNonLetters int32
+	PasswordClasses    int32
 }
 
+// The store has already checked the whole policy, so this writes all of it.
 func (q *Queries) SetPasswordPolicy(ctx context.Context, arg SetPasswordPolicyParams) error {
-	_, err := q.db.Exec(ctx, setPasswordPolicy, arg.PasswordMinLength, arg.PasswordClasses)
+	_, err := q.db.Exec(ctx, setPasswordPolicy, arg.PasswordMinLength, arg.PasswordNonLetters, arg.PasswordClasses)
 	return err
 }
 

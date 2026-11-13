@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 Dave O'Connor
 
-// Package password hashes and checks passwords, following OWASP and NIST SP 800-63B:
-// Argon2id, a length limit, a list of common passwords, and composition rules only if
-// an admin asks for them.
+// Package password hashes and checks passwords: Argon2id as OWASP has it, a list of
+// common passwords, and the length and composition an admin sets in a Policy.
 package password
 
 import (
@@ -39,11 +38,13 @@ type Policy struct {
 	MinLength int
 	// Classes is how many of the Kinds of character it needs, from 0 to Kinds.
 	Classes int
+	// NonLetters is how many characters that aren't letters it needs: digits, symbols,
+	// spaces, anything. From 0 to MinLength.
+	NonLetters int
 }
 
-// DefaultPolicy is NIST SP 800-63B's: 15 characters for a password that can be the only
-// factor, and no composition rules.
-var DefaultPolicy = Policy{MinLength: 15}
+// DefaultPolicy is 8 characters, one of them not a letter.
+var DefaultPolicy = Policy{MinLength: 8, NonLetters: 1}
 
 // Errors for a password that can't be used. What Check returns wraps one of them, and its
 // text is shown to the person typing it.
@@ -55,8 +56,8 @@ var (
 )
 
 // ErrBadPolicy means a Policy is out of range.
-var ErrBadPolicy = fmt.Errorf("a password's minimum length is %d to %d, and it can need 0 to %d kinds of character",
-	Shortest, MaxLength, Kinds)
+var ErrBadPolicy = fmt.Errorf("a password's minimum length is %d to %d, it can need 0 to %d kinds of character, "+
+	"and it can't need more characters that aren't letters than its minimum length", Shortest, MaxLength, Kinds)
 
 // rejection is an error with its own text for the person typing the password.
 type rejection struct {
@@ -87,7 +88,8 @@ var common = func() map[string]bool {
 
 // Validate says whether p is in range.
 func (p Policy) Validate() error {
-	if p.MinLength < Shortest || p.MinLength > MaxLength || p.Classes < 0 || p.Classes > Kinds {
+	if p.MinLength < Shortest || p.MinLength > MaxLength || p.Classes < 0 || p.Classes > Kinds ||
+		p.NonLetters < 0 || p.NonLetters > p.MinLength {
 		return ErrBadPolicy
 	}
 	return nil
@@ -95,11 +97,21 @@ func (p Policy) Validate() error {
 
 // Rule is p in a sentence, for a page that asks for a password.
 func (p Policy) Rule() string {
-	if p.Classes == 0 {
-		return fmt.Sprintf("At least %d characters.", p.MinLength)
+	rule := fmt.Sprintf("At least %d characters", p.MinLength)
+	if p.NonLetters > 0 {
+		rule += ", and " + nonLetters(p.NonLetters)
 	}
-	return fmt.Sprintf("At least %d characters, with at least %d of: lower-case letters, capitals, digits and anything else.",
-		p.MinLength, p.Classes)
+	if p.Classes > 0 {
+		rule += fmt.Sprintf(", with at least %d of: lower-case letters, capitals, digits and anything else", p.Classes)
+	}
+	return rule + "."
+}
+
+func nonLetters(n int) string {
+	if n == 1 {
+		return "at least one that isn't a letter"
+	}
+	return fmt.Sprintf("at least %d that aren't letters", n)
 }
 
 // Check says whether a password can be used by someone called name.
@@ -110,6 +122,12 @@ func (p Policy) Check(password, name string) error {
 		return rejection{ErrTooShort, fmt.Sprintf("a password needs at least %d characters", p.MinLength)}
 	case length > MaxLength:
 		return ErrTooLong
+	case countNonLetters(password) < p.NonLetters:
+		text := "a password needs at least one character that isn't a letter, such as a digit, a symbol or a space"
+		if p.NonLetters > 1 {
+			text = fmt.Sprintf("a password needs at least %d characters that aren't letters, such as digits, symbols or spaces", p.NonLetters)
+		}
+		return rejection{ErrTooSimple, text}
 	case kinds(password) < p.Classes:
 		return rejection{ErrTooSimple, fmt.Sprintf(
 			"a password needs at least %d of: lower-case letters, capitals, digits and anything else", p.Classes)}
@@ -119,6 +137,16 @@ func (p Policy) Check(password, name string) error {
 		return ErrCommon
 	}
 	return nil
+}
+
+func countNonLetters(s string) int {
+	n := 0
+	for _, r := range s {
+		if !unicode.IsLetter(r) {
+			n++
+		}
+	}
+	return n
 }
 
 // kinds counts the kinds of character in s. A letter with no case, as in most scripts

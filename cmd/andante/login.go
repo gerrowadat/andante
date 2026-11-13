@@ -209,8 +209,8 @@ func (a *app) auditCmd() *cobra.Command {
 
 func (a *app) settingsCmd() *cobra.Command {
 	showSettings := func(w *table, s *client.Settings) {
-		w.printf("Require two-factor:\t%t\nWho can invite:\t%s\nInvite limit:\t%d\nPassword min length:\t%d\nPassword classes:\t%d\n",
-			s.RequireTwoFactor, s.WhoCanInvite, s.InviteLimit, s.PasswordMinLength, s.PasswordClasses)
+		w.printf("Require two-factor:\t%t\nWho can invite:\t%s\nInvite limit:\t%d\nPassword min length:\t%d\nPassword non-letters:\t%d\nPassword classes:\t%d\n",
+			s.RequireTwoFactor, s.WhoCanInvite, s.InviteLimit, s.PasswordMinLength, s.PasswordNonLetters, s.PasswordClasses)
 	}
 	settings := operation(&cobra.Command{
 		Use:   "settings",
@@ -230,6 +230,7 @@ func (a *app) settingsCmd() *cobra.Command {
 		whoCanInvite     string
 		inviteLimit      int32
 		minLength        int32
+		nonLetters       int32
 		classes          int32
 	)
 	set := operation(&cobra.Command{
@@ -251,6 +252,9 @@ func (a *app) settingsCmd() *cobra.Command {
 			if cmd.Flags().Changed("password-min-length") {
 				patch.PasswordMinLength = &minLength
 			}
+			if cmd.Flags().Changed("password-non-letters") {
+				patch.PasswordNonLetters = &nonLetters
+			}
 			if cmd.Flags().Changed("password-classes") {
 				patch.PasswordClasses = &classes
 			}
@@ -265,6 +269,7 @@ func (a *app) settingsCmd() *cobra.Command {
 	set.Flags().StringVar(&whoCanInvite, "who-can-invite", "", "who can invite people: admins or users")
 	set.Flags().Int32Var(&inviteLimit, "invite-limit", 0, "how many unused invite places a user can have out at once")
 	set.Flags().Int32Var(&minLength, "password-min-length", 0, "the fewest characters a new password can have, 8 to 128")
+	set.Flags().Int32Var(&nonLetters, "password-non-letters", 0, "how many characters of a new password can't be letters: digits, symbols or spaces")
 	set.Flags().Int32Var(&classes, "password-classes", 0,
 		"how many of lower-case letters, capitals, digits and anything else a new password needs, 0 to 4")
 	settings.AddCommand(set)

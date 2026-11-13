@@ -90,21 +90,24 @@ andante settings set --who-can-invite users --invite-limit 5
 
 ## Password Rules
 
-A new password needs 15 characters to start with, and nothing about which characters. That's NIST
-SP 800-63B's advice for a password that can be the only thing standing between someone and the
-account. Passwords on a list of common ones, ones with the person's name in and ones that are one
-character over and over are always refused.
+A new password needs 8 characters to start with, and at least one of them has to be something other
+than a letter: a digit, a symbol or a space. Passwords on a list of common ones, ones with the
+person's name in and ones that are one character over and over are always refused.
 
 To change it, on the Users page or with the CLI:
 
 ```sh
-andante settings set --password-min-length 12 --password-classes 3
+andante settings set --password-min-length 12 --password-non-letters 2 --password-classes 3
 ```
 
-The minimum length is 8 to 128. Classes is how many of lower-case letters, capitals, digits and
-anything else a password has to have, 0 to 4. With two-factor required, 8 characters is enough by
-NIST's reckoning. Composition rules mostly get you `Password1!`, so I'd leave classes at 0 unless
-something outside andante insists on them.
+| Setting | Range | To start with |
+|---|---|---|
+| `--password-min-length` | 8 to 128 | 8 |
+| `--password-non-letters`: characters that aren't letters | 0 to the minimum length | 1 |
+| `--password-classes`: how many of lower-case letters, capitals, digits and anything else | 0 to 4 | 0 |
+
+If nobody has two-factor, a longer minimum is the setting that does most for you. NIST SP 800-63B
+asks for 15 characters from a password that's the only factor.
 
 The rules apply to passwords set from then on. Nobody's existing password stops working, so to make
 everyone meet a new rule, give them each a new password link.

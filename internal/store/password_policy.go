@@ -17,23 +17,40 @@ func (s *Store) GetPasswordPolicy(ctx context.Context) (password.Policy, error) 
 	if err != nil {
 		return password.Policy{}, fmt.Errorf("read settings: %w", err)
 	}
-	return password.Policy{MinLength: int(row.PasswordMinLength), Classes: int(row.PasswordClasses)}, nil
+	return password.Policy{
+		MinLength: int(row.PasswordMinLength), NonLetters: int(row.PasswordNonLetters), Classes: int(row.PasswordClasses),
+	}, nil
 }
 
-// SetPasswordPolicy changes what a new password has to be. A nil leaves that setting as
-// it is, and one out of range is password.ErrBadPolicy.
-func (s *Store) SetPasswordPolicy(ctx context.Context, minLength, classes *int32) error {
-	check := password.Policy{MinLength: password.Shortest}
-	if minLength != nil {
-		check.MinLength = int(*minLength)
-	}
-	if classes != nil {
-		check.Classes = int(*classes)
-	}
-	if err := check.Validate(); err != nil {
+// PolicyChange is a change to the password policy. A nil leaves that part as it is.
+type PolicyChange struct {
+	MinLength, NonLetters, Classes *int32
+}
+
+// SetPasswordPolicy changes what a new password has to be. A policy out of range,
+// counting the parts it leaves alone, is password.ErrBadPolicy.
+func (s *Store) SetPasswordPolicy(ctx context.Context, change PolicyChange) error {
+	// Two admins changing it at once can lose one change, but never store a policy that
+	// doesn't make sense: the table checks the parts against each other too.
+	p, err := s.GetPasswordPolicy(ctx)
+	if err != nil {
 		return err
 	}
-	if err := s.queries.SetPasswordPolicy(ctx, db.SetPasswordPolicyParams{PasswordMinLength: minLength, PasswordClasses: classes}); err != nil {
+	for _, c := range []struct {
+		to   *int32
+		part *int
+	}{{change.MinLength, &p.MinLength}, {change.NonLetters, &p.NonLetters}, {change.Classes, &p.Classes}} {
+		if c.to != nil {
+			*c.part = int(*c.to)
+		}
+	}
+	if err := p.Validate(); err != nil {
+		return err
+	}
+	err = s.queries.SetPasswordPolicy(ctx, db.SetPasswordPolicyParams{
+		PasswordMinLength: int32(p.MinLength), PasswordNonLetters: int32(p.NonLetters), PasswordClasses: int32(p.Classes), //nolint:gosec // Validated.
+	})
+	if err != nil {
 		return fmt.Errorf("change settings: %w", err)
 	}
 	return nil
