@@ -68,15 +68,38 @@ func (a *App) Logs(ctx context.Context, actor store.Actor, q LogQuery) ([]client
 	return out, more, nil
 }
 
-// Fetches returns the catalogue's crawl log for a source, newest first, and whether
-// there's more past the limit. Only an admin can read it.
-func (a *App) Fetches(ctx context.Context, actor store.Actor, sourceID, before int64, limit int32) ([]client.Fetch, bool, error) {
+// CrawlLogQuery picks out part of a source's crawl log.
+type CrawlLogQuery struct {
+	Before   int64               // Only items older than this ID. Zero starts at the newest.
+	Kind     client.CrawlLogKind // Empty means every kind.
+	WithPage bool                // Only the event that kept a page.
+	Limit    int32
+}
+
+// CrawlLog returns the catalogue's crawl log for a source, newest first, and
+// whether there's more past the limit. Only an admin can read it.
+func (a *App) CrawlLog(ctx context.Context, actor store.Actor, sourceID int64, q CrawlLogQuery) ([]client.CrawlLogItem, bool, error) {
 	if !actor.Admin {
 		return nil, false, ErrAdminOnly
 	}
-	params := catalogue.ListFetchesParams{Limit: &limit}
-	if before > 0 {
-		params.Before = &before
+	params := catalogue.ListCrawlLogParams{Limit: &q.Limit}
+	if q.Before > 0 {
+		params.Before = &q.Before
 	}
-	return a.Catalogue.Fetches(ctx, sourceID, params)
+	if q.Kind != "" {
+		k := catalogue.CrawlLogKind(q.Kind)
+		params.Kind = &k
+	}
+	if q.WithPage {
+		params.HasPage = &q.WithPage
+	}
+	return a.Catalogue.CrawlLog(ctx, sourceID, params)
+}
+
+// CrawledPage returns the page a crawl log event kept. Only an admin can read it.
+func (a *App) CrawledPage(ctx context.Context, actor store.Actor, sourceID, entry int64) (client.CrawledPage, error) {
+	if !actor.Admin {
+		return client.CrawledPage{}, ErrAdminOnly
+	}
+	return a.Catalogue.CrawledPage(ctx, sourceID, entry)
 }

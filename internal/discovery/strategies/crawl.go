@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"strings"
 
@@ -115,7 +116,8 @@ func (Crawl) Next(ctx context.Context, fetcher discovery.PageFetcher, src discov
 			return discovery.Batch{}, fmt.Errorf("decode crawl cursor: %w", err)
 		}
 	}
-	if cursor.Next == "" && cursor.Last == "" {
+	starting := cursor.Next == "" && cursor.Last == ""
+	if starting {
 		cursor.Next = config.StartURL
 	}
 
@@ -126,6 +128,9 @@ func (Crawl) Next(ctx context.Context, fetcher discovery.PageFetcher, src discov
 		kind:      src.DefaultKind,
 		urls:      map[string]bool{},
 		hashes:    map[string]bool{},
+	}
+	if starting {
+		c.note(ctx, slog.LevelInfo, "starting at "+cursor.Next, cursor.Next, nil)
 	}
 	if cursor.Next == "" {
 		if err := c.recheck(ctx, &cursor); err != nil {
@@ -139,6 +144,7 @@ func (Crawl) Next(ctx context.Context, fetcher discovery.PageFetcher, src discov
 			if errors.Is(err, discovery.ErrCycle) || len(c.batch.Entries) == 0 {
 				return discovery.Batch{}, err
 			}
+			c.note(ctx, slog.LevelWarn, fmt.Sprintf("stopped after %d entries, to try again next time: %v", len(c.batch.Entries), err), cursor.Next, nil)
 			break
 		}
 	}
@@ -160,6 +166,7 @@ func (c *crawl) recheck(ctx context.Context, cursor *crawlCursor) error {
 		return err
 	}
 	if resp.NotModified {
+		c.note(ctx, slog.LevelInfo, cursor.Last+" has not changed since the last check", cursor.Last, nil)
 		return nil
 	}
 	result, err := c.extract(resp)
@@ -168,8 +175,11 @@ func (c *crawl) recheck(ctx context.Context, cursor *crawlCursor) error {
 	}
 	c.batch.Updates = append(c.batch.Updates, c.entry(ctx, cursor.Last, result))
 	if next := result.Fields.Next; next != "" && !same(next, cursor.Last) {
+		c.note(ctx, slog.LevelInfo, "found a next link on "+cursor.Last+": "+next, cursor.Last, nil)
 		cursor.Next = next
+		return nil
 	}
+	c.note(ctx, slog.LevelInfo, "rechecked "+cursor.Last+": still no next link", cursor.Last, resp.Body)
 	return nil
 }
 
@@ -197,17 +207,27 @@ func (c *crawl) step(ctx context.Context, cursor *crawlCursor) error {
 	}
 	c.urls[current], c.urls[resp.URL] = true, true
 	c.batch.Entries = append(c.batch.Entries, entry)
-	c.batch.Warnings = append(c.batch.Warnings, prefixed(resp.URL, result.Warnings)...)
+	// As notes, so that the crawl log has them in order.
+	for _, warning := range prefixed(resp.URL, result.Warnings) {
+		c.note(ctx, slog.LevelWarn, warning, resp.URL, nil)
+	}
 
 	cursor.Last, cursor.Next = resp.URL, ""
 	switch next := result.Fields.Next; {
 	case next == "":
-		c.batch.Warnings = append(c.batch.Warnings, "no next link on "+resp.URL+"; treating it as the live end")
+		c.note(ctx, slog.LevelWarn, "no next link on "+resp.URL+"; treating it as the live end", resp.URL, resp.Body)
 	case same(next, resp.URL):
+		// Plenty of comic sites do this on their latest page.
+		c.note(ctx, slog.LevelInfo, "the next link on "+resp.URL+" points back at it, so this is the live end", resp.URL, resp.Body)
 	default:
 		cursor.Next = next
 	}
 	return nil
+}
+
+// note says what the crawl did. page is the body of a page it gave up on.
+func (c *crawl) note(ctx context.Context, level slog.Level, message, pageURL string, page []byte) {
+	c.fetcher.Note(ctx, discovery.Note{Level: level, Message: message, URL: pageURL, Page: page})
 }
 
 func (c *crawl) extract(resp *discovery.Response) (extract.Result, error) {

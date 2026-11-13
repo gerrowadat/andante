@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 )
 
@@ -68,7 +69,17 @@ type Batch struct {
 	Warnings []string
 }
 
-// PageFetcher is how a strategy requests pages.
+// Note is something a strategy decided or ran into. One about a page it gave
+// up on, such as one with no next link, carries the page, so that someone can
+// see what the crawl saw.
+type Note struct {
+	Level   slog.Level
+	Message string
+	URL     string
+	Page    []byte
+}
+
+// PageFetcher is how a strategy requests pages, and says what it made of them.
 type PageFetcher interface {
 	// Fetch gets a page. It is never conditional: a strategy retrying after a
 	// failed save needs the body, even if the page has not changed.
@@ -78,6 +89,9 @@ type PageFetcher interface {
 	Revalidate(ctx context.Context, url string) (*Response, error)
 	// Head asks about a file without downloading it.
 	Head(ctx context.Context, url string) (*Response, error)
+	// Note records something the strategy decided or ran into, as it happens,
+	// so that the crawl log has it in order with the requests.
+	Note(ctx context.Context, note Note)
 }
 
 // Strategy is one way of discovering a source's archive.

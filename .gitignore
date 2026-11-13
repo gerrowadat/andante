@@ -4,6 +4,7 @@ testdata/rapid/
 # Build output
 /out/
 /dist/
+/andante
 *.test
 *.out
 coverage.txt

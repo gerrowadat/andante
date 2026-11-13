@@ -58,7 +58,24 @@ SELECT etag, last_modified FROM crawl_log
 WHERE source_id = $1 AND url = $2 AND status = 200
 ORDER BY id DESC LIMIT 1;
 
--- name: ListFetches :many
-SELECT * FROM crawl_log
+-- name: InsertCrawlEvent :one
+INSERT INTO crawl_log (source_id, kind, level, message, url, body)
+VALUES (sqlc.arg(source_id), 'event', sqlc.arg(level), sqlc.arg(message), sqlc.narg(url), sqlc.narg(body))
+RETURNING id;
+
+-- name: ClearCrawlPages :exec
+-- Keeps a source's latest page and drops the rest.
+UPDATE crawl_log SET body = NULL
+WHERE source_id = sqlc.arg(source_id) AND body IS NOT NULL AND id <> sqlc.arg(keep);
+
+-- name: ListCrawlLog :many
+SELECT id, kind, url, status, error, level, message, fetched_at, (body IS NOT NULL)::boolean AS has_page
+FROM crawl_log
 WHERE source_id = sqlc.arg(source_id) AND id < sqlc.arg(before)
+  AND (sqlc.narg(kind)::text IS NULL OR kind = sqlc.narg(kind))
+  AND (NOT sqlc.arg(with_page)::boolean OR body IS NOT NULL)
 ORDER BY id DESC LIMIT sqlc.arg(row_limit);
+
+-- name: GetCrawlPage :one
+SELECT url, fetched_at, body FROM crawl_log
+WHERE source_id = sqlc.arg(source_id) AND id = sqlc.arg(id) AND body IS NOT NULL;

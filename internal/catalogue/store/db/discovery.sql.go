@@ -12,6 +12,22 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const clearCrawlPages = `-- name: ClearCrawlPages :exec
+UPDATE crawl_log SET body = NULL
+WHERE source_id = $1 AND body IS NOT NULL AND id <> $2
+`
+
+type ClearCrawlPagesParams struct {
+	SourceID int64
+	Keep     int64
+}
+
+// Keeps a source's latest page and drops the rest.
+func (q *Queries) ClearCrawlPages(ctx context.Context, arg ClearCrawlPagesParams) error {
+	_, err := q.db.Exec(ctx, clearCrawlPages, arg.SourceID, arg.Keep)
+	return err
+}
+
 const entryKnown = `-- name: EntryKnown :one
 SELECT EXISTS (
     SELECT 1 FROM entries
@@ -58,6 +74,56 @@ func (q *Queries) EntryStats(ctx context.Context, sourceID int64) (EntryStatsRow
 	return i, err
 }
 
+const getCrawlPage = `-- name: GetCrawlPage :one
+SELECT url, fetched_at, body FROM crawl_log
+WHERE source_id = $1 AND id = $2 AND body IS NOT NULL
+`
+
+type GetCrawlPageParams struct {
+	SourceID int64
+	ID       int64
+}
+
+type GetCrawlPageRow struct {
+	Url       *string
+	FetchedAt time.Time
+	Body      []byte
+}
+
+func (q *Queries) GetCrawlPage(ctx context.Context, arg GetCrawlPageParams) (GetCrawlPageRow, error) {
+	row := q.db.QueryRow(ctx, getCrawlPage, arg.SourceID, arg.ID)
+	var i GetCrawlPageRow
+	err := row.Scan(&i.Url, &i.FetchedAt, &i.Body)
+	return i, err
+}
+
+const insertCrawlEvent = `-- name: InsertCrawlEvent :one
+INSERT INTO crawl_log (source_id, kind, level, message, url, body)
+VALUES ($1, 'event', $2, $3, $4, $5)
+RETURNING id
+`
+
+type InsertCrawlEventParams struct {
+	SourceID int64
+	Level    *string
+	Message  *string
+	Url      *string
+	Body     []byte
+}
+
+func (q *Queries) InsertCrawlEvent(ctx context.Context, arg InsertCrawlEventParams) (int64, error) {
+	row := q.db.QueryRow(ctx, insertCrawlEvent,
+		arg.SourceID,
+		arg.Level,
+		arg.Message,
+		arg.Url,
+		arg.Body,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
 const insertCrawlLog = `-- name: InsertCrawlLog :exec
 INSERT INTO crawl_log (source_id, url, status, etag, last_modified, error)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -65,7 +131,7 @@ VALUES ($1, $2, $3, $4, $5, $6)
 
 type InsertCrawlLogParams struct {
 	SourceID     int64
-	Url          string
+	Url          *string
 	Status       *int32
 	Etag         *string
 	LastModified *string
@@ -138,7 +204,7 @@ ORDER BY id DESC LIMIT 1
 
 type LatestValidatorsParams struct {
 	SourceID int64
-	Url      string
+	Url      *string
 }
 
 type LatestValidatorsRow struct {
@@ -151,6 +217,71 @@ func (q *Queries) LatestValidators(ctx context.Context, arg LatestValidatorsPara
 	var i LatestValidatorsRow
 	err := row.Scan(&i.Etag, &i.LastModified)
 	return i, err
+}
+
+const listCrawlLog = `-- name: ListCrawlLog :many
+SELECT id, kind, url, status, error, level, message, fetched_at, (body IS NOT NULL)::boolean AS has_page
+FROM crawl_log
+WHERE source_id = $1 AND id < $2
+  AND ($3::text IS NULL OR kind = $3)
+  AND (NOT $4::boolean OR body IS NOT NULL)
+ORDER BY id DESC LIMIT $5
+`
+
+type ListCrawlLogParams struct {
+	SourceID int64
+	Before   int64
+	Kind     *string
+	WithPage bool
+	RowLimit int32
+}
+
+type ListCrawlLogRow struct {
+	ID        int64
+	Kind      string
+	Url       *string
+	Status    *int32
+	Error     *string
+	Level     *string
+	Message   *string
+	FetchedAt time.Time
+	HasPage   bool
+}
+
+func (q *Queries) ListCrawlLog(ctx context.Context, arg ListCrawlLogParams) ([]ListCrawlLogRow, error) {
+	rows, err := q.db.Query(ctx, listCrawlLog,
+		arg.SourceID,
+		arg.Before,
+		arg.Kind,
+		arg.WithPage,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCrawlLogRow
+	for rows.Next() {
+		var i ListCrawlLogRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.Url,
+			&i.Status,
+			&i.Error,
+			&i.Level,
+			&i.Message,
+			&i.FetchedAt,
+			&i.HasPage,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listDueSources = `-- name: ListDueSources :many
@@ -194,47 +325,6 @@ func (q *Queries) ListDueSources(ctx context.Context, dueAt *time.Time) ([]Sourc
 			&i.HomeKey,
 			&i.DemandSeq,
 			&i.Revision,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listFetches = `-- name: ListFetches :many
-SELECT id, source_id, url, status, etag, last_modified, fetched_at, error FROM crawl_log
-WHERE source_id = $1 AND id < $2
-ORDER BY id DESC LIMIT $3
-`
-
-type ListFetchesParams struct {
-	SourceID int64
-	Before   int64
-	RowLimit int32
-}
-
-func (q *Queries) ListFetches(ctx context.Context, arg ListFetchesParams) ([]CrawlLog, error) {
-	rows, err := q.db.Query(ctx, listFetches, arg.SourceID, arg.Before, arg.RowLimit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []CrawlLog
-	for rows.Next() {
-		var i CrawlLog
-		if err := rows.Scan(
-			&i.ID,
-			&i.SourceID,
-			&i.Url,
-			&i.Status,
-			&i.Etag,
-			&i.LastModified,
-			&i.FetchedAt,
-			&i.Error,
 		); err != nil {
 			return nil, err
 		}

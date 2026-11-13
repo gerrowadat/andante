@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 
 	"github.com/gerrowadat/andante/internal/catalogue/api/gen"
 	"github.com/gerrowadat/andante/internal/catalogue/client"
@@ -43,29 +44,58 @@ func (h *handler) ListLogs(_ context.Context, r gen.ListLogsRequestObject) (gen.
 	return gen.ListLogs200JSONResponse(list), nil
 }
 
-func (h *handler) ListFetches(ctx context.Context, r gen.ListFetchesRequestObject) (gen.ListFetchesResponseObject, error) {
+func (h *handler) ListCrawlLog(ctx context.Context, r gen.ListCrawlLogRequestObject) (gen.ListCrawlLogResponseObject, error) {
 	if _, err := h.store.GetSource(ctx, r.ID); errors.Is(err, store.ErrNotFound) {
 		return nil, httpapi.NotFound("source", r.ID)
 	} else if err != nil {
 		return nil, err
 	}
-	var before int64
-	if r.Params.Before != nil {
-		before = *r.Params.Before
-	}
 	limit := listLimit(r.Params.Limit)
-	rows, err := h.store.ListFetches(ctx, r.ID, before, limit+1)
+	filter := store.CrawlLogFilter{Limit: limit + 1}
+	if r.Params.Before != nil {
+		filter.Before = *r.Params.Before
+	}
+	if r.Params.Kind != nil {
+		filter.Kind = string(*r.Params.Kind)
+	}
+	if r.Params.HasPage != nil {
+		filter.WithPage = *r.Params.HasPage
+	}
+	rows, err := h.store.ListCrawlLog(ctx, r.ID, filter)
 	if err != nil {
 		return nil, err
 	}
-	list := client.FetchList{Items: make([]client.Fetch, 0, len(rows)), More: len(rows) > int(limit)}
+	list := client.CrawlLog{Items: make([]client.CrawlLogItem, 0, len(rows)), More: len(rows) > int(limit)}
 	if list.More {
 		rows = rows[:limit]
 	}
 	for _, row := range rows {
-		list.Items = append(list.Items, client.Fetch{
-			ID: row.ID, URL: row.Url, Status: nullableValue(row.Status), FetchedAt: row.FetchedAt, Error: nullableValue(row.Error),
-		})
+		item := client.CrawlLogItem{
+			ID: row.ID, Kind: client.CrawlLogKind(row.Kind), At: row.FetchedAt, URL: nullableValue(row.Url),
+			Status: nullableValue(row.Status), Error: nullableValue(row.Error), Message: nullableValue(row.Message), HasPage: row.HasPage,
+		}
+		if row.Level != nil {
+			level := client.LogLevel(*row.Level)
+			item.Level = &level
+		}
+		list.Items = append(list.Items, item)
 	}
-	return gen.ListFetches200JSONResponse(list), nil
+	return gen.ListCrawlLog200JSONResponse(list), nil
+}
+
+func (h *handler) GetCrawledPage(ctx context.Context, r gen.GetCrawledPageRequestObject) (gen.GetCrawledPageResponseObject, error) {
+	page, err := h.store.CrawledPage(ctx, r.ID, r.Entry)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, httpapi.NotFound("crawled page", r.Entry)
+	}
+	if err != nil {
+		return nil, err
+	}
+	var url string
+	if page.Url != nil {
+		url = *page.Url
+	}
+	return gen.GetCrawledPage200JSONResponse(client.CrawledPage{
+		URL: url, FetchedAt: page.FetchedAt, Body: strings.ToValidUTF8(string(page.Body), "\uFFFD"),
+	}), nil
 }

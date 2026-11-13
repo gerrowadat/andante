@@ -53,6 +53,24 @@ func (e CrawlConfigStrategy) Valid() bool {
 	}
 }
 
+// Defines values for CrawlLogKind.
+const (
+	CrawlLogKindEvent CrawlLogKind = "event"
+	CrawlLogKindFetch CrawlLogKind = "fetch"
+)
+
+// Valid indicates whether the value is a known member of the CrawlLogKind enum.
+func (e CrawlLogKind) Valid() bool {
+	switch e {
+	case CrawlLogKindEvent:
+		return true
+	case CrawlLogKindFetch:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for FeedConfigStrategy.
 const (
 	Feed FeedConfigStrategy = "feed"
@@ -659,6 +677,50 @@ type CrawlConfig struct {
 
 // CrawlConfigStrategy defines model for CrawlConfig.Strategy.
 type CrawlConfigStrategy string
+
+// CrawlLog defines model for CrawlLog.
+type CrawlLog struct {
+	Items []CrawlLogItem `json:"items"`
+
+	// Next The next page, or null on the last one.
+	Next nullable.Nullable[NextLink] `json:"next"`
+}
+
+// CrawlLogItem defines model for CrawlLogItem.
+type CrawlLogItem struct {
+	At time.Time `json:"at"`
+
+	// Error Why a fetch failed.
+	Error nullable.Nullable[string] `json:"error,omitempty"`
+
+	// HasPage Whether the event kept the page it is about, for /sources/{id}/crawl-log/{entry}/page.
+	HasPage bool  `json:"has_page"`
+	ID      int64 `json:"id"`
+
+	// Kind A fetch is a request the crawl made; an event is something it decided or ran into.
+	Kind  CrawlLogKind `json:"kind"`
+	Level *LogLevel    `json:"level,omitempty"`
+
+	// Message What an event says.
+	Message nullable.Nullable[string] `json:"message,omitempty"`
+
+	// Status The HTTP status of a fetch. A 304 is recorded as 200. Null when there was no response.
+	Status nullable.Nullable[int32] `json:"status,omitempty"`
+
+	// URL The page requested, or the one an event is about.
+	URL nullable.Nullable[string] `json:"url,omitempty"`
+}
+
+// CrawlLogKind A fetch is a request the crawl made; an event is something it decided or ran into.
+type CrawlLogKind string
+
+// CrawledPage defines model for CrawledPage.
+type CrawledPage struct {
+	// Body The response body, with any bytes that are not UTF-8 replaced.
+	Body      string    `json:"body"`
+	FetchedAt time.Time `json:"fetched_at"`
+	URL       string    `json:"url"`
+}
 
 // DiscoveryRequest defines model for DiscoveryRequest.
 type DiscoveryRequest struct {
@@ -1478,6 +1540,21 @@ type ListSourcesParams struct {
 
 	// Kind Only sources of this kind.
 	Kind *Kind `form:"kind,omitempty" json:"kind,omitempty"`
+}
+
+// ListCrawlLogParams defines parameters for ListCrawlLog.
+type ListCrawlLogParams struct {
+	// Cursor An opaque cursor from a previous page's next link.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+
+	// Limit The most items to return.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Kind Only items of this kind.
+	Kind *CrawlLogKind `form:"kind,omitempty" json:"kind,omitempty"`
+
+	// HasPage Only the event that kept a page, if any. A source keeps one at most.
+	HasPage *bool `form:"has_page,omitempty" json:"has_page,omitempty"`
 }
 
 // ListEntriesParams defines parameters for ListEntries.
@@ -2518,6 +2595,20 @@ type ClientInterface interface {
 	// Corresponds with PATCH /sources/{id} (the `UpdateSource` operationId).
 	UpdateSourceWithApplicationMergePatchPlusJSONBody(ctx context.Context, id ID, body UpdateSourceApplicationMergePatchPlusJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ListCrawlLog The crawl log of a source
+	//
+	// Admins only. Every request the catalogue's crawl made for the source, and what it decided and why, newest first. An event that has_page kept the page the crawl gave up on, such as one with no next link.
+	//
+	// Corresponds with GET /sources/{id}/crawl-log (the `ListCrawlLog` operationId).
+	ListCrawlLog(ctx context.Context, id ID, params *ListCrawlLogParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetCrawledPage The page the crawl gave up on
+	//
+	// Admins only. The body of the page a crawl log event kept, as fetched. Only a source's latest such page is kept, so an older event's is a 404.
+	//
+	// Corresponds with GET /sources/{id}/crawl-log/{entry}/page (the `GetCrawledPage` operationId).
+	GetCrawledPage(ctx context.Context, id ID, entry int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// RequestCrawl Ask for a crawl now
 	//
 	// Marks the source due. Crawling happens in the background.
@@ -2534,7 +2625,7 @@ type ClientInterface interface {
 
 	// ListFetches The crawl's requests for a source
 	//
-	// Admins only. Every request the catalogue's crawl made for the source, newest first, from its crawl log.
+	// Admins only. Every request the catalogue's crawl made for the source, newest first. This is the crawl log with only its fetches, as /sources/{id}/crawl-log?kind=fetch gives it.
 	//
 	// Corresponds with GET /sources/{id}/fetches (the `ListFetches` operationId).
 	ListFetches(ctx context.Context, id ID, params *ListFetchesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -3422,6 +3513,40 @@ func (c *Client) UpdateSourceWithApplicationMergePatchPlusJSONBody(ctx context.C
 	return c.Client.Do(req)
 }
 
+// ListCrawlLog The crawl log of a source
+//
+// Admins only. Every request the catalogue's crawl made for the source, and what it decided and why, newest first. An event that has_page kept the page the crawl gave up on, such as one with no next link.
+//
+// Corresponds with GET /sources/{id}/crawl-log (the `ListCrawlLog` operationId).
+func (c *Client) ListCrawlLog(ctx context.Context, id ID, params *ListCrawlLogParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListCrawlLogRequest(c.Server, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetCrawledPage The page the crawl gave up on
+//
+// Admins only. The body of the page a crawl log event kept, as fetched. Only a source's latest such page is kept, so an older event's is a 404.
+//
+// Corresponds with GET /sources/{id}/crawl-log/{entry}/page (the `GetCrawledPage` operationId).
+func (c *Client) GetCrawledPage(ctx context.Context, id ID, entry int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetCrawledPageRequest(c.Server, id, entry)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // RequestCrawl Ask for a crawl now
 //
 // Marks the source due. Crawling happens in the background.
@@ -3458,7 +3583,7 @@ func (c *Client) ListEntries(ctx context.Context, id ID, params *ListEntriesPara
 
 // ListFetches The crawl's requests for a source
 //
-// Admins only. Every request the catalogue's crawl made for the source, newest first, from its crawl log.
+// Admins only. Every request the catalogue's crawl made for the source, newest first. This is the crawl log with only its fetches, as /sources/{id}/crawl-log?kind=fetch gives it.
 //
 // Corresponds with GET /sources/{id}/fetches (the `ListFetches` operationId).
 func (c *Client) ListFetches(ctx context.Context, id ID, params *ListFetchesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -5167,6 +5292,144 @@ func NewUpdateSourceRequestWithBody(server string, id ID, contentType string, bo
 	return req, nil
 }
 
+// NewListCrawlLogRequest constructs an http.Request for the ListCrawlLog method
+func NewListCrawlLogRequest(server string, id ID, params *ListCrawlLogParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/sources/%s/crawl-log", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Kind != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "kind", *params.Kind, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.HasPage != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "has_page", *params.HasPage, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetCrawledPageRequest constructs an http.Request for the GetCrawledPage method
+func NewGetCrawledPageRequest(server string, id ID, entry int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "entry", entry, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/sources/%s/crawl-log/%s/page", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewRequestCrawlRequest constructs an http.Request for the RequestCrawl method
 func NewRequestCrawlRequest(server string, id ID) (*http.Request, error) {
 	var err error
@@ -6013,6 +6276,24 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with PATCH /sources/{id} (the `UpdateSource` operationId).
 	UpdateSourceWithApplicationMergePatchPlusJSONBodyWithResponse(ctx context.Context, id ID, body UpdateSourceApplicationMergePatchPlusJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateSourceResponse, error)
 
+	// ListCrawlLogWithResponse The crawl log of a source
+	//
+	// Admins only. Every request the catalogue's crawl made for the source, and what it decided and why, newest first. An event that has_page kept the page the crawl gave up on, such as one with no next link.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /sources/{id}/crawl-log (the `ListCrawlLog` operationId).
+	ListCrawlLogWithResponse(ctx context.Context, id ID, params *ListCrawlLogParams, reqEditors ...RequestEditorFn) (*ListCrawlLogResponse, error)
+
+	// GetCrawledPageWithResponse The page the crawl gave up on
+	//
+	// Admins only. The body of the page a crawl log event kept, as fetched. Only a source's latest such page is kept, so an older event's is a 404.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /sources/{id}/crawl-log/{entry}/page (the `GetCrawledPage` operationId).
+	GetCrawledPageWithResponse(ctx context.Context, id ID, entry int64, reqEditors ...RequestEditorFn) (*GetCrawledPageResponse, error)
+
 	// RequestCrawlWithResponse Ask for a crawl now
 	//
 	// Marks the source due. Crawling happens in the background.
@@ -6033,7 +6314,7 @@ type ClientWithResponsesInterface interface {
 
 	// ListFetchesWithResponse The crawl's requests for a source
 	//
-	// Admins only. Every request the catalogue's crawl made for the source, newest first, from its crawl log.
+	// Admins only. Every request the catalogue's crawl made for the source, newest first. This is the crawl log with only its fetches, as /sources/{id}/crawl-log?kind=fetch gives it.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -7714,6 +7995,109 @@ func (r UpdateSourceResponse) ContentType() string {
 	return ""
 }
 
+// ListCrawlLogResponse200Headers the declared response headers of an HTTP 200 response for ListCrawlLog
+type ListCrawlLogResponse200Headers struct {
+	Link *string
+}
+
+type ListCrawlLogResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *CrawlLog
+	// ApplicationProblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationProblemJSONDefault *Problem
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *ListCrawlLogResponse200Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListCrawlLogResponse) GetJSON200() *CrawlLog {
+	return r.JSON200
+}
+
+// GetApplicationProblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ListCrawlLogResponse) GetApplicationProblemJSONDefault() *Problem {
+	return r.ApplicationProblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListCrawlLogResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListCrawlLogResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListCrawlLogResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListCrawlLogResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetCrawledPageResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *CrawledPage
+	// ApplicationProblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationProblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetCrawledPageResponse) GetJSON200() *CrawledPage {
+	return r.JSON200
+}
+
+// GetApplicationProblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r GetCrawledPageResponse) GetApplicationProblemJSONDefault() *Problem {
+	return r.ApplicationProblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetCrawledPageResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetCrawledPageResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetCrawledPageResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetCrawledPageResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type RequestCrawlResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -8788,6 +9172,36 @@ func (c *ClientWithResponses) UpdateSourceWithApplicationMergePatchPlusJSONBodyW
 	return ParseUpdateSourceResponse(rsp)
 }
 
+// ListCrawlLogWithResponse The crawl log of a source
+//
+// Admins only. Every request the catalogue's crawl made for the source, and what it decided and why, newest first. An event that has_page kept the page the crawl gave up on, such as one with no next link.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /sources/{id}/crawl-log (the `ListCrawlLog` operationId).
+func (c *ClientWithResponses) ListCrawlLogWithResponse(ctx context.Context, id ID, params *ListCrawlLogParams, reqEditors ...RequestEditorFn) (*ListCrawlLogResponse, error) {
+	rsp, err := c.ListCrawlLog(ctx, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListCrawlLogResponse(rsp)
+}
+
+// GetCrawledPageWithResponse The page the crawl gave up on
+//
+// Admins only. The body of the page a crawl log event kept, as fetched. Only a source's latest such page is kept, so an older event's is a 404.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /sources/{id}/crawl-log/{entry}/page (the `GetCrawledPage` operationId).
+func (c *ClientWithResponses) GetCrawledPageWithResponse(ctx context.Context, id ID, entry int64, reqEditors ...RequestEditorFn) (*GetCrawledPageResponse, error) {
+	rsp, err := c.GetCrawledPage(ctx, id, entry, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetCrawledPageResponse(rsp)
+}
+
 // RequestCrawlWithResponse Ask for a crawl now
 //
 // Marks the source due. Crawling happens in the background.
@@ -8820,7 +9234,7 @@ func (c *ClientWithResponses) ListEntriesWithResponse(ctx context.Context, id ID
 
 // ListFetchesWithResponse The crawl's requests for a source
 //
-// Admins only. Every request the catalogue's crawl made for the source, newest first, from its crawl log.
+// Admins only. Every request the catalogue's crawl made for the source, newest first. This is the crawl log with only its fetches, as /sources/{id}/crawl-log?kind=fetch gives it.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -10105,6 +10519,85 @@ func ParseUpdateSourceResponse(rsp *http.Response) (*UpdateSourceResponse, error
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest Source
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationProblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListCrawlLogResponse parses an HTTP response from a ListCrawlLogWithResponse call
+func ParseListCrawlLogResponse(rsp *http.Response) (*ListCrawlLogResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListCrawlLogResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest CrawlLog
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationProblemJSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers ListCrawlLogResponse200Headers
+		if values := rsp.Header.Values("Link"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Link", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.Link = &value
+		}
+		response.Headers200 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetCrawledPageResponse parses an HTTP response from a GetCrawledPageWithResponse call
+func ParseGetCrawledPageResponse(rsp *http.Response) (*GetCrawledPageResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetCrawledPageResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest CrawledPage
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

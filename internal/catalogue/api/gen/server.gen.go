@@ -40,6 +40,12 @@ type ServerInterface interface {
 	// UpdateSource Update a source
 	// (PATCH /sources/{id})
 	UpdateSource(w http.ResponseWriter, r *http.Request, id ID)
+	// ListCrawlLog The crawl log of a source
+	// (GET /sources/{id}/crawl-log)
+	ListCrawlLog(w http.ResponseWriter, r *http.Request, id ID, params ListCrawlLogParams)
+	// GetCrawledPage The page the crawl gave up on
+	// (GET /sources/{id}/crawl-log/{entry}/page)
+	GetCrawledPage(w http.ResponseWriter, r *http.Request, id ID, entry CrawlLogEntry)
 	// RequestCrawl Ask for a crawl
 	// (POST /sources/{id}/crawls)
 	RequestCrawl(w http.ResponseWriter, r *http.Request, id ID)
@@ -49,9 +55,6 @@ type ServerInterface interface {
 	// SetDemand Say how far readers have got
 	// (PUT /sources/{id}/demand)
 	SetDemand(w http.ResponseWriter, r *http.Request, id ID)
-	// ListFetches The crawl's requests for a source
-	// (GET /sources/{id}/fetches)
-	ListFetches(w http.ResponseWriter, r *http.Request, id ID, params ListFetchesParams)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -288,6 +291,122 @@ func (siw *ServerInterfaceWrapper) UpdateSource(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// ListCrawlLog operation middleware
+func (siw *ServerInterfaceWrapper) ListCrawlLog(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListCrawlLogParams
+
+	// ------------- Optional query parameter "before" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "before", r.URL.Query(), &params.Before, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "before"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "before", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: "int32"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "kind" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "kind", r.URL.Query(), &params.Kind, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "kind"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "kind", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "has_page" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "has_page", r.URL.Query(), &params.HasPage, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "has_page"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "has_page", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListCrawlLog(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetCrawledPage operation middleware
+func (siw *ServerInterfaceWrapper) GetCrawledPage(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "entry" -------------
+	var entry CrawlLogEntry
+
+	err = runtime.BindStyledParameterWithOptions("simple", "entry", r.PathValue("entry"), &entry, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "entry", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetCrawledPage(w, r, id, entry)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // RequestCrawl operation middleware
 func (siw *ServerInterfaceWrapper) RequestCrawl(w http.ResponseWriter, r *http.Request) {
 
@@ -357,61 +476,6 @@ func (siw *ServerInterfaceWrapper) SetDemand(w http.ResponseWriter, r *http.Requ
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.SetDemand(w, r, id)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// ListFetches operation middleware
-func (siw *ServerInterfaceWrapper) ListFetches(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "id" -------------
-	var id ID
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
-		return
-	}
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params ListFetchesParams
-
-	// ------------- Optional query parameter "before" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "before", r.URL.Query(), &params.Before, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "before"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "before", Err: err})
-		}
-		return
-	}
-
-	// ------------- Optional query parameter "limit" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: "int32"})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
-		}
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListFetches(w, r, id, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -550,7 +614,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/sources/{id}/demand", wrapper.SetDemand)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/discoveries", wrapper.CreateDiscovery)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/probes", wrapper.CreateProbe)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/sources/{id}/fetches", wrapper.ListFetches)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/sources/{id}/crawl-log", wrapper.ListCrawlLog)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/sources/{id}/crawl-log/{entry}/page", wrapper.GetCrawledPage)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/logs", wrapper.ListLogs)
 
 	return m
@@ -826,6 +891,86 @@ func (response UpdateSourcedefaultApplicationProblemPlusJSONResponse) VisitUpdat
 	return err
 }
 
+type ListCrawlLogRequestObject struct {
+	ID     ID `json:"id"`
+	Params ListCrawlLogParams
+}
+
+type ListCrawlLogResponseObject interface {
+	VisitListCrawlLogResponse(w http.ResponseWriter) error
+}
+
+type ListCrawlLog200JSONResponse CrawlLog
+
+func (response ListCrawlLog200JSONResponse) VisitListCrawlLogResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListCrawlLogdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ListCrawlLogdefaultApplicationProblemPlusJSONResponse) VisitListCrawlLogResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetCrawledPageRequestObject struct {
+	ID    ID            `json:"id"`
+	Entry CrawlLogEntry `json:"entry"`
+}
+
+type GetCrawledPageResponseObject interface {
+	VisitGetCrawledPageResponse(w http.ResponseWriter) error
+}
+
+type GetCrawledPage200JSONResponse CrawledPage
+
+func (response GetCrawledPage200JSONResponse) VisitGetCrawledPageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetCrawledPagedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetCrawledPagedefaultApplicationProblemPlusJSONResponse) VisitGetCrawledPageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type RequestCrawlRequestObject struct {
 	ID ID `json:"id"`
 }
@@ -926,46 +1071,6 @@ func (response SetDemanddefaultApplicationProblemPlusJSONResponse) VisitSetDeman
 	return err
 }
 
-type ListFetchesRequestObject struct {
-	ID     ID `json:"id"`
-	Params ListFetchesParams
-}
-
-type ListFetchesResponseObject interface {
-	VisitListFetchesResponse(w http.ResponseWriter) error
-}
-
-type ListFetches200JSONResponse FetchList
-
-func (response ListFetches200JSONResponse) VisitListFetchesResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ListFetchesdefaultApplicationProblemPlusJSONResponse struct {
-	Body       Problem
-	StatusCode int
-}
-
-func (response ListFetchesdefaultApplicationProblemPlusJSONResponse) VisitListFetchesResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/problem+json")
-	w.WriteHeader(response.StatusCode)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 	// ListChanges Changes after a revision
@@ -989,6 +1094,12 @@ type StrictServerInterface interface {
 	// UpdateSource Update a source
 	// (PATCH /sources/{id})
 	UpdateSource(ctx context.Context, request UpdateSourceRequestObject) (UpdateSourceResponseObject, error)
+	// ListCrawlLog The crawl log of a source
+	// (GET /sources/{id}/crawl-log)
+	ListCrawlLog(ctx context.Context, request ListCrawlLogRequestObject) (ListCrawlLogResponseObject, error)
+	// GetCrawledPage The page the crawl gave up on
+	// (GET /sources/{id}/crawl-log/{entry}/page)
+	GetCrawledPage(ctx context.Context, request GetCrawledPageRequestObject) (GetCrawledPageResponseObject, error)
 	// RequestCrawl Ask for a crawl
 	// (POST /sources/{id}/crawls)
 	RequestCrawl(ctx context.Context, request RequestCrawlRequestObject) (RequestCrawlResponseObject, error)
@@ -998,9 +1109,6 @@ type StrictServerInterface interface {
 	// SetDemand Say how far readers have got
 	// (PUT /sources/{id}/demand)
 	SetDemand(ctx context.Context, request SetDemandRequestObject) (SetDemandResponseObject, error)
-	// ListFetches The crawl's requests for a source
-	// (GET /sources/{id}/fetches)
-	ListFetches(ctx context.Context, request ListFetchesRequestObject) (ListFetchesResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
@@ -1246,6 +1354,60 @@ func (sh *strictHandler) UpdateSource(w http.ResponseWriter, r *http.Request, id
 	}
 }
 
+// ListCrawlLog operation middleware
+func (sh *strictHandler) ListCrawlLog(w http.ResponseWriter, r *http.Request, id ID, params ListCrawlLogParams) {
+	var request ListCrawlLogRequestObject
+
+	request.ID = id
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListCrawlLog(ctx, request.(ListCrawlLogRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListCrawlLog")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListCrawlLogResponseObject); ok {
+		if err := validResponse.VisitListCrawlLogResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetCrawledPage operation middleware
+func (sh *strictHandler) GetCrawledPage(w http.ResponseWriter, r *http.Request, id ID, entry CrawlLogEntry) {
+	var request GetCrawledPageRequestObject
+
+	request.ID = id
+	request.Entry = entry
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetCrawledPage(ctx, request.(GetCrawledPageRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetCrawledPage")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetCrawledPageResponseObject); ok {
+		if err := validResponse.VisitGetCrawledPageResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // RequestCrawl operation middleware
 func (sh *strictHandler) RequestCrawl(w http.ResponseWriter, r *http.Request, id ID) {
 	var request RequestCrawlRequestObject
@@ -1324,33 +1486,6 @@ func (sh *strictHandler) SetDemand(w http.ResponseWriter, r *http.Request, id ID
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(SetDemandResponseObject); ok {
 		if err := validResponse.VisitSetDemandResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// ListFetches operation middleware
-func (sh *strictHandler) ListFetches(w http.ResponseWriter, r *http.Request, id ID, params ListFetchesParams) {
-	var request ListFetchesRequestObject
-
-	request.ID = id
-	request.Params = params
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.ListFetches(ctx, request.(ListFetchesRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "ListFetches")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(ListFetchesResponseObject); ok {
-		if err := validResponse.VisitListFetchesResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

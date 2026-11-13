@@ -14,6 +14,7 @@ import (
 
 	"github.com/gerrowadat/andante/internal/catalogue/store"
 	"github.com/gerrowadat/andante/internal/catalogue/store/db"
+	"github.com/gerrowadat/andante/internal/logring"
 )
 
 // batchSize is the most pages one source gets per pass, so that one long archive
@@ -118,35 +119,41 @@ func (l *Loop) Tick(ctx context.Context) (bool, error) {
 	return worked, errors.Join(errs...)
 }
 
-// wanted returns how many entries a source should index now. A source with a
-// due_at is forced: something asked for this pass.
-func (l *Loop) wanted(ctx context.Context, s db.Source) (int, error) {
+// wanted returns how many entries a source should index now, and why. A source
+// with a due_at is forced: something asked for this pass.
+func (l *Loop) wanted(ctx context.Context, s db.Source) (int, string, error) {
 	if s.DueAt != nil {
-		return batchSize, nil
+		if s.State == stateTail {
+			return batchSize, "checking the live end for new entries", nil
+		}
+		return batchSize, "it was due, because a crawl was asked for or a wait ended", nil
 	}
 	count, maxSeq, err := l.opts.Store.EntryStats(ctx, s.ID)
 	if err != nil {
-		return 0, err
+		return 0, "", err
 	}
 	position, hasReads, err := l.opts.Furthest(ctx, s.ID)
 	if err != nil {
-		return 0, err
+		return 0, "", err
 	}
 	need := l.opts.Lookahead - int(count)
+	why := fmt.Sprintf("nobody reads it, and it keeps %d entries ready but has %d", l.opts.Lookahead, count)
 	if hasReads {
 		need = int(position) + l.opts.Lookahead - int(maxSeq)
+		why = fmt.Sprintf("the furthest read is at %d and it keeps %d entries ahead, but has up to %d", position, l.opts.Lookahead, maxSeq)
 	}
-	return min(max(need, 0), batchSize), nil
+	return min(max(need, 0), batchSize), why, nil
 }
 
 func (l *Loop) process(ctx context.Context, s db.Source) (bool, error) {
-	limit, err := l.wanted(ctx, s)
+	limit, why, err := l.wanted(ctx, s)
 	if err != nil {
 		return false, err
 	}
 	if limit == 0 {
 		return false, nil
 	}
+	l.event(ctx, s, Note{Level: slog.LevelInfo, Message: fmt.Sprintf("looking for up to %d entries: %s", limit, why)})
 
 	src := Source{ID: s.ID, HomeURL: s.HomeUrl, DefaultKind: s.DefaultKind, Config: s.Config}
 	strategy, err := l.opts.Registry.Get(s.Strategy)
@@ -159,18 +166,44 @@ func (l *Loop) process(ctx context.Context, s db.Source) (bool, error) {
 	}
 	for _, warning := range batch.Warnings {
 		l.opts.Logger.Warn("extraction warning", "source", s.Slug, "warning", warning)
+		l.event(ctx, s, Note{Level: slog.LevelWarn, Message: warning})
 	}
-	if err := l.save(ctx, s, batch); err != nil {
+	outcome, err := l.save(ctx, s, batch)
+	if err != nil {
 		return true, l.fail(ctx, s, err)
 	}
 	if len(batch.Entries) > 0 {
 		l.opts.Logger.Info("indexed", "source", s.Slug, "entries", len(batch.Entries))
 	}
+	l.event(ctx, s, Note{Level: slog.LevelInfo, Message: describe(batch, outcome)})
 	l.opts.Metrics.entries.WithLabelValues(s.Slug).Add(float64(len(batch.Entries)))
 	return true, nil
 }
 
-func (l *Loop) save(ctx context.Context, s db.Source, batch Batch) error {
+// describe says what a pass did, for the crawl log.
+func describe(batch Batch, outcome store.Outcome) string {
+	var message string
+	switch {
+	case len(batch.Entries) > 0 && len(batch.Updates) > 0:
+		message = fmt.Sprintf("indexed %d entries and updated %d", len(batch.Entries), len(batch.Updates))
+	case len(batch.Entries) > 0:
+		message = fmt.Sprintf("indexed %d entries", len(batch.Entries))
+	case len(batch.Updates) > 0:
+		message = fmt.Sprintf("updated %d entries", len(batch.Updates))
+	default:
+		message = "found nothing new"
+	}
+	switch {
+	case outcome.State != stateTail:
+	case outcome.DueAt != nil:
+		message += "; at the live end, checking again at " + outcome.DueAt.UTC().Format(time.RFC3339)
+	default:
+		message += "; at the live end, and nobody reads it, so it waits until someone does"
+	}
+	return message
+}
+
+func (l *Loop) save(ctx context.Context, s db.Source, batch Batch) (store.Outcome, error) {
 	now := l.opts.Clock.Now()
 	outcome := store.Outcome{SourceID: s.ID, Cursor: batch.Cursor, State: stateIndexing, CrawledAt: &now}
 	if batch.LiveEnd {
@@ -179,7 +212,7 @@ func (l *Loop) save(ctx context.Context, s db.Source, batch Batch) error {
 		// reading it, it parks: no next check, until someone starts a read.
 		_, hasReads, err := l.opts.Furthest(ctx, s.ID)
 		if err != nil {
-			return err
+			return store.Outcome{}, err
 		}
 		outcome.State = stateTail
 		if hasReads {
@@ -192,11 +225,11 @@ func (l *Loop) save(ctx context.Context, s db.Source, batch Batch) error {
 	for _, e := range batch.Entries {
 		enclosures, err := encode(e.Enclosures, "[]")
 		if err != nil {
-			return err
+			return store.Outcome{}, err
 		}
 		extra, err := encode(e.Extra, "{}")
 		if err != nil {
-			return err
+			return store.Outcome{}, err
 		}
 		entries = append(entries, store.NewEntry{
 			Kind: e.Kind, URL: optional(e.URL), GUID: optional(e.GUID), Title: optional(e.Title), Summary: optional(e.Summary),
@@ -207,7 +240,7 @@ func (l *Loop) save(ctx context.Context, s db.Source, batch Batch) error {
 	if batch.Source != nil {
 		extra, err := encode(batch.Source.Extra, "{}")
 		if err != nil {
-			return err
+			return store.Outcome{}, err
 		}
 		outcome.ImageURL, outcome.Extra = optional(batch.Source.ImageURL), extra
 	}
@@ -218,13 +251,13 @@ func (l *Loop) save(ctx context.Context, s db.Source, batch Batch) error {
 
 	err := l.opts.Store.SaveBatch(ctx, entries, updates, outcome)
 	if errors.Is(err, store.ErrDuplicateEntry) {
-		return fmt.Errorf("%w: %w", ErrCycle, err)
+		return store.Outcome{}, fmt.Errorf("%w: %w", ErrCycle, err)
 	}
 	if err != nil {
-		return err
+		return store.Outcome{}, err
 	}
 	l.setState(s.Slug, outcome.State)
-	return nil
+	return outcome, nil
 }
 
 // fail records what stopped a source. Waiting on a host is not a failure: the
@@ -241,14 +274,28 @@ func (l *Loop) fail(ctx context.Context, s db.Source, err error) error {
 	if errors.As(err, &backoff) {
 		outcome.State, outcome.DueAt = s.State, &backoff.Until
 		l.opts.Logger.Warn("backing off", "source", s.Slug, "until", backoff.Until, "cause", backoff.Cause)
+		l.event(ctx, s, Note{Level: slog.LevelWarn, Message: fmt.Sprintf(
+			"waiting until %s before asking %s again: %s", backoff.Until.UTC().Format(time.RFC3339), backoff.Host, backoff.Cause)})
 	} else {
 		l.opts.Logger.Error("source stopped", "source", s.Slug, "error", err)
+		l.event(ctx, s, Note{Level: slog.LevelError, Message: "stopped: " + err.Error()})
 	}
 	if recordErr := l.opts.Store.RecordOutcome(ctx, outcome); recordErr != nil {
 		return recordErr
 	}
 	l.setState(s.Slug, outcome.State)
 	return nil
+}
+
+// event adds a note to the source's crawl log. Losing one is not worth stopping
+// the crawl for.
+func (l *Loop) event(ctx context.Context, s db.Source, note Note) {
+	err := l.opts.Store.RecordEvent(ctx, store.CrawlEvent{
+		SourceID: s.ID, Level: logring.LevelName(note.Level), Message: note.Message, URL: note.URL, Page: note.Page,
+	})
+	if err != nil {
+		l.opts.Logger.Warn("could not record a crawl event", "source", s.Slug, "error", err)
+	}
 }
 
 func (l *Loop) setState(slug, state string) {
@@ -316,6 +363,17 @@ func (f *loggingFetcher) Revalidate(ctx context.Context, url string) (*Response,
 	return f.fetch(ctx, url, validators, etag, lastModified)
 }
 
+// Note implements PageFetcher. Below a warning, a note is only debug in the
+// service's log, which has no use for every tail check.
+func (f *loggingFetcher) Note(ctx context.Context, note Note) {
+	level := note.Level
+	if level < slog.LevelWarn {
+		level = slog.LevelDebug
+	}
+	f.loop.opts.Logger.Log(ctx, level, note.Message, "source", f.source.Slug, "url", note.URL)
+	f.loop.event(ctx, f.source, note)
+}
+
 // Head implements PageFetcher.
 func (f *loggingFetcher) Head(ctx context.Context, url string) (*Response, error) {
 	l := f.loop
@@ -337,7 +395,7 @@ func (f *loggingFetcher) fetch(ctx context.Context, url string, validators Valid
 	}
 	l.opts.Metrics.duration.Observe(l.opts.Clock.Now().Sub(start).Seconds())
 
-	row := db.InsertCrawlLogParams{SourceID: f.source.ID, Url: url}
+	row := db.InsertCrawlLogParams{SourceID: f.source.ID, Url: &url}
 	label := errorLabel(fetchErr)
 	if resp != nil {
 		status := int32(resp.Status) //nolint:gosec // HTTP status codes fit.

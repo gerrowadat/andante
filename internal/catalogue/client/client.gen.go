@@ -35,6 +35,24 @@ func (e CrawlConfigStrategy) Valid() bool {
 	}
 }
 
+// Defines values for CrawlLogKind.
+const (
+	Event CrawlLogKind = "event"
+	Fetch CrawlLogKind = "fetch"
+)
+
+// Valid indicates whether the value is a known member of the CrawlLogKind enum.
+func (e CrawlLogKind) Valid() bool {
+	switch e {
+	case Event:
+		return true
+	case Fetch:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for FeedConfigStrategy.
 const (
 	Feed FeedConfigStrategy = "feed"
@@ -250,6 +268,48 @@ type CrawlConfig struct {
 // CrawlConfigStrategy defines model for CrawlConfig.Strategy.
 type CrawlConfigStrategy string
 
+// CrawlLog defines model for CrawlLog.
+type CrawlLog struct {
+	Items []CrawlLogItem `json:"items"`
+
+	// More Whether there are older items past the limit.
+	More bool `json:"more"`
+}
+
+// CrawlLogItem defines model for CrawlLogItem.
+type CrawlLogItem struct {
+	At time.Time `json:"at"`
+
+	// Error Why a fetch failed.
+	Error nullable.Nullable[string] `json:"error,omitempty"`
+
+	// HasPage Whether the event kept the page it is about.
+	HasPage bool         `json:"has_page"`
+	ID      int64        `json:"id"`
+	Kind    CrawlLogKind `json:"kind"`
+	Level   *LogLevel    `json:"level,omitempty"`
+
+	// Message What an event says.
+	Message nullable.Nullable[string] `json:"message,omitempty"`
+
+	// Status The HTTP status of a fetch. A 304 is recorded as 200. Null when there was no response.
+	Status nullable.Nullable[int32] `json:"status,omitempty"`
+
+	// URL The page requested, or the one an event is about.
+	URL nullable.Nullable[string] `json:"url,omitempty"`
+}
+
+// CrawlLogKind defines model for CrawlLogKind.
+type CrawlLogKind string
+
+// CrawledPage defines model for CrawledPage.
+type CrawledPage struct {
+	// Body The response body, with any bytes that are not UTF-8 replaced.
+	Body      string    `json:"body"`
+	FetchedAt time.Time `json:"fetched_at"`
+	URL       string    `json:"url"`
+}
+
 // Demand defines model for Demand.
 type Demand struct {
 	// Seq The furthest position of any read on the source.
@@ -331,25 +391,6 @@ type FeedPagedConfig struct {
 
 // FeedPagedConfigStrategy defines model for FeedPagedConfig.Strategy.
 type FeedPagedConfigStrategy string
-
-// Fetch defines model for Fetch.
-type Fetch struct {
-	Error     nullable.Nullable[string] `json:"error,omitempty"`
-	FetchedAt time.Time                 `json:"fetched_at"`
-	ID        int64                     `json:"id"`
-
-	// Status The HTTP status. A 304 is recorded as 200. Null when there was no response.
-	Status nullable.Nullable[int32] `json:"status,omitempty"`
-	URL    string                   `json:"url"`
-}
-
-// FetchList defines model for FetchList.
-type FetchList struct {
-	Items []Fetch `json:"items"`
-
-	// More Whether there are older items past the limit.
-	More bool `json:"more"`
-}
 
 // FieldError defines model for FieldError.
 type FieldError struct {
@@ -519,6 +560,9 @@ type SourcePatchState string
 // Before defines model for Before.
 type Before = int64
 
+// CrawlLogEntry defines model for CrawlLogEntry.
+type CrawlLogEntry = int64
+
 // ID defines model for ID.
 type ID = int64
 
@@ -552,13 +596,19 @@ type ListLogsParams struct {
 	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
-// ListFetchesParams defines parameters for ListFetches.
-type ListFetchesParams struct {
+// ListCrawlLogParams defines parameters for ListCrawlLog.
+type ListCrawlLogParams struct {
 	// Before Only items older than the one with this ID.
 	Before *Before `form:"before,omitempty" json:"before,omitempty"`
 
 	// Limit The most items to return.
 	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Kind Only items of this kind.
+	Kind *CrawlLogKind `form:"kind,omitempty" json:"kind,omitempty"`
+
+	// HasPage Only the event that kept a page, if any. A source keeps one at most.
+	HasPage *bool `form:"has_page,omitempty" json:"has_page,omitempty"`
 }
 
 // CreateDiscoveryJSONRequestBody defines body for CreateDiscovery for application/json ContentType.
@@ -916,6 +966,20 @@ type ClientInterface interface {
 	// Corresponds with PATCH /sources/{id} (the `UpdateSource` operationId).
 	UpdateSourceWithApplicationMergePatchPlusJSONBody(ctx context.Context, id ID, body UpdateSourceApplicationMergePatchPlusJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ListCrawlLog The crawl log of a source
+	//
+	// Every request the crawl made for the source, and what it decided and why, newest first.
+	//
+	// Corresponds with GET /sources/{id}/crawl-log (the `ListCrawlLog` operationId).
+	ListCrawlLog(ctx context.Context, id ID, params *ListCrawlLogParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetCrawledPage The page the crawl gave up on
+	//
+	// The body of the page a crawl log event kept, as fetched. Only a source's latest such page is kept.
+	//
+	// Corresponds with GET /sources/{id}/crawl-log/{entry}/page (the `GetCrawledPage` operationId).
+	GetCrawledPage(ctx context.Context, id ID, entry CrawlLogEntry, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// RequestCrawl Ask for a crawl
 	//
 	// Marks the source due, and the crawl happens in the background.
@@ -947,13 +1011,6 @@ type ClientInterface interface {
 	//
 	// Corresponds with PUT /sources/{id}/demand (the `SetDemand` operationId).
 	SetDemand(ctx context.Context, id ID, body SetDemandJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// ListFetches The crawl's requests for a source
-	//
-	// Every request the crawl made for the source, newest first.
-	//
-	// Corresponds with GET /sources/{id}/fetches (the `ListFetches` operationId).
-	ListFetches(ctx context.Context, id ID, params *ListFetchesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 // ListChanges Changes after a revision
@@ -1159,6 +1216,40 @@ func (c *Client) UpdateSourceWithApplicationMergePatchPlusJSONBody(ctx context.C
 	return c.Client.Do(req)
 }
 
+// ListCrawlLog The crawl log of a source
+//
+// Every request the crawl made for the source, and what it decided and why, newest first.
+//
+// Corresponds with GET /sources/{id}/crawl-log (the `ListCrawlLog` operationId).
+func (c *Client) ListCrawlLog(ctx context.Context, id ID, params *ListCrawlLogParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListCrawlLogRequest(c.Server, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetCrawledPage The page the crawl gave up on
+//
+// The body of the page a crawl log event kept, as fetched. Only a source's latest such page is kept.
+//
+// Corresponds with GET /sources/{id}/crawl-log/{entry}/page (the `GetCrawledPage` operationId).
+func (c *Client) GetCrawledPage(ctx context.Context, id ID, entry CrawlLogEntry, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetCrawledPageRequest(c.Server, id, entry)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // RequestCrawl Ask for a crawl
 //
 // Marks the source due, and the crawl happens in the background.
@@ -1221,23 +1312,6 @@ func (c *Client) SetDemandWithBody(ctx context.Context, id ID, contentType strin
 // Corresponds with PUT /sources/{id}/demand (the `SetDemand` operationId).
 func (c *Client) SetDemand(ctx context.Context, id ID, body SetDemandJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewSetDemandRequest(c.Server, id, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-// ListFetches The crawl's requests for a source
-//
-// Every request the crawl made for the source, newest first.
-//
-// Corresponds with GET /sources/{id}/fetches (the `ListFetches` operationId).
-func (c *Client) ListFetches(ctx context.Context, id ID, params *ListFetchesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewListFetchesRequest(c.Server, id, params)
 	if err != nil {
 		return nil, err
 	}
@@ -1617,6 +1691,144 @@ func NewUpdateSourceRequestWithBody(server string, id ID, contentType string, bo
 	return req, nil
 }
 
+// NewListCrawlLogRequest constructs an http.Request for the ListCrawlLog method
+func NewListCrawlLogRequest(server string, id ID, params *ListCrawlLogParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/sources/%s/crawl-log", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Before != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "before", *params.Before, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Kind != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "kind", *params.Kind, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.HasPage != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "has_page", *params.HasPage, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetCrawledPageRequest constructs an http.Request for the GetCrawledPage method
+func NewGetCrawledPageRequest(server string, id ID, entry CrawlLogEntry) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "entry", entry, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/sources/%s/crawl-log/%s/page", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewRequestCrawlRequest constructs an http.Request for the RequestCrawl method
 func NewRequestCrawlRequest(server string, id ID) (*http.Request, error) {
 	var err error
@@ -1728,79 +1940,6 @@ func NewSetDemandRequestWithBody(server string, id ID, contentType string, body 
 	}
 
 	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewListFetchesRequest constructs an http.Request for the ListFetches method
-func NewListFetchesRequest(server string, id ID, params *ListFetchesParams) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/sources/%s/fetches", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	if params != nil {
-		// queryValues collects non-styled parameters (passthrough, JSON)
-		// that are safe to round-trip through url.Values.Encode().
-		queryValues := queryURL.Query()
-		// rawQueryFragments collects pre-encoded query fragments from
-		// styled parameters, preserving literal commas as delimiters
-		// per the OpenAPI spec (e.g. "color=blue,black,brown").
-		var rawQueryFragments []string
-
-		if params.Before != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "before", *params.Before, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.Limit != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if encoded := queryValues.Encode(); encoded != "" {
-			rawQueryFragments = append(rawQueryFragments, encoded)
-		}
-		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
 
 	return req, nil
 }
@@ -1948,6 +2087,24 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with PATCH /sources/{id} (the `UpdateSource` operationId).
 	UpdateSourceWithApplicationMergePatchPlusJSONBodyWithResponse(ctx context.Context, id ID, body UpdateSourceApplicationMergePatchPlusJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateSourceResponse, error)
 
+	// ListCrawlLogWithResponse The crawl log of a source
+	//
+	// Every request the crawl made for the source, and what it decided and why, newest first.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /sources/{id}/crawl-log (the `ListCrawlLog` operationId).
+	ListCrawlLogWithResponse(ctx context.Context, id ID, params *ListCrawlLogParams, reqEditors ...RequestEditorFn) (*ListCrawlLogResponse, error)
+
+	// GetCrawledPageWithResponse The page the crawl gave up on
+	//
+	// The body of the page a crawl log event kept, as fetched. Only a source's latest such page is kept.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /sources/{id}/crawl-log/{entry}/page (the `GetCrawledPage` operationId).
+	GetCrawledPageWithResponse(ctx context.Context, id ID, entry CrawlLogEntry, reqEditors ...RequestEditorFn) (*GetCrawledPageResponse, error)
+
 	// RequestCrawlWithResponse Ask for a crawl
 	//
 	// Marks the source due, and the crawl happens in the background.
@@ -1983,15 +2140,6 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with PUT /sources/{id}/demand (the `SetDemand` operationId).
 	SetDemandWithResponse(ctx context.Context, id ID, body SetDemandJSONRequestBody, reqEditors ...RequestEditorFn) (*SetDemandResponse, error)
-
-	// ListFetchesWithResponse The crawl's requests for a source
-	//
-	// Every request the crawl made for the source, newest first.
-	//
-	// Returns a wrapper object for the known response body format(s).
-	//
-	// Corresponds with GET /sources/{id}/fetches (the `ListFetches` operationId).
-	ListFetchesWithResponse(ctx context.Context, id ID, params *ListFetchesParams, reqEditors ...RequestEditorFn) (*ListFetchesResponse, error)
 }
 
 type ListChangesResponse struct {
@@ -2323,6 +2471,102 @@ func (r UpdateSourceResponse) ContentType() string {
 	return ""
 }
 
+type ListCrawlLogResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *CrawlLog
+	// ApplicationProblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationProblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListCrawlLogResponse) GetJSON200() *CrawlLog {
+	return r.JSON200
+}
+
+// GetApplicationProblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ListCrawlLogResponse) GetApplicationProblemJSONDefault() *Problem {
+	return r.ApplicationProblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListCrawlLogResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListCrawlLogResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListCrawlLogResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListCrawlLogResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetCrawledPageResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *CrawledPage
+	// ApplicationProblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationProblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetCrawledPageResponse) GetJSON200() *CrawledPage {
+	return r.JSON200
+}
+
+// GetApplicationProblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r GetCrawledPageResponse) GetApplicationProblemJSONDefault() *Problem {
+	return r.ApplicationProblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetCrawledPageResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetCrawledPageResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetCrawledPageResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetCrawledPageResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type RequestCrawlResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -2440,54 +2684,6 @@ func (r SetDemandResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r SetDemandResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type ListFetchesResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	// JSON200 the response for an HTTP 200 `application/json` response
-	JSON200 *FetchList
-	// ApplicationProblemJSONDefault the response for an HTTP default `application/problem+json` response
-	ApplicationProblemJSONDefault *Problem
-}
-
-// GetJSON200 returns the response for an HTTP 200 `application/json` response
-func (r ListFetchesResponse) GetJSON200() *FetchList {
-	return r.JSON200
-}
-
-// GetApplicationProblemJSONDefault returns the response for an HTTP default `application/problem+json` response
-func (r ListFetchesResponse) GetApplicationProblemJSONDefault() *Problem {
-	return r.ApplicationProblemJSONDefault
-}
-
-// GetBody returns the raw response body bytes
-func (r ListFetchesResponse) GetBody() []byte {
-	return r.Body
-}
-
-// Status returns HTTPResponse.Status
-func (r ListFetchesResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r ListFetchesResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r ListFetchesResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -2659,6 +2855,36 @@ func (c *ClientWithResponses) UpdateSourceWithApplicationMergePatchPlusJSONBodyW
 	return ParseUpdateSourceResponse(rsp)
 }
 
+// ListCrawlLogWithResponse The crawl log of a source
+//
+// Every request the crawl made for the source, and what it decided and why, newest first.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /sources/{id}/crawl-log (the `ListCrawlLog` operationId).
+func (c *ClientWithResponses) ListCrawlLogWithResponse(ctx context.Context, id ID, params *ListCrawlLogParams, reqEditors ...RequestEditorFn) (*ListCrawlLogResponse, error) {
+	rsp, err := c.ListCrawlLog(ctx, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListCrawlLogResponse(rsp)
+}
+
+// GetCrawledPageWithResponse The page the crawl gave up on
+//
+// The body of the page a crawl log event kept, as fetched. Only a source's latest such page is kept.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /sources/{id}/crawl-log/{entry}/page (the `GetCrawledPage` operationId).
+func (c *ClientWithResponses) GetCrawledPageWithResponse(ctx context.Context, id ID, entry CrawlLogEntry, reqEditors ...RequestEditorFn) (*GetCrawledPageResponse, error) {
+	rsp, err := c.GetCrawledPage(ctx, id, entry, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetCrawledPageResponse(rsp)
+}
+
 // RequestCrawlWithResponse Ask for a crawl
 //
 // Marks the source due, and the crawl happens in the background.
@@ -2717,21 +2943,6 @@ func (c *ClientWithResponses) SetDemandWithResponse(ctx context.Context, id ID, 
 		return nil, err
 	}
 	return ParseSetDemandResponse(rsp)
-}
-
-// ListFetchesWithResponse The crawl's requests for a source
-//
-// Every request the crawl made for the source, newest first.
-//
-// Returns a wrapper object for the known response body format(s).
-//
-// Corresponds with GET /sources/{id}/fetches (the `ListFetches` operationId).
-func (c *ClientWithResponses) ListFetchesWithResponse(ctx context.Context, id ID, params *ListFetchesParams, reqEditors ...RequestEditorFn) (*ListFetchesResponse, error) {
-	rsp, err := c.ListFetches(ctx, id, params, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseListFetchesResponse(rsp)
 }
 
 // ParseListChangesResponse parses an HTTP response from a ListChangesWithResponse call
@@ -2961,6 +3172,72 @@ func ParseUpdateSourceResponse(rsp *http.Response) (*UpdateSourceResponse, error
 	return response, nil
 }
 
+// ParseListCrawlLogResponse parses an HTTP response from a ListCrawlLogWithResponse call
+func ParseListCrawlLogResponse(rsp *http.Response) (*ListCrawlLogResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListCrawlLogResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest CrawlLog
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationProblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetCrawledPageResponse parses an HTTP response from a GetCrawledPageWithResponse call
+func ParseGetCrawledPageResponse(rsp *http.Response) (*GetCrawledPageResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetCrawledPageResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest CrawledPage
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationProblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseRequestCrawlResponse parses an HTTP response from a RequestCrawlWithResponse call
 func ParseRequestCrawlResponse(rsp *http.Response) (*RequestCrawlResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -3035,39 +3312,6 @@ func ParseSetDemandResponse(rsp *http.Response) (*SetDemandResponse, error) {
 	switch {
 	case rsp.StatusCode == 204:
 		break // No content-type
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest Problem
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationProblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseListFetchesResponse parses an HTTP response from a ListFetchesWithResponse call
-func ParseListFetchesResponse(rsp *http.Response) (*ListFetchesResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &ListFetchesResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest FetchList
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Problem

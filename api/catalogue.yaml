@@ -217,24 +217,56 @@ paths:
                 $ref: "#/components/schemas/ProbeResult"
         default:
           $ref: "#/components/responses/Problem"
-  /sources/{id}/fetches:
+  /sources/{id}/crawl-log:
     parameters:
       - $ref: "#/components/parameters/ID"
     get:
-      operationId: listFetches
+      operationId: listCrawlLog
       tags: [sources]
-      summary: The crawl's requests for a source
-      description: Every request the crawl made for the source, newest first.
+      summary: The crawl log of a source
+      description: >-
+        Every request the crawl made for the source, and what it decided and
+        why, newest first.
       parameters:
         - $ref: "#/components/parameters/Before"
         - $ref: "#/components/parameters/Limit"
+        - name: kind
+          in: query
+          description: Only items of this kind.
+          schema:
+            $ref: "#/components/schemas/CrawlLogKind"
+        - name: has_page
+          in: query
+          description: Only the event that kept a page, if any. A source keeps one at most.
+          schema:
+            type: boolean
       responses:
         "200":
-          description: The requests.
+          description: The crawl log.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/FetchList"
+                $ref: "#/components/schemas/CrawlLog"
+        default:
+          $ref: "#/components/responses/Problem"
+  /sources/{id}/crawl-log/{entry}/page:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - $ref: "#/components/parameters/CrawlLogEntry"
+    get:
+      operationId: getCrawledPage
+      tags: [sources]
+      summary: The page the crawl gave up on
+      description: >-
+        The body of the page a crawl log event kept, as fetched. Only a
+        source's latest such page is kept.
+      responses:
+        "200":
+          description: The page.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CrawledPage"
         default:
           $ref: "#/components/responses/Problem"
   /logs:
@@ -279,6 +311,14 @@ components:
       in: path
       required: true
       description: The source's ID.
+      schema:
+        type: integer
+        format: int64
+    CrawlLogEntry:
+      name: entry
+      in: path
+      required: true
+      description: The crawl log item's ID.
       schema:
         type: integer
         format: int64
@@ -343,35 +383,62 @@ components:
         more:
           type: boolean
           description: Whether there are older items past the limit.
-    Fetch:
+    CrawlLogKind:
+      type: string
+      enum: [fetch, event]
+    CrawlLogItem:
       type: object
-      required: [id, url, fetched_at]
+      required: [id, kind, at, has_page]
       properties:
         id:
           type: integer
           format: int64
-        url:
+        kind:
+          $ref: "#/components/schemas/CrawlLogKind"
+        at:
           type: string
+          format: date-time
+        url:
+          type: [string, "null"]
+          description: The page requested, or the one an event is about.
         status:
           type: [integer, "null"]
           format: int32
-          description: The HTTP status. A 304 is recorded as 200. Null when there was no response.
-        fetched_at:
-          type: string
-          format: date-time
+          description: The HTTP status of a fetch. A 304 is recorded as 200. Null when there was no response.
         error:
           type: [string, "null"]
-    FetchList:
+          description: Why a fetch failed.
+        level:
+          $ref: "#/components/schemas/LogLevel"
+        message:
+          type: [string, "null"]
+          description: What an event says.
+        has_page:
+          type: boolean
+          description: Whether the event kept the page it is about.
+    CrawlLog:
       type: object
       required: [items, more]
       properties:
         items:
           type: array
           items:
-            $ref: "#/components/schemas/Fetch"
+            $ref: "#/components/schemas/CrawlLogItem"
         more:
           type: boolean
           description: Whether there are older items past the limit.
+    CrawledPage:
+      type: object
+      required: [url, fetched_at, body]
+      properties:
+        url:
+          type: string
+        fetched_at:
+          type: string
+          format: date-time
+        body:
+          type: string
+          description: The response body, with any bytes that are not UTF-8 replaced.
     Change:
       type: object
       description: Exactly one of source, entry and deleted_source_id is set.

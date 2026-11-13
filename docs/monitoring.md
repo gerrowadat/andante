@@ -49,11 +49,16 @@ memory, so that an admin can read them without access to the host. A restart emp
 
 On the website, admins get a **Logs** page. It shows either service, filtered by level, by a
 source's slug, or (for the server) by a read's ID. A source's page shows an admin the catalogue's
-crawl log for it, which is every request the crawl made, with the status or the error. That one is
-in the catalogue's database, so it survives a restart. A read's page links to the server's log of
+crawl log for it: every request the crawl made, with the status or the error, and what the crawl
+decided and why, such as why it ran, what it indexed, a page with no next link, or a host it's
+waiting on. Warnings and errors are shaded. When the crawl gave up on finding a next page, that
+event keeps the page as fetched, which you can expand to see what the crawl saw. Only the latest
+such page per source is kept. The crawl log is in the catalogue's database, so it survives a
+restart. A read's page links to the server's log of
 requests for its feed.
 
-The API has the same: `GET /api/v1/logs` and `GET /api/v1/sources/{id}/fetches`, both for admins.
+The API has the same, for admins: `GET /api/v1/logs`, `GET /api/v1/sources/{id}/crawl-log` and
+`GET /api/v1/sources/{id}/crawl-log/{entry}/page`.
 
 A feed request is logged with the read's ID and the feed token's ID, never the token, since the
 token is the credential. The bootstrap token is logged only to standard error, and never kept for

@@ -13,12 +13,16 @@ import (
 type CrawlLog struct {
 	ID           int64
 	SourceID     int64
-	Url          string
+	Url          *string
 	Status       *int32
 	Etag         *string
 	LastModified *string
 	FetchedAt    time.Time
 	Error        *string
+	Kind         string
+	Level        *string
+	Message      *string
+	Body         []byte
 }
 
 type DeletedSource struct {

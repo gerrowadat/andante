@@ -65,9 +65,14 @@ func (h *handler) ListFetches(ctx context.Context, r gen.ListFetchesRequestObjec
 	if err != nil {
 		return nil, err
 	}
-	fetches, more, err := h.app.Fetches(ctx, actorOf(ctx), r.ID, p.after, p.limit)
+	items, more, err := h.app.CrawlLog(ctx, actorOf(ctx), r.ID, app.CrawlLogQuery{Before: p.after, Kind: client.CrawlLogKindFetch, Limit: p.limit})
 	if err != nil {
 		return nil, logError(err)
+	}
+	fetches := make([]client.Fetch, 0, len(items))
+	for _, item := range items {
+		url, _ := item.URL.Get()
+		fetches = append(fetches, client.Fetch{ID: item.ID, URL: url, Status: item.Status, FetchedAt: item.At, Error: item.Error})
 	}
 	list := client.FetchList{Items: fetches, Next: nullable.NewNullNullable[string]()}
 	var link *string
@@ -75,4 +80,39 @@ func (h *handler) ListFetches(ctx context.Context, r gen.ListFetchesRequestObjec
 		list.Next, link = nextPage("/sources/"+strconv.FormatInt(r.ID, 10)+"/fetches", nil, fetches[len(fetches)-1].ID, p.limit)
 	}
 	return gen.ListFetches200JSONResponse{Body: list, Headers: gen.ListFetches200ResponseHeaders{Link: link}}, nil
+}
+
+func (h *handler) ListCrawlLog(ctx context.Context, r gen.ListCrawlLogRequestObject) (gen.ListCrawlLogResponseObject, error) {
+	p, err := parsePage(r.Params.Cursor, r.Params.Limit, 0)
+	if err != nil {
+		return nil, err
+	}
+	q := app.CrawlLogQuery{Before: p.after, Limit: p.limit}
+	filters := url.Values{}
+	if r.Params.Kind != nil {
+		q.Kind = *r.Params.Kind
+		filters.Set("kind", string(q.Kind))
+	}
+	if r.Params.HasPage != nil && *r.Params.HasPage {
+		q.WithPage = true
+		filters.Set("has_page", "true")
+	}
+	items, more, err := h.app.CrawlLog(ctx, actorOf(ctx), r.ID, q)
+	if err != nil {
+		return nil, logError(err)
+	}
+	list := client.CrawlLog{Items: items, Next: nullable.NewNullNullable[string]()}
+	var link *string
+	if more {
+		list.Next, link = nextPage("/sources/"+strconv.FormatInt(r.ID, 10)+"/crawl-log", filters, items[len(items)-1].ID, p.limit)
+	}
+	return gen.ListCrawlLog200JSONResponse{Body: list, Headers: gen.ListCrawlLog200ResponseHeaders{Link: link}}, nil
+}
+
+func (h *handler) GetCrawledPage(ctx context.Context, r gen.GetCrawledPageRequestObject) (gen.GetCrawledPageResponseObject, error) {
+	page, err := h.app.CrawledPage(ctx, actorOf(ctx), r.ID, r.Entry)
+	if err != nil {
+		return nil, logError(err)
+	}
+	return gen.GetCrawledPage200JSONResponse(page), nil
 }

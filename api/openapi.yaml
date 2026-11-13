@@ -684,7 +684,8 @@ paths:
       summary: The crawl's requests for a source
       description: >-
         Admins only. Every request the catalogue's crawl made for the source,
-        newest first, from its crawl log.
+        newest first. This is the crawl log with only its fetches, as
+        /sources/{id}/crawl-log?kind=fetch gives it.
       parameters:
         - $ref: "#/components/parameters/Cursor"
         - $ref: "#/components/parameters/Limit"
@@ -706,6 +707,88 @@ paths:
                     fetched_at: 2026-11-05T07:00:00Z
                     error: null
                 next: null
+        default:
+          $ref: "#/components/responses/Problem"
+  /sources/{id}/crawl-log:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      operationId: listCrawlLog
+      tags: [logs]
+      summary: The crawl log of a source
+      description: >-
+        Admins only. Every request the catalogue's crawl made for the source,
+        and what it decided and why, newest first. An event that has_page kept
+        the page the crawl gave up on, such as one with no next link.
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: kind
+          in: query
+          description: Only items of this kind.
+          schema:
+            $ref: "#/components/schemas/CrawlLogKind"
+        - name: has_page
+          in: query
+          description: Only the event that kept a page, if any. A source keeps one at most.
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: A page of the crawl log.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CrawlLog"
+              example:
+                items:
+                  - id: 813
+                    kind: event
+                    at: 2026-11-05T07:00:01Z
+                    url: https://comic.example/page/2
+                    level: warn
+                    message: no next link on https://comic.example/page/2; treating it as the live end
+                    has_page: true
+                  - id: 812
+                    kind: fetch
+                    at: 2026-11-05T07:00:00Z
+                    url: https://comic.example/page/2
+                    status: 200
+                    has_page: false
+                next: null
+        default:
+          $ref: "#/components/responses/Problem"
+  /sources/{id}/crawl-log/{entry}/page:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - name: entry
+        in: path
+        required: true
+        description: The crawl log item's ID.
+        schema:
+          type: integer
+          format: int64
+    get:
+      operationId: getCrawledPage
+      tags: [logs]
+      summary: The page the crawl gave up on
+      description: >-
+        Admins only. The body of the page a crawl log event kept, as fetched.
+        Only a source's latest such page is kept, so an older event's is a 404.
+      responses:
+        "200":
+          description: The page.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CrawledPage"
+              example:
+                url: https://comic.example/page/2
+                fetched_at: 2026-11-05T07:00:01Z
+                body: "<!doctype html><html><head><title>Page 2</title></head>…"
         default:
           $ref: "#/components/responses/Problem"
   /logs:
@@ -1392,6 +1475,62 @@ components:
             $ref: "#/components/schemas/Fetch"
         next:
           $ref: "#/components/schemas/NextLink"
+    CrawlLogKind:
+      type: string
+      enum: [fetch, event]
+      description: A fetch is a request the crawl made; an event is something it decided or ran into.
+    CrawlLogItem:
+      type: object
+      required: [id, kind, at, has_page]
+      properties:
+        id:
+          type: integer
+          format: int64
+        kind:
+          $ref: "#/components/schemas/CrawlLogKind"
+        at:
+          type: string
+          format: date-time
+        url:
+          type: [string, "null"]
+          description: The page requested, or the one an event is about.
+        status:
+          type: [integer, "null"]
+          format: int32
+          description: The HTTP status of a fetch. A 304 is recorded as 200. Null when there was no response.
+        error:
+          type: [string, "null"]
+          description: Why a fetch failed.
+        level:
+          $ref: "#/components/schemas/LogLevel"
+        message:
+          type: [string, "null"]
+          description: What an event says.
+        has_page:
+          type: boolean
+          description: Whether the event kept the page it is about, for /sources/{id}/crawl-log/{entry}/page.
+    CrawlLog:
+      type: object
+      required: [items, next]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CrawlLogItem"
+        next:
+          $ref: "#/components/schemas/NextLink"
+    CrawledPage:
+      type: object
+      required: [url, fetched_at, body]
+      properties:
+        url:
+          type: string
+        fetched_at:
+          type: string
+          format: date-time
+        body:
+          type: string
+          description: The response body, with any bytes that are not UTF-8 replaced.
     User:
       type: object
       required: [id, name, role, created_at]

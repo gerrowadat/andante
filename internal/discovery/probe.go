@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 )
 
@@ -46,9 +47,14 @@ func NewProber(registry *Registry, fetcher *Fetcher, metrics *Metrics) *Prober {
 }
 
 // Fetcher returns the fetcher probes use, for anything else that isn't a crawl.
-func (p *Prober) Fetcher() PageFetcher { return probeFetcher{p} }
+func (p *Prober) Fetcher() PageFetcher { return probeFetcher{p: p} }
 
-type probeFetcher struct{ p *Prober }
+// probeFetcher collects a strategy's warning notes into warnings, if it has
+// somewhere to put them.
+type probeFetcher struct {
+	p        *Prober
+	warnings *[]string
+}
 
 func (f probeFetcher) Fetch(ctx context.Context, url string) (*Response, error) {
 	return f.count(f.p.fetcher.Fetch(ctx, url, Validators{}))
@@ -61,6 +67,14 @@ func (f probeFetcher) Revalidate(ctx context.Context, url string) (*Response, er
 
 func (f probeFetcher) Head(ctx context.Context, url string) (*Response, error) {
 	return f.count(f.p.fetcher.Head(ctx, url))
+}
+
+// Note implements PageFetcher. A probe shows a person the warnings, and keeps no
+// crawl log.
+func (f probeFetcher) Note(_ context.Context, note Note) {
+	if f.warnings != nil && note.Level >= slog.LevelWarn {
+		*f.warnings = append(*f.warnings, note.Message)
+	}
 }
 
 func (f probeFetcher) count(resp *Response, err error) (*Response, error) {
@@ -96,7 +110,9 @@ func (p *Prober) run(ctx context.Context, req ProbeRequest) (ProbeResult, error)
 		seen   = map[string]bool{}
 	)
 	for len(result.Entries) < req.Limit {
-		batch, err := strategy.Next(ctx, probeFetcher{p}, src, cursor, req.Limit-len(result.Entries))
+		var noted []string
+		batch, err := strategy.Next(ctx, probeFetcher{p: p, warnings: &noted}, src, cursor, req.Limit-len(result.Entries))
+		result.Warnings = append(result.Warnings, noted...)
 		if err != nil {
 			if len(result.Entries) == 0 || errors.Is(err, ErrCycle) {
 				return ProbeResult{}, err

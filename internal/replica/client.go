@@ -236,10 +236,10 @@ func (c *Client) Logs(ctx context.Context, params catalogue.ListLogsParams) ([]c
 	return list.Items, list.More, nil
 }
 
-// Fetches returns a source's crawl log, newest first, and whether there's more past
-// the limit.
-func (c *Client) Fetches(ctx context.Context, id int64, params catalogue.ListFetchesParams) ([]client.Fetch, bool, error) {
-	resp, err := c.api.ListFetchesWithResponse(ctx, id, &params)
+// CrawlLog returns a source's crawl log, newest first, and whether there's more
+// past the limit.
+func (c *Client) CrawlLog(ctx context.Context, id int64, params catalogue.ListCrawlLogParams) ([]client.CrawlLogItem, bool, error) {
+	resp, err := c.api.ListCrawlLogWithResponse(ctx, id, &params)
 	if err != nil {
 		return nil, false, down(err)
 	}
@@ -247,11 +247,27 @@ func (c *Client) Fetches(ctx context.Context, id int64, params catalogue.ListFet
 		return nil, false, failure(resp.StatusCode(), resp.Body)
 	}
 	var list struct {
-		Items []client.Fetch `json:"items"`
-		More  bool           `json:"more"`
+		Items []client.CrawlLogItem `json:"items"`
+		More  bool                  `json:"more"`
 	}
 	if err := json.Unmarshal(resp.Body, &list); err != nil {
-		return nil, false, fmt.Errorf("decode fetches: %w", err)
+		return nil, false, fmt.Errorf("decode crawl log: %w", err)
 	}
 	return list.Items, list.More, nil
+}
+
+// CrawledPage returns the page a crawl log event kept.
+func (c *Client) CrawledPage(ctx context.Context, id, entry int64) (client.CrawledPage, error) {
+	resp, err := c.api.GetCrawledPageWithResponse(ctx, id, entry)
+	if err != nil {
+		return client.CrawledPage{}, down(err)
+	}
+	if resp.StatusCode() != http.StatusOK {
+		return client.CrawledPage{}, failure(resp.StatusCode(), resp.Body)
+	}
+	var page client.CrawledPage
+	if err := json.Unmarshal(resp.Body, &page); err != nil {
+		return client.CrawledPage{}, fmt.Errorf("decode crawled page: %w", err)
+	}
+	return page, nil
 }

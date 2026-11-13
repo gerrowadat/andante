@@ -245,6 +245,8 @@ func (p plainFetcher) Head(ctx context.Context, url string) (*discovery.Response
 	return p.f.Head(ctx, url)
 }
 
+func (plainFetcher) Note(context.Context, discovery.Note) {}
+
 func TestNextResumesFromItsCursor(t *testing.T) {
 	site := sitetest.Serve(t, "comiccontrol")
 	fetcher := plainFetcher{f: discovery.NewFetcher(sitetest.FetcherOptions(sitetest.NewClock()))}
