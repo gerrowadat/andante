@@ -626,13 +626,24 @@ func (s *site) showUsers(w http.ResponseWriter, r *http.Request, v visitor, stat
 		s.fail(w, err)
 		return
 	}
+	policy, err := s.opts.Store.GetPasswordPolicy(r.Context())
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
 	data := struct {
 		Users            []userRow
 		Invite           *inviteNote
 		RequireTwoFactor bool
 		UsersInvite      bool
 		InviteLimit      int32
-	}{Invite: invite, RequireTwoFactor: required, UsersInvite: invites.Who == store.InvitesByUsers, InviteLimit: invites.Limit}
+		Policy           password.Policy
+		Shortest, Most   int
+		Kinds            int
+	}{
+		Invite: invite, RequireTwoFactor: required, UsersInvite: invites.Who == store.InvitesByUsers, InviteLimit: invites.Limit,
+		Policy: policy, Shortest: password.Shortest, Most: password.MaxLength, Kinds: password.Kinds,
+	}
 	for _, u := range users {
 		row := userRow{
 			ID: u.ID, Name: u.Name, Role: u.Role, Disabled: u.DisabledAt != nil, Self: u.ID == v.actor.UserID, TwoFactor: u.TotpEnabledAt != nil,
@@ -647,6 +658,37 @@ func (s *site) showUsers(w http.ResponseWriter, r *http.Request, v visitor, stat
 
 func (s *site) users(w http.ResponseWriter, r *http.Request, v visitor) {
 	s.showUsers(w, r, v, http.StatusOK, "", nil)
+}
+
+func (s *site) passwordPolicy(w http.ResponseWriter, r *http.Request, v visitor) {
+	// A field that isn't a number becomes -1, which the store refuses.
+	field := func(name string) *int32 {
+		n, err := strconv.ParseInt(r.PostForm.Get(name), 10, 32)
+		if err != nil {
+			n = -1
+		}
+		v := int32(n)
+		return &v
+	}
+	change := store.PolicyChange{MinLength: field("min_length"), NonLetters: field("non_letters"), Classes: field("classes")}
+	err := s.opts.Store.SetPasswordPolicy(r.Context(), change)
+	if errors.Is(err, password.ErrBadPolicy) {
+		s.showUsers(w, r, v, http.StatusUnprocessableEntity, "The fewest characters is "+strconv.Itoa(password.Shortest)+
+			" to "+strconv.Itoa(password.MaxLength)+", the characters that aren't letters can't be more than that, and the kinds of character are 0 to "+
+			strconv.Itoa(password.Kinds)+".", nil)
+		return
+	}
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	for _, c := range []struct {
+		name string
+		to   *int32
+	}{{"password-min-length", change.MinLength}, {"password-non-letters", change.NonLetters}, {"password-classes", change.Classes}} {
+		s.audit(r.Context(), v.session.Name, "settings.changed", c.name+"."+strconv.Itoa(int(*c.to)), s.client(r))
+	}
+	http.Redirect(w, r, "/users", http.StatusSeeOther)
 }
 
 // resetLink makes a link for an existing user to set a new password.
@@ -779,14 +821,20 @@ func (s *site) showAccount(w http.ResponseWriter, r *http.Request, v visitor, st
 		s.fail(w, err)
 		return
 	}
+	policy, err := s.opts.Store.GetPasswordPolicy(ctx)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
 	data := struct {
 		Sessions     []sessionRow
 		Tokens       []apiTokenRow
 		NewToken     string
 		Password     bool
+		Policy       password.Policy
 		TwoFactor    bool
 		RecoveryLeft int64
-	}{NewToken: newToken, Password: s.canUseTwoFactor(v), TwoFactor: v.session.HasTOTP}
+	}{NewToken: newToken, Password: s.canUseTwoFactor(v), Policy: policy, TwoFactor: v.session.HasTOTP}
 	if data.TwoFactor {
 		if data.RecoveryLeft, err = s.opts.Store.RecoveryCodesLeft(ctx, v.actor.UserID); err != nil {
 			s.fail(w, err)
@@ -820,8 +868,13 @@ func (s *site) changePassword(w http.ResponseWriter, r *http.Request, v visitor)
 		s.showAccount(w, r, v, http.StatusUnauthorized, "That isn't your current password.", "", "")
 		return
 	}
+	policy, err := s.opts.Store.GetPasswordPolicy(ctx)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
 	chosen := r.PostForm.Get("password")
-	if err := password.Check(chosen, v.session.Name); err != nil {
+	if err := policy.Check(chosen, v.session.Name); err != nil {
 		s.showAccount(w, r, v, http.StatusUnprocessableEntity, err.Error(), "", "")
 		return
 	}

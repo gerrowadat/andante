@@ -76,7 +76,8 @@ var (
     <p><button>Carry on</button></p>
   </form>{{else}}
   {{if .Password}}<form method="post" action="{{root}}/invite/{{.Token}}">{{if .Picked}}<input type="hidden" name="name" value="{{.Name}}">{{end}}
-    <p><label>Choose a password <input name="password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required autofocus></label></p>
+    <p><label>Choose a password <input name="password" type="password" autocomplete="new-password" minlength="{{.Policy.MinLength}}" maxlength="128" required autofocus></label></p>
+    <p>{{.Policy.Rule}} A few words strung together is easy to type and hard to guess.</p>
     <p><button>Set password</button></p>
   </form>{{end}}
   {{if .OIDC}}<p><a href="{{root}}/invite/{{.Token}}/oidc{{if .Picked}}?name={{.Name}}{{end}}">{{if .Password}}Or use{{else}}Use{{end}} single sign-on</a></p>{{end}}{{end}}`)

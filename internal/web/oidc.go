@@ -192,7 +192,11 @@ func (s *site) inviteWithOIDC(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if problem != "" {
-			data := s.inviteData(raw, "")
+			data, err := s.inviteData(r.Context(), raw, "")
+			if err != nil {
+				s.fail(w, err)
+				return
+			}
 			data.Chosen, data.Error = name, problem
 			s.render(w, status, invitePage, data)
 			return

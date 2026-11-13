@@ -925,6 +925,15 @@ type PacingAdjustment struct {
 // PacingAdjustmentType defines model for PacingAdjustment.Type.
 type PacingAdjustmentType string
 
+// PasswordClasses How many kinds of character a new password needs, out of lower-case letters, capitals, digits and anything else. It's 0 to start with.
+type PasswordClasses = int32
+
+// PasswordMinLength The fewest characters a new password can have. It's 8 to start with. Passwords can always have up to 128.
+type PasswordMinLength = int32
+
+// PasswordNonLetters How many characters of a new password have to be something other than a letter: a digit, a symbol or a space. It's 1 to start with.
+type PasswordNonLetters = int32
+
 // PauseAdjustment defines model for PauseAdjustment.
 type PauseAdjustment struct {
 	Type PauseAdjustmentType `json:"type"`
@@ -1126,8 +1135,17 @@ type SessionList struct {
 // Settings defines model for Settings.
 type Settings struct {
 	// InviteLimit How many unused places a user who isn't an admin can have out at once, counting each use left on each of their invites.
-	InviteLimit      InviteLimit `json:"invite_limit"`
-	RequireTwoFactor bool        `json:"require_two_factor"`
+	InviteLimit InviteLimit `json:"invite_limit"`
+
+	// PasswordClasses How many kinds of character a new password needs, out of lower-case letters, capitals, digits and anything else. It's 0 to start with.
+	PasswordClasses PasswordClasses `json:"password_classes"`
+
+	// PasswordMinLength The fewest characters a new password can have. It's 8 to start with. Passwords can always have up to 128.
+	PasswordMinLength PasswordMinLength `json:"password_min_length"`
+
+	// PasswordNonLetters How many characters of a new password have to be something other than a letter: a digit, a symbol or a space. It's 1 to start with.
+	PasswordNonLetters PasswordNonLetters `json:"password_non_letters"`
+	RequireTwoFactor   bool               `json:"require_two_factor"`
 
 	// WhoCanInvite Who can make invites. With users, what they invite is always a user.
 	WhoCanInvite WhoCanInvite `json:"who_can_invite"`
@@ -1136,8 +1154,17 @@ type Settings struct {
 // SettingsPatch defines model for SettingsPatch.
 type SettingsPatch struct {
 	// InviteLimit How many unused places a user who isn't an admin can have out at once, counting each use left on each of their invites.
-	InviteLimit      *InviteLimit `json:"invite_limit,omitempty"`
-	RequireTwoFactor *bool        `json:"require_two_factor,omitempty"`
+	InviteLimit *InviteLimit `json:"invite_limit,omitempty"`
+
+	// PasswordClasses How many kinds of character a new password needs, out of lower-case letters, capitals, digits and anything else. It's 0 to start with.
+	PasswordClasses *PasswordClasses `json:"password_classes,omitempty"`
+
+	// PasswordMinLength The fewest characters a new password can have. It's 8 to start with. Passwords can always have up to 128.
+	PasswordMinLength *PasswordMinLength `json:"password_min_length,omitempty"`
+
+	// PasswordNonLetters How many characters of a new password have to be something other than a letter: a digit, a symbol or a space. It's 1 to start with.
+	PasswordNonLetters *PasswordNonLetters `json:"password_non_letters,omitempty"`
+	RequireTwoFactor   *bool               `json:"require_two_factor,omitempty"`
 
 	// WhoCanInvite Who can make invites. With users, what they invite is always a user.
 	WhoCanInvite *WhoCanInvite `json:"who_can_invite,omitempty"`
@@ -2294,7 +2321,7 @@ type ClientInterface interface {
 
 	// UpdateSettingsWithBody Change the site's settings
 	//
-	// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each.
+	// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length.
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -2303,7 +2330,7 @@ type ClientInterface interface {
 
 	// UpdateSettingsWithApplicationMergePatchPlusJSONBody Change the site's settings
 	//
-	// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each.
+	// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length.
 	//
 	// Takes a body of the `application/merge-patch+json` content type.
 	//
@@ -3084,7 +3111,7 @@ func (c *Client) GetSettings(ctx context.Context, reqEditors ...RequestEditorFn)
 
 // UpdateSettingsWithBody Change the site's settings
 //
-// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each.
+// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length.
 //
 // Takes any type of body and a specified content type.
 //
@@ -3103,7 +3130,7 @@ func (c *Client) UpdateSettingsWithBody(ctx context.Context, contentType string,
 
 // UpdateSettingsWithApplicationMergePatchPlusJSONBody Change the site's settings
 //
-// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each.
+// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length.
 //
 // Takes a body of the `application/merge-patch+json` content type.
 //
@@ -5546,7 +5573,7 @@ type ClientWithResponsesInterface interface {
 
 	// UpdateSettingsWithBodyWithResponse Change the site's settings
 	//
-	// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each.
+	// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -5555,7 +5582,7 @@ type ClientWithResponsesInterface interface {
 
 	// UpdateSettingsWithApplicationMergePatchPlusJSONBodyWithResponse Change the site's settings
 	//
-	// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each.
+	// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length.
 	//
 	// Takes a body of the `application/merge-patch+json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -8133,7 +8160,7 @@ func (c *ClientWithResponses) GetSettingsWithResponse(ctx context.Context, reqEd
 
 // UpdateSettingsWithBodyWithResponse Change the site's settings
 //
-// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each.
+// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -8148,7 +8175,7 @@ func (c *ClientWithResponses) UpdateSettingsWithBodyWithResponse(ctx context.Con
 
 // UpdateSettingsWithApplicationMergePatchPlusJSONBodyWithResponse Change the site's settings
 //
-// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each.
+// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length.
 //
 // Takes a body of the `application/merge-patch+json` content type, and returns a wrapper object for the known response body format(s).
 //

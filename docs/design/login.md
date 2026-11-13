@@ -23,11 +23,39 @@ sessions and clears the password.
 
 Argon2id, 64 MiB and 3 passes, in the PHC string format, so that the cost can go up later without
 breaking old hashes. A hash costs 64 MiB, so only two run at once, and a login waits up to 10 seconds for
-a turn and then gets a 503. Passwords are 12 to 128 characters with no composition rules. They're
-normalised to NFC, so that the same password typed on a different keyboard still matches.
+a turn and then gets a 503. Passwords are normalised to NFC, so that the same password typed on a
+different keyboard still matches.
 
-The common-password list is small and hand-written, because only passwords of 12 characters or more
-matter here. It could do with a bigger one.
+What a new password has to be is three settings, `password_min_length`, `password_non_letters` and
+`password_classes`, in the `settings` row with the others, so an admin changes them on the Users page
+or with `PATCH /settings`. They're in the database and not flags because they're something an admin
+decides, not something the server needs to start.
+
+The defaults are 8 characters, at least one of them not a letter, and no rule about classes. This
+departs from NIST SP 800-63B revision 4, which asks for 15 characters from a password that can be the
+only factor and says not to have composition rules. 15 was the default for a while, before this
+shipped, and it was too much to ask of people logging in to a feed reader. So the default is NIST's
+floor of 8, the length it allows when a password is part of two-factor, with one non-letter so that
+a single dictionary word doesn't do. An admin who wants NIST's numbers can set them. It was 12 with
+no composition rule before these were settings.
+
+The minimum can be set from 8 to 128. The most is fixed at 128, because that's well past NIST's 64
+and it's there to stop someone handing the hasher a megabyte, so it isn't something to tune.
+
+A non-letter is anything `unicode.IsLetter` says no to: digits, symbols, punctuation and spaces. A
+space counts so that a passphrase of a few words meets the default.
+
+`password_classes` is how many of lower-case letters, capitals, digits and anything else a password
+needs, 0 to 4. It's there for sites with a policy to follow, and off by default because people meet
+it with `Password1!`. A letter with no case, as in Chinese or Arabic, counts as anything else, and
+capitals in Greek or Cyrillic count as capitals.
+
+A rule only applies when a password is set. Checking existing ones would mean knowing them, so
+someone who has to meet a new rule needs a new password link.
+
+The common-password list is small and hand-written. It has passwords from 8 characters, since
+that's the default minimum, but it could do with a bigger one. The
+person's name and one repeated character are refused whatever the settings say.
 
 ## Failing the Same Way
 

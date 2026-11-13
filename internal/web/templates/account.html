@@ -4,7 +4,8 @@
 <form method="post" action="{{root}}/account/password">
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
   <label>Current password <input type="password" name="current" autocomplete="current-password" required></label>
-  <label>New password <input type="password" name="password" autocomplete="new-password" minlength="12" maxlength="128" required></label>
+  <label>New password <input type="password" name="password" autocomplete="new-password" minlength="{{.Policy.MinLength}}" maxlength="128" required></label>
+  <p class="muted">{{.Policy.Rule}}</p>
   <button>Change it</button>
 </form>
 <h2>Two-factor</h2>

@@ -32,22 +32,86 @@ func TestCheck(t *testing.T) {
 		want            error
 	}{
 		{"fine", phrase, nil},
-		{"shortest", strings.Repeat("ab", 6), nil},
-		{"no composition rules", "alllowercaseletters", nil},
-		{"too short", "abcdefghijk", password.ErrTooShort},
-		{"counts characters, not bytes", "éééééé", password.ErrTooShort},
-		{"longest", strings.Repeat("ab", 64), nil},
-		{"too long", strings.Repeat("ab", 64) + "a", password.ErrTooLong},
-		{"common", "PassWord1234", password.ErrCommon},
-		{"has their name", "dave-dave-dave", password.ErrCommon},
-		{"one character", strings.Repeat("z", 20), password.ErrCommon},
+		{"shortest", "abcdefg1", nil},
+		{"a space will do", "ab cdefg", nil},
+		{"only letters", "alllowercaseletters", password.ErrTooSimple},
+		{"letters in any script", "ωμέγαάλφα", password.ErrTooSimple},
+		{"too short", "abcdef1", password.ErrTooShort},
+		{"counts characters, not bytes", "ééééé1", password.ErrTooShort},
+		{"longest", strings.Repeat("a1", 64), nil},
+		{"too long", strings.Repeat("a1", 64) + "a", password.ErrTooLong},
+		{"common", "123456789012345", password.ErrCommon},
+		{"has their name", "dave-dave-dave-dave", password.ErrCommon},
+		{"one character", strings.Repeat("7", 20), password.ErrCommon},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := password.Check(tt.candidate, "dave"); !errors.Is(got, tt.want) {
+			if got := password.DefaultPolicy.Check(tt.candidate, "dave"); !errors.Is(got, tt.want) {
 				t.Errorf("Check = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestPolicy(t *testing.T) {
+	strict := password.Policy{MinLength: 10, Classes: 3}
+	tests := []struct {
+		name, candidate string
+		want            error
+	}{
+		{"three kinds", "Abcdefghi1", nil},
+		{"all four", "Abcdefgh1!", nil},
+		{"two kinds", "abcdefghi1", password.ErrTooSimple},
+		{"a space is anything else", "abcd efgh1", nil},
+		{"a letter with no case is anything else", "abcdefgh1日", nil},
+		{"capitals in other scripts count", "Ωmega12345", nil},
+		{"shorter than its own minimum", "Abcdefgh1", password.ErrTooShort},
+		{"common still applies", "PassWord1234", password.ErrCommon},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := strict.Check(tt.candidate, "dave"); !errors.Is(got, tt.want) {
+				t.Errorf("Check = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRejectionsSayWhatsNeeded(t *testing.T) {
+	p := password.Policy{MinLength: 20, Classes: 2}
+	if err := p.Check("short", "dave"); err == nil || err.Error() != "a password needs at least 20 characters" {
+		t.Errorf("too short = %v", err)
+	}
+	if err := p.Check(strings.Repeat("ab", 10), "dave"); err == nil || !strings.Contains(err.Error(), "at least 2 of") {
+		t.Errorf("too simple = %v", err)
+	}
+	if got := p.Rule(); !strings.HasPrefix(got, "At least 20 characters, with at least 2 of") {
+		t.Errorf("Rule = %q", got)
+	}
+	if got := (password.Policy{MinLength: 12, NonLetters: 2}).Rule(); got != "At least 12 characters, and at least 2 that aren't letters." {
+		t.Errorf("Rule = %q", got)
+	}
+	if err := (password.Policy{MinLength: 12, NonLetters: 2}).Check("abcdefghijk1", "dave"); err == nil || err.Error() != "a password needs at least 2 characters that aren't letters, such as digits, symbols or spaces" {
+		t.Errorf("too few non-letters = %v", err)
+	}
+	if err := password.DefaultPolicy.Check("abcdefghij", "dave"); err == nil || err.Error() != "a password needs at least one character that isn't a letter, such as a digit, a symbol or a space" {
+		t.Errorf("no non-letters = %v", err)
+	}
+	if got := password.DefaultPolicy.Rule(); got != "At least 8 characters, and at least one that isn't a letter." {
+		t.Errorf("default Rule = %q", got)
+	}
+}
+
+func TestValidate(t *testing.T) {
+	for _, p := range []password.Policy{password.DefaultPolicy, {MinLength: 8}, {MinLength: 128, Classes: 4}, {MinLength: 8, NonLetters: 8}} {
+		if err := p.Validate(); err != nil {
+			t.Errorf("%+v: %v", p, err)
+		}
+	}
+	for _, p := range []password.Policy{{MinLength: 7}, {MinLength: 129}, {MinLength: 12, Classes: 5}, {MinLength: 12, Classes: -1}, {MinLength: 8, NonLetters: 9}, {MinLength: 8, NonLetters: -1}} {
+		if err := p.Validate(); !errors.Is(err, password.ErrBadPolicy) {
+			t.Errorf("%+v: %v, want ErrBadPolicy", p, err)
+		}
 	}
 }
 
@@ -134,5 +198,14 @@ func TestHashesWaitTheirTurn(t *testing.T) {
 	}
 	if _, err := h.Hash(ctx, phrase); !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("Hash = %v", err)
+	}
+}
+
+func TestShortCommonPasswords(t *testing.T) {
+	short := password.Policy{MinLength: password.Shortest}
+	for _, p := range []string{"password", "iloveyou", "qwerty123"} {
+		if err := short.Check(p, "dave"); !errors.Is(err, password.ErrCommon) {
+			t.Errorf("Check(%q) = %v, want ErrCommon", p, err)
+		}
 	}
 }

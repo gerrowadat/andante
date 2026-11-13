@@ -88,6 +88,30 @@ places each:
 andante settings set --who-can-invite users --invite-limit 5
 ```
 
+## Password Rules
+
+A new password needs 8 characters to start with, and at least one of them has to be something other
+than a letter: a digit, a symbol or a space. Passwords on a list of common ones, ones with the
+person's name in and ones that are one character over and over are always refused.
+
+To change it, on the Users page or with the CLI:
+
+```sh
+andante settings set --password-min-length 12 --password-non-letters 2 --password-classes 3
+```
+
+| Setting | Range | To start with |
+|---|---|---|
+| `--password-min-length` | 8 to 128 | 8 |
+| `--password-non-letters`: characters that aren't letters | 0 to the minimum length | 1 |
+| `--password-classes`: how many of lower-case letters, capitals, digits and anything else | 0 to 4 | 0 |
+
+If nobody has two-factor, a longer minimum is the setting that does most for you. NIST SP 800-63B
+asks for 15 characters from a password that's the only factor.
+
+The rules apply to passwords set from then on. Nobody's existing password stops working, so to make
+everyone meet a new rule, give them each a new password link.
+
 Friends who only read along don't need an account at all. A viewer feed link is enough. See
 [feeds](feeds.md).
 
@@ -97,6 +121,7 @@ Friends who only read along don't need an account at all. A viewer feed link is 
   every login looks like it came from the proxy. See [deploying](deploying.md).
 - Consider requiring two-factor for password logins, with `andante settings set
   --require-two-factor` or on the Users page.
+- Check the [password rules](#password-rules) suit you.
 - With an OpenID provider, `--password-login=false` turns passwords off once everyone uses it.
 - Back up the database and keep `--secret` somewhere separate.
 

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gerrowadat/andante/internal/api/gen"
+	"github.com/gerrowadat/andante/internal/password"
 	"github.com/gerrowadat/andante/internal/store"
 	"github.com/gerrowadat/andante/internal/store/db"
 	"github.com/gerrowadat/andante/pkg/client"
@@ -104,8 +105,14 @@ func (h *handler) settings(ctx context.Context) (client.Settings, error) {
 	if err != nil {
 		return client.Settings{}, err
 	}
+	policy, err := h.store.GetPasswordPolicy(ctx)
+	if err != nil {
+		return client.Settings{}, err
+	}
 	return client.Settings{
 		RequireTwoFactor: on, WhoCanInvite: client.WhoCanInvite(invites.Who), InviteLimit: invites.Limit,
+		PasswordMinLength: int32(policy.MinLength), PasswordNonLetters: int32(policy.NonLetters), //nolint:gosec // Validated.
+		PasswordClasses: int32(policy.Classes), //nolint:gosec // Validated.
 	}, nil
 }
 
@@ -148,6 +155,24 @@ func (h *handler) UpdateSettings(ctx context.Context, r gen.UpdateSettingsReques
 		}
 		if l := r.Body.InviteLimit; l != nil {
 			h.audit(ctx, "settings.changed", fmt.Sprintf("invite-limit.%d", *l))
+		}
+	}
+	change := store.PolicyChange{MinLength: r.Body.PasswordMinLength, NonLetters: r.Body.PasswordNonLetters, Classes: r.Body.PasswordClasses}
+	if change != (store.PolicyChange{}) {
+		err := h.store.SetPasswordPolicy(ctx, change)
+		if errors.Is(err, password.ErrBadPolicy) {
+			return nil, invalidRequest(err.Error())
+		}
+		if err != nil {
+			return nil, err
+		}
+		for _, c := range []struct {
+			name string
+			to   *int32
+		}{{"password-min-length", change.MinLength}, {"password-non-letters", change.NonLetters}, {"password-classes", change.Classes}} {
+			if c.to != nil {
+				h.audit(ctx, "settings.changed", fmt.Sprintf("%s.%d", c.name, *c.to))
+			}
 		}
 	}
 	body, err := h.settings(ctx)
