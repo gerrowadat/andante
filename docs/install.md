@@ -67,7 +67,8 @@ nomad job run deploy/nomad/andante.nomad.hcl
 ```
 
 The job maps all its ports onto the host, so limit who can reach the ops and catalogue ports with
-your cluster's firewall, or remove those mappings. Run one replica. A second one wouldn't crawl,
+your cluster's firewall. Removing those mappings works too, but then Prometheus can't scrape them.
+[Deploying](deploying.md#the-listeners) says what an open one gives away. Run one replica. A second one wouldn't crawl,
 since the crawl loop takes a Postgres advisory lock.
 
 The job sets `gitops_managed = "true"`, so [nomad-gitops](https://github.com/gerrowadat/nomad-gitops)
