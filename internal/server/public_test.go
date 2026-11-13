@@ -688,6 +688,35 @@ func TestMetricsAndLogs(t *testing.T) {
 	}
 }
 
+func TestFeedRequestsAreLoggedWithTheirRead(t *testing.T) {
+	f := newFeedFixture(t, 1000)
+	s := f.source(t, "page")
+	f.entries(t, s, 5, "")
+	view := f.read(t, s)
+	viewer := f.token(t, view.Read.ID, feed.RoleViewer)
+	owner := f.token(t, view.Read.ID, feed.RoleOwner)
+	f.get(t, "/f/"+viewer+".atom")
+	f.get(t, "/f/nope.atom")
+	f.post(t, "/f/"+owner+"/next", f.confirm(t, "/f/"+owner+"/next"))
+
+	logs := f.logs.String()
+	for _, want := range []string{
+		fmt.Sprintf(`msg="feed request" read=%d token_id=`, view.Read.ID),
+		"role=viewer format=atom status=200",
+		fmt.Sprintf(`msg="feed control" read=%d token_id=`, view.Read.ID),
+	} {
+		if !strings.Contains(logs, want) {
+			t.Errorf("the logs have no %q:\n%s", want, logs)
+		}
+	}
+	if strings.Count(logs, `msg="feed request"`) != 1 {
+		t.Errorf("want one feed request logged, for the token that exists:\n%s", logs)
+	}
+	if strings.Contains(logs, viewer) || strings.Contains(logs, owner) {
+		t.Error("a token reached the logs")
+	}
+}
+
 func TestFailuresDoNotExposeTheToken(t *testing.T) {
 	f := newFeedFixture(t, 1000)
 	s := f.source(t, "page")

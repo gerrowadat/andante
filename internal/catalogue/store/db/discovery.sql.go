@@ -205,6 +205,47 @@ func (q *Queries) ListDueSources(ctx context.Context, dueAt *time.Time) ([]Sourc
 	return items, nil
 }
 
+const listFetches = `-- name: ListFetches :many
+SELECT id, source_id, url, status, etag, last_modified, fetched_at, error FROM crawl_log
+WHERE source_id = $1 AND id < $2
+ORDER BY id DESC LIMIT $3
+`
+
+type ListFetchesParams struct {
+	SourceID int64
+	Before   int64
+	RowLimit int32
+}
+
+func (q *Queries) ListFetches(ctx context.Context, arg ListFetchesParams) ([]CrawlLog, error) {
+	rows, err := q.db.Query(ctx, listFetches, arg.SourceID, arg.Before, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CrawlLog
+	for rows.Next() {
+		var i CrawlLog
+		if err := rows.Scan(
+			&i.ID,
+			&i.SourceID,
+			&i.Url,
+			&i.Status,
+			&i.Etag,
+			&i.LastModified,
+			&i.FetchedAt,
+			&i.Error,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const recordSourceOutcome = `-- name: RecordSourceOutcome :exec
 UPDATE sources
 SET cursor = coalesce($1, cursor),

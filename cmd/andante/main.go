@@ -99,7 +99,7 @@ func newRootCmd(stdout, stderr io.Writer) *cobra.Command {
 	flags.StringVar(&a.token, "token", os.Getenv("ANDANTE_TOKEN"), "API token (ANDANTE_TOKEN, which keeps it out of process listings)")
 	flags.StringVarP(&a.output, "output", "o", outputTable, "output: table, or json for the API's response unchanged")
 
-	root.AddCommand(a.versionCmd(), a.whoamiCmd(), a.sourceCmd(), a.readCmd(), a.tokenCmd(), a.exportCmd(), a.importCmd(), a.apiTokenCmd(), a.inviteCmd(), a.bootstrapCmd(), a.userCmd(), a.sessionCmd(), a.auditCmd(), a.settingsCmd(), a.apiCmd())
+	root.AddCommand(a.versionCmd(), a.whoamiCmd(), a.sourceCmd(), a.readCmd(), a.tokenCmd(), a.exportCmd(), a.importCmd(), a.apiTokenCmd(), a.inviteCmd(), a.bootstrapCmd(), a.userCmd(), a.sessionCmd(), a.auditCmd(), a.logsCmd(), a.settingsCmd(), a.apiCmd())
 	return root
 }
 

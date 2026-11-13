@@ -27,6 +27,7 @@ import (
 	"github.com/gerrowadat/andante/internal/discovery"
 	"github.com/gerrowadat/andante/internal/discovery/strategies"
 	"github.com/gerrowadat/andante/internal/find"
+	"github.com/gerrowadat/andante/internal/logring"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -99,6 +100,9 @@ func serve(ctx context.Context, cfg config.Catalogue, logger *slog.Logger) error
 		Help: "Always 1; the labels carry the running version and commit.",
 	}, []string{"version", "commit"}).WithLabelValues(buildinfo.Version(), buildinfo.Commit()).Set(1)
 
+	logs := logring.New(cfg.LogHistory, reg)
+	logger = slog.New(logs.Handler(logger.Handler()))
+
 	registry := discovery.NewRegistry(strategies.All()...)
 	metrics := discovery.NewMetrics(reg)
 	fetcher := discovery.NewFetcher(discovery.FetcherOptions{
@@ -120,6 +124,7 @@ func serve(ctx context.Context, cfg config.Catalogue, logger *slog.Logger) error
 		Stopping: ctx,
 		Store:    st, Strategies: registry, Prober: prober,
 		Token: cfg.APIToken, Registry: reg, Logger: logger, ProbeTimeout: cfg.ProbeTimeout,
+		Logs: logs,
 	})
 	if err != nil {
 		return err

@@ -27,6 +27,7 @@ type Config struct {
 	Secret          string `name:"secret" env:"ANDANTE_SECRET" required:"" help:"Key for encrypted fields, at least 32 characters. Keep it safe, and don't change it without rotate-secret."`
 	LogFormat       string `name:"log-format" env:"ANDANTE_LOG_FORMAT" default:"json" enum:"json,text" help:"Log format: json or text."`
 	LogLevel        string `name:"log-level" env:"ANDANTE_LOG_LEVEL" default:"info" enum:"debug,info,warn,error" help:"Log level."`
+	LogHistory      int    `name:"log-history" env:"ANDANTE_LOG_HISTORY" default:"1000" help:"How many log records to keep in memory for admins to read. 0 keeps none."`
 
 	ReadHeaderTimeout time.Duration `name:"read-header-timeout" env:"ANDANTE_READ_HEADER_TIMEOUT" default:"5s" help:"Time allowed to read request headers."`
 	ReadTimeout       time.Duration `name:"read-timeout" env:"ANDANTE_READ_TIMEOUT" default:"30s" help:"Time allowed to read a whole request."`
@@ -63,6 +64,9 @@ const MinBootstrapTokenLength = 32
 // Validate checks what the flags' types cannot. kong calls it after parsing.
 func (c *Config) Validate() error {
 	var errs []error
+	if c.LogHistory < 0 {
+		errs = append(errs, errors.New("--log-history must not be negative"))
+	}
 	// kong runs this before its own required-flag check, so name missing flags
 	// here. Otherwise an empty value would fail as if it were a malformed one.
 	if c.DatabaseURL == "" {

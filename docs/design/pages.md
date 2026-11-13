@@ -17,6 +17,7 @@ and can edit and delete sources. Login itself, with two-factor and OIDC, is in
 | Add | `/add` | Paste an address, wait while andante looks, pick a candidate |
 | Invites | `/invites` | Make invite links, see who's used them, withdraw them. For anyone who can invite |
 | Users | `/users` | Make admin, disable, a new password link, delete, who invited whom, the invite settings. Admins only |
+| Logs | `/logs` | What the server or the catalogue logged lately, by level, source or read. Admins only. See [logs](logs.md) |
 | Account | `/account` | Change password, sessions, API tokens |
 | Feed page | `/f/{token}` | For anyone with a feed link, no login: the source, the pace, the position and the next release |
 

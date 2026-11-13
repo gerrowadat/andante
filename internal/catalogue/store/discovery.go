@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/gerrowadat/andante/internal/catalogue/store/db"
@@ -236,6 +237,19 @@ func (s *Store) RecordFetch(ctx context.Context, params db.InsertCrawlLogParams)
 		return fmt.Errorf("record fetch: %w", err)
 	}
 	return nil
+}
+
+// ListFetches returns a source's crawl log, newest first, from before down. A
+// before of zero starts at the newest.
+func (s *Store) ListFetches(ctx context.Context, sourceID, before int64, limit int32) ([]db.CrawlLog, error) {
+	if before <= 0 {
+		before = math.MaxInt64
+	}
+	rows, err := s.queries.ListFetches(ctx, db.ListFetchesParams{SourceID: sourceID, Before: before, RowLimit: limit})
+	if err != nil {
+		return nil, fmt.Errorf("list fetches of source %d: %w", sourceID, err)
+	}
+	return rows, nil
 }
 
 // Validators returns the ETag and Last-Modified of the last good fetch of url,

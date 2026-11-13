@@ -23,6 +23,7 @@
   <label class="choice"><input type="checkbox" name="owner" value="1"> can release the next one</label>
   <button>Add</button>
 </form>
+{{if $.Admin}}<p><a href="{{root}}/logs?read={{.Read.ID}}">Feed requests for this read</a></p>{{end}}
 <h2>Change it</h2>
 <p>
 {{if eq .State "paused"}}<form class="inline" method="post" action="{{root}}/reads/{{.Read.ID}}/resume"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Resume</button></form>

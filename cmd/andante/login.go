@@ -4,12 +4,13 @@
 package main
 
 import (
-	"time"
-
 	"bufio"
 	"errors"
+	"maps"
 	"os"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/gerrowadat/andante/pkg/client"
 	"github.com/spf13/cobra"
@@ -205,6 +206,59 @@ func (a *app) auditCmd() *cobra.Command {
 	}, "listAudit")
 	p.add(audit)
 	return audit
+}
+
+func (a *app) logsCmd() *cobra.Command {
+	var (
+		p             page
+		catalogue     bool
+		level, source string
+		read          int64
+	)
+	logs := operation(&cobra.Command{
+		Use:   "logs",
+		Short: "Read what the server, or the catalogue, logged lately. Newest first. Admins only.",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			params := &client.ListLogsParams{Cursor: p.cursorParam(), Limit: p.limitParam()}
+			if catalogue {
+				service := client.Catalogue
+				params.Service = &service
+			}
+			if level != "" {
+				l := client.LogLevel(level)
+				params.Level = &l
+			}
+			if source != "" {
+				params.Source = &source
+			}
+			if read > 0 {
+				params.Read = &read
+			}
+			resp, err := a.client.ListLogsWithResponse(cmd.Context(), params)
+			if err != nil {
+				return err
+			}
+			return a.show(resp.StatusCode(), resp.Body, func(w *table) {
+				w.println("TIME\tLEVEL\tMESSAGE\tDETAILS")
+				for _, r := range resp.JSON200.Items {
+					keys := slices.Sorted(maps.Keys(r.Attrs))
+					details := make([]string, 0, len(keys))
+					for _, k := range keys {
+						details = append(details, k+"="+r.Attrs[k])
+					}
+					w.printf("%s\t%s\t%s\t%s\n", r.Time.Format(time.RFC3339), r.Level, r.Message, strings.Join(details, " "))
+				}
+				a.more(resp.JSON200.Next)
+			})
+		},
+	}, "listLogs")
+	p.add(logs)
+	logs.Flags().BoolVar(&catalogue, "catalogue", false, "read the catalogue's log instead of the server's")
+	logs.Flags().StringVar(&level, "level", "", "least severe level to show: debug, info, warn or error")
+	logs.Flags().StringVar(&source, "source", "", "only records about the source with this slug")
+	logs.Flags().Int64Var(&read, "read", 0, "only records about this read (the server's log only)")
+	return logs
 }
 
 func (a *app) settingsCmd() *cobra.Command {

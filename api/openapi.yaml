@@ -31,6 +31,8 @@ tags:
     description: OPML import and export.
   - name: users
     description: Invites, sessions, settings and the audit log.
+  - name: logs
+    description: What the services logged, and the crawl log. Admins only.
   - name: meta
     description: The API's own description.
 # Shared example values, anchored here and aliased below.
@@ -673,6 +675,101 @@ paths:
           description: The source is due.
         default:
           $ref: "#/components/responses/Problem"
+  /sources/{id}/fetches:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      operationId: listFetches
+      tags: [logs]
+      summary: The crawl's requests for a source
+      description: >-
+        Admins only. Every request the catalogue's crawl made for the source,
+        newest first, from its crawl log.
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: A page of requests.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FetchList"
+              example:
+                items:
+                  - id: 812
+                    url: https://comic.example/page/2
+                    status: 200
+                    fetched_at: 2026-11-05T07:00:00Z
+                    error: null
+                next: null
+        default:
+          $ref: "#/components/responses/Problem"
+  /logs:
+    get:
+      operationId: listLogs
+      tags: [logs]
+      summary: What the server or the catalogue logged lately
+      description: >-
+        Admins only. The last --log-history records the service logged, newest
+        first. They are kept in memory, so a restart empties them. The
+        catalogue logs its crawls, and the server logs each feed request with
+        the read it was for.
+      parameters:
+        - name: service
+          in: query
+          description: Whose log to read.
+          schema:
+            type: string
+            enum: [server, catalogue]
+            default: server
+        - name: level
+          in: query
+          description: The least severe level to include.
+          schema:
+            $ref: "#/components/schemas/LogLevel"
+        - name: source
+          in: query
+          description: Only records about the source with this slug.
+          schema:
+            type: string
+        - name: read
+          in: query
+          description: Only records about this read. The server's log only.
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: A page of records.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogList"
+              example:
+                items:
+                  - id: 52
+                    time: 2026-11-05T07:00:00Z
+                    level: info
+                    message: feed request
+                    attrs:
+                      read: "3"
+                      token: "7"
+                      role: owner
+                      format: atom
+                      status: "200"
+                next: /api/v1/logs?cursor=NTI&limit=1
+        default:
+          $ref: "#/components/responses/Problem"
   /discoveries:
     post:
       operationId: createDiscovery
@@ -1233,6 +1330,68 @@ components:
       type: [string, "null"]
       format: uri-reference
       description: The next page, or null on the last one.
+    LogLevel:
+      type: string
+      enum: [debug, info, warn, error]
+      default: debug
+    LogRecord:
+      type: object
+      required: [id, time, level, message, attrs]
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Goes up by one with each record, and starts again at 1 after a restart.
+        time:
+          type: string
+          format: date-time
+        level:
+          $ref: "#/components/schemas/LogLevel"
+        message:
+          type: string
+        attrs:
+          type: object
+          description: The record's attributes, with a group's name and a dot in front of the keys in it.
+          additionalProperties:
+            type: string
+    LogList:
+      type: object
+      required: [items, next]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/LogRecord"
+        next:
+          $ref: "#/components/schemas/NextLink"
+    Fetch:
+      type: object
+      required: [id, url, fetched_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        url:
+          type: string
+        status:
+          type: [integer, "null"]
+          format: int32
+          description: The HTTP status. A 304 is recorded as 200. Null when there was no response.
+        fetched_at:
+          type: string
+          format: date-time
+        error:
+          type: [string, "null"]
+    FetchList:
+      type: object
+      required: [items, next]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Fetch"
+        next:
+          $ref: "#/components/schemas/NextLink"
     User:
       type: object
       required: [id, name, role, created_at]

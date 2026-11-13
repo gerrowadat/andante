@@ -100,6 +100,14 @@ func (p *public) count(format, role string, status int) {
 	p.requests.WithLabelValues(format, role, strconv.Itoa(status)).Inc()
 }
 
+// served counts a request for a token that exists, and logs it with the read, so that
+// an admin can see how a feed is being polled. The token's ID, never the token: that's
+// the credential.
+func (p *public) served(token db.FeedToken, format string, status int) {
+	p.count(format, token.Role, status)
+	p.opts.Logger.Info("feed request", "read", token.ReadID, "token_id", token.ID, "role", token.Role, "format", format, "status", status)
+}
+
 // allow applies a token's rate limit, and says how long to wait if it is used up.
 func (p *public) allow(id int64, now time.Time) (bool, time.Duration) {
 	p.mu.Lock()
@@ -161,7 +169,7 @@ func (p *public) serveFeed(w http.ResponseWriter, r *http.Request) {
 	}
 	now := p.opts.Now()
 	if ok, wait := p.allow(token.ID, now); !ok {
-		p.count(label, token.Role, http.StatusTooManyRequests)
+		p.served(token, label, http.StatusTooManyRequests)
 		tooMany(w, wait)
 		return
 	}
@@ -189,7 +197,7 @@ func (p *public) serveFeed(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("ETag", etag)
 	w.Header().Set("Cache-Control", cacheControl(view.NextRelease, now))
 	if matches(r.Header.Get("If-None-Match"), etag) {
-		p.count(label, token.Role, http.StatusNotModified)
+		p.served(token, label, http.StatusNotModified)
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
@@ -214,7 +222,7 @@ func (p *public) serveFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p.render.Observe(time.Since(start).Seconds())
-	p.count(label, token.Role, http.StatusOK)
+	p.served(token, label, http.StatusOK)
 	w.Header().Set("Content-Type", format.ContentType)
 	_, _ = w.Write(body)
 }
@@ -362,7 +370,7 @@ func (p *public) feedPage(w http.ResponseWriter, r *http.Request, raw string) {
 		return
 	}
 	if ok, wait := p.allow(token.ID, p.opts.Now()); !ok {
-		p.count(labelPage, token.Role, http.StatusTooManyRequests)
+		p.served(token, labelPage, http.StatusTooManyRequests)
 		tooMany(w, wait)
 		return
 	}
@@ -409,7 +417,7 @@ func (p *public) feedPage(w http.ResponseWriter, r *http.Request, raw string) {
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; base-uri 'none'; frame-ancestors 'none'")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	p.count(labelPage, token.Role, http.StatusOK)
+	p.served(token, labelPage, http.StatusOK)
 	if err := feedPage.Execute(w, data); err != nil {
 		p.opts.Logger.Warn("could not write the feed page", "error", err)
 	}
@@ -429,6 +437,7 @@ func (p *public) releaseNext(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
+	p.opts.Logger.Info("feed control", "read", token.ReadID, "token_id", token.ID, "control", "next")
 	_, err := p.opts.Reads.Adjust(ctx, store.Holder, token.ReadID, schedule.Skip{Count: 1})
 	if errors.Is(err, schedule.ErrNothingToSkip) {
 		http.Error(w, "there is no next entry yet", http.StatusConflict)

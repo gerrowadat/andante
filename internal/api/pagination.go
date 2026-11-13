@@ -67,13 +67,20 @@ func paginate[R, T any](p page, path string, rows []R, key func(R) int64, conver
 		result.items = append(result.items, item)
 	}
 	if more {
-		last := key(rows[len(rows)-1])
-		cursor := base64.RawURLEncoding.EncodeToString([]byte(strconv.FormatInt(last, 10)))
-		query := url.Values{"cursor": {cursor}, "limit": {strconv.Itoa(int(p.limit))}}
-		next := BasePath + path + "?" + query.Encode()
-		link := fmt.Sprintf("<%s>; rel=\"next\"", next)
-		result.next = nullable.NewNullableWithValue(next)
-		result.link = &link
+		result.next, result.link = nextPage(path, nil, key(rows[len(rows)-1]), p.limit)
 	}
 	return result, nil
+}
+
+// nextPage returns the link to the page after the item at last, as a next link and a
+// Link header. query holds any filters the next page keeps.
+func nextPage(path string, query url.Values, last int64, limit int32) (nullable.Nullable[string], *string) {
+	if query == nil {
+		query = url.Values{}
+	}
+	query.Set("cursor", base64.RawURLEncoding.EncodeToString([]byte(strconv.FormatInt(last, 10))))
+	query.Set("limit", strconv.Itoa(int(limit)))
+	next := BasePath + path + "?" + query.Encode()
+	link := fmt.Sprintf("<%s>; rel=\"next\"", next)
+	return nullable.NewNullableWithValue(next), &link
 }

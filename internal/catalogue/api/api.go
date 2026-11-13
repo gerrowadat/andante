@@ -25,6 +25,7 @@ import (
 	"github.com/gerrowadat/andante/internal/discovery"
 	"github.com/gerrowadat/andante/internal/find"
 	"github.com/gerrowadat/andante/internal/httpapi"
+	"github.com/gerrowadat/andante/internal/logring"
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/getkin/kin-openapi/routers/gorillamux"
@@ -45,6 +46,7 @@ const (
 	defaultSampleSize = 3
 
 	defaultChangeLimit = 500
+	defaultListLimit   = 100
 	// changePoll is how often a held request looks for changes.
 	changePoll = 200 * time.Millisecond
 )
@@ -62,6 +64,8 @@ type Options struct {
 	// Stopping ends when the service starts to shut down, which lets go of held
 	// /changes requests. A shutdown would otherwise wait for them.
 	Stopping context.Context
+	// Logs is what GET /logs reads. Nil keeps nothing.
+	Logs *logring.Ring
 }
 
 type handler struct {
@@ -71,6 +75,7 @@ type handler struct {
 	finder       *find.Finder
 	probeTimeout time.Duration
 	stopping     context.Context //nolint:containedctx // It's the service's lifetime, not a request's.
+	logs         *logring.Ring
 }
 
 // New returns the API. Mount it at BasePath.
@@ -92,7 +97,10 @@ func New(opts Options) (http.Handler, error) {
 	}
 	h := &handler{
 		store: opts.Store, strategies: opts.Strategies, prober: opts.Prober, finder: opts.Finder,
-		probeTimeout: opts.ProbeTimeout, stopping: opts.Stopping,
+		probeTimeout: opts.ProbeTimeout, stopping: opts.Stopping, logs: opts.Logs,
+	}
+	if h.logs == nil {
+		h.logs = logring.New(0, prometheus.NewRegistry())
 	}
 	kit := &httpapi.Kit{
 		Logger: opts.Logger, Router: router,

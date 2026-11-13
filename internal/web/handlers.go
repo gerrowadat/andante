@@ -166,6 +166,10 @@ func (s *site) showSource(w http.ResponseWriter, r *http.Request, v visitor, sta
 		Entries     []entryRow
 		Mine        []db.Read
 		Kinds       []string
+		// Fetches is the crawl log, for an admin, and Fetched says whether the
+		// catalogue could say what's in it.
+		Fetches []fetchRow
+		Fetched bool
 	}{
 		Source: source, Home: webOnly(source.HomeUrl), Image: webOnly(text(source.ImageUrl)), Checked: stamp(source.LastCrawledAt),
 		Parked: source.State == "tail" && source.DueAt == nil, Kinds: kinds,
@@ -181,6 +185,9 @@ func (s *site) showSource(w http.ResponseWriter, r *http.Request, v visitor, sta
 		if read.SourceID == source.ID {
 			data.Mine = append(data.Mine, read)
 		}
+	}
+	if v.actor.Admin {
+		data.Fetches, data.Fetched = s.fetches(r, v, source.ID)
 	}
 	s.show(w, v, status, sourceView, pageData{Title: source.Title, Error: problem, Notice: notice, Data: data})
 }

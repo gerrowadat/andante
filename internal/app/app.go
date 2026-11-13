@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/gerrowadat/andante/internal/httpapi"
+	"github.com/gerrowadat/andante/internal/logring"
 	"github.com/gerrowadat/andante/internal/reads"
 	"github.com/gerrowadat/andante/internal/replica"
 	"github.com/gerrowadat/andante/internal/schedule"
@@ -40,6 +41,8 @@ type App struct {
 	Catalogue *replica.Client
 	Sync      *replica.Syncer
 	Logger    *slog.Logger
+	// LogRing is what the server has logged lately. Nil keeps nothing.
+	LogRing *logring.Ring
 }
 
 // caughtUp brings the copy up to date after a change to the catalogue, so that the

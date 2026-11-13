@@ -7,6 +7,7 @@
 package stacktest
 
 import (
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -23,6 +24,7 @@ import (
 	"github.com/gerrowadat/andante/internal/discovery/sitetest"
 	"github.com/gerrowadat/andante/internal/discovery/strategies"
 	"github.com/gerrowadat/andante/internal/find"
+	"github.com/gerrowadat/andante/internal/logring"
 	"github.com/gerrowadat/andante/internal/reads"
 	"github.com/gerrowadat/andante/internal/replica"
 	"github.com/gerrowadat/andante/internal/store"
@@ -45,12 +47,21 @@ type Stack struct {
 	App             *app.App
 	Registry        *prometheus.Registry
 	URL             string
+	// Logs and CatalogueLogs are what each service's GET /logs reads. Log to them
+	// with Logger.
+	Logs, CatalogueLogs *logring.Ring
 
 	lookahead int
 }
 
-// CatalogueHandler returns the catalogue's API over st.
-func CatalogueHandler(t *testing.T, st *catalogue.Store, reg prometheus.Registerer) http.Handler {
+// Logger logs everything to a ring and nowhere else. slog.DiscardHandler won't do,
+// since it says no to every level.
+func Logger(ring *logring.Ring) *slog.Logger {
+	return slog.New(ring.Handler(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelDebug})))
+}
+
+// CatalogueHandler returns the catalogue's API over st, whose GET /logs reads logs.
+func CatalogueHandler(t *testing.T, st *catalogue.Store, reg prometheus.Registerer, logs *logring.Ring) http.Handler {
 	t.Helper()
 	registry := discovery.NewRegistry(strategies.All()...)
 	fetcher := discovery.NewFetcher(sitetest.FetcherOptions(sitetest.NewClock()))
@@ -58,7 +69,7 @@ func CatalogueHandler(t *testing.T, st *catalogue.Store, reg prometheus.Register
 	prober := discovery.NewProber(registry, fetcher, metrics)
 	handler, err := catalogueapi.New(catalogueapi.Options{
 		Store: st, Strategies: registry, Prober: prober, Finder: find.New(st, prober, metrics),
-		Token: CatalogueToken, Registry: reg, Logger: slog.New(slog.DiscardHandler), ProbeTimeout: time.Minute,
+		Token: CatalogueToken, Registry: reg, Logger: Logger(logs), ProbeTimeout: time.Minute, Logs: logs,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -89,8 +100,10 @@ func NewWith(t *testing.T, opts Options) *Stack {
 		s.lookahead = 50
 	}
 
+	// Each ring counts what's logged, so they can't share a registry.
+	s.Logs, s.CatalogueLogs = logring.New(200, s.Registry), logring.New(200, prometheus.NewRegistry())
 	mux := http.NewServeMux()
-	mux.Handle(catalogueapi.BasePath+"/", CatalogueHandler(t, s.Catalogue, s.Registry))
+	mux.Handle(catalogueapi.BasePath+"/", CatalogueHandler(t, s.Catalogue, s.Registry, s.CatalogueLogs))
 	s.CatalogueServer = httptest.NewServer(mux)
 	t.Cleanup(s.CatalogueServer.Close)
 
@@ -108,7 +121,7 @@ func NewWith(t *testing.T, opts Options) *Stack {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.App = &app.App{Store: s.Store, Reads: s.Reads, Catalogue: client, Sync: s.Sync, Logger: slog.New(slog.DiscardHandler)}
+	s.App = &app.App{Store: s.Store, Reads: s.Reads, Catalogue: client, Sync: s.Sync, Logger: Logger(s.Logs), LogRing: s.Logs}
 	var setup *bootstrap.Service
 	if opts.BootstrapToken != "" {
 		setup = bootstrap.New(bootstrap.Options{
@@ -118,7 +131,7 @@ func NewWith(t *testing.T, opts Options) *Stack {
 	}
 	handler, err := api.New(api.Options{
 		Store: s.Store, Catalogue: client, Sync: s.Sync, Reads: s.Reads, Clients: clients, BaseURL: "https://andante.example/",
-		Registry: s.Registry, Logger: slog.New(slog.DiscardHandler), ProbeTimeout: time.Minute, Bootstrap: setup,
+		Registry: s.Registry, Logger: Logger(s.Logs), ProbeTimeout: time.Minute, Bootstrap: setup, Logs: s.Logs,
 	})
 	if err != nil {
 		t.Fatal(err)

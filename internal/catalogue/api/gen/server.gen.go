@@ -25,6 +25,9 @@ type ServerInterface interface {
 	// CreateDiscovery Work out how to read a site
 	// (POST /discoveries)
 	CreateDiscovery(w http.ResponseWriter, r *http.Request)
+	// ListLogs What the catalogue logged lately
+	// (GET /logs)
+	ListLogs(w http.ResponseWriter, r *http.Request, params ListLogsParams)
 	// CreateProbe Dry-run discovery
 	// (POST /probes)
 	CreateProbe(w http.ResponseWriter, r *http.Request)
@@ -46,6 +49,9 @@ type ServerInterface interface {
 	// SetDemand Say how far readers have got
 	// (PUT /sources/{id}/demand)
 	SetDemand(w http.ResponseWriter, r *http.Request, id ID)
+	// ListFetches The crawl's requests for a source
+	// (GET /sources/{id}/fetches)
+	ListFetches(w http.ResponseWriter, r *http.Request, id ID, params ListFetchesParams)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -121,6 +127,78 @@ func (siw *ServerInterfaceWrapper) CreateDiscovery(w http.ResponseWriter, r *htt
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateDiscovery(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListLogs operation middleware
+func (siw *ServerInterfaceWrapper) ListLogs(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListLogsParams
+
+	// ------------- Optional query parameter "level" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "level", r.URL.Query(), &params.Level, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "level"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "level", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "source" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "source", r.URL.Query(), &params.Source, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "source"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "source", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "before" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "before", r.URL.Query(), &params.Before, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "before"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "before", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: "int32"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListLogs(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -288,6 +366,61 @@ func (siw *ServerInterfaceWrapper) SetDemand(w http.ResponseWriter, r *http.Requ
 	handler.ServeHTTP(w, r)
 }
 
+// ListFetches operation middleware
+func (siw *ServerInterfaceWrapper) ListFetches(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListFetchesParams
+
+	// ------------- Optional query parameter "before" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "before", r.URL.Query(), &params.Before, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "before"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "before", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: "int32"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListFetches(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -417,6 +550,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/sources/{id}/demand", wrapper.SetDemand)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/discoveries", wrapper.CreateDiscovery)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/probes", wrapper.CreateProbe)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/sources/{id}/fetches", wrapper.ListFetches)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/logs", wrapper.ListLogs)
 
 	return m
 }
@@ -490,6 +625,45 @@ type CreateDiscoverydefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response CreateDiscoverydefaultApplicationProblemPlusJSONResponse) VisitCreateDiscoveryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLogsRequestObject struct {
+	Params ListLogsParams
+}
+
+type ListLogsResponseObject interface {
+	VisitListLogsResponse(w http.ResponseWriter) error
+}
+
+type ListLogs200JSONResponse LogList
+
+func (response ListLogs200JSONResponse) VisitListLogsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLogsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ListLogsdefaultApplicationProblemPlusJSONResponse) VisitListLogsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -752,6 +926,46 @@ func (response SetDemanddefaultApplicationProblemPlusJSONResponse) VisitSetDeman
 	return err
 }
 
+type ListFetchesRequestObject struct {
+	ID     ID `json:"id"`
+	Params ListFetchesParams
+}
+
+type ListFetchesResponseObject interface {
+	VisitListFetchesResponse(w http.ResponseWriter) error
+}
+
+type ListFetches200JSONResponse FetchList
+
+func (response ListFetches200JSONResponse) VisitListFetchesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListFetchesdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ListFetchesdefaultApplicationProblemPlusJSONResponse) VisitListFetchesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 	// ListChanges Changes after a revision
@@ -760,6 +974,9 @@ type StrictServerInterface interface {
 	// CreateDiscovery Work out how to read a site
 	// (POST /discoveries)
 	CreateDiscovery(ctx context.Context, request CreateDiscoveryRequestObject) (CreateDiscoveryResponseObject, error)
+	// ListLogs What the catalogue logged lately
+	// (GET /logs)
+	ListLogs(ctx context.Context, request ListLogsRequestObject) (ListLogsResponseObject, error)
 	// CreateProbe Dry-run discovery
 	// (POST /probes)
 	CreateProbe(ctx context.Context, request CreateProbeRequestObject) (CreateProbeResponseObject, error)
@@ -781,6 +998,9 @@ type StrictServerInterface interface {
 	// SetDemand Say how far readers have got
 	// (PUT /sources/{id}/demand)
 	SetDemand(ctx context.Context, request SetDemandRequestObject) (SetDemandResponseObject, error)
+	// ListFetches The crawl's requests for a source
+	// (GET /sources/{id}/fetches)
+	ListFetches(ctx context.Context, request ListFetchesRequestObject) (ListFetchesResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
@@ -872,6 +1092,32 @@ func (sh *strictHandler) CreateDiscovery(w http.ResponseWriter, r *http.Request)
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(CreateDiscoveryResponseObject); ok {
 		if err := validResponse.VisitCreateDiscoveryResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListLogs operation middleware
+func (sh *strictHandler) ListLogs(w http.ResponseWriter, r *http.Request, params ListLogsParams) {
+	var request ListLogsRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListLogs(ctx, request.(ListLogsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListLogs")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListLogsResponseObject); ok {
+		if err := validResponse.VisitListLogsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -1078,6 +1324,33 @@ func (sh *strictHandler) SetDemand(w http.ResponseWriter, r *http.Request, id ID
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(SetDemandResponseObject); ok {
 		if err := validResponse.VisitSetDemandResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListFetches operation middleware
+func (sh *strictHandler) ListFetches(w http.ResponseWriter, r *http.Request, id ID, params ListFetchesParams) {
+	var request ListFetchesRequestObject
+
+	request.ID = id
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListFetches(ctx, request.(ListFetchesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListFetches")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListFetchesResponseObject); ok {
+		if err := validResponse.VisitListFetchesResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

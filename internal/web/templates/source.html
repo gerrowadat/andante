@@ -24,5 +24,13 @@
   <button>Save</button>
 </form>
 <p><a href="{{root}}/sources/{{.Source.ID}}/delete">Delete this source</a></p>
+<h2>Crawl log</h2>
+{{if not .Fetched}}<p class="muted">The catalogue didn't answer.</p>
+{{else if .Fetches}}<table>
+<tr><th>When</th><th>Address</th><th>Status</th></tr>
+{{range .Fetches}}<tr><td>{{.At}}</td><td class="url">{{.URL}}</td><td>{{.Status}}{{with .Error}} <small>{{.}}</small>{{end}}</td></tr>{{end}}
+</table>
+{{else}}<p class="muted">Nothing fetched yet.</p>{{end}}
+<p><a href="{{root}}/logs?service=catalogue&amp;source={{.Source.Slug}}">What the catalogue logged about it</a></p>
 {{end}}
 {{end}}{{end}}

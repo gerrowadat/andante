@@ -215,3 +215,43 @@ func (c *Client) Changes(ctx context.Context, after int64, limit, wait int32) ([
 	}
 	return resp.JSON200.Changes, nil
 }
+
+// Logs returns what the catalogue logged lately, newest first, and whether there's
+// more past the limit.
+func (c *Client) Logs(ctx context.Context, params catalogue.ListLogsParams) ([]client.LogRecord, bool, error) {
+	resp, err := c.api.ListLogsWithResponse(ctx, &params)
+	if err != nil {
+		return nil, false, down(err)
+	}
+	if resp.StatusCode() != http.StatusOK {
+		return nil, false, failure(resp.StatusCode(), resp.Body)
+	}
+	var list struct {
+		Items []client.LogRecord `json:"items"`
+		More  bool               `json:"more"`
+	}
+	if err := json.Unmarshal(resp.Body, &list); err != nil {
+		return nil, false, fmt.Errorf("decode logs: %w", err)
+	}
+	return list.Items, list.More, nil
+}
+
+// Fetches returns a source's crawl log, newest first, and whether there's more past
+// the limit.
+func (c *Client) Fetches(ctx context.Context, id int64, params catalogue.ListFetchesParams) ([]client.Fetch, bool, error) {
+	resp, err := c.api.ListFetchesWithResponse(ctx, id, &params)
+	if err != nil {
+		return nil, false, down(err)
+	}
+	if resp.StatusCode() != http.StatusOK {
+		return nil, false, failure(resp.StatusCode(), resp.Body)
+	}
+	var list struct {
+		Items []client.Fetch `json:"items"`
+		More  bool           `json:"more"`
+	}
+	if err := json.Unmarshal(resp.Body, &list); err != nil {
+		return nil, false, fmt.Errorf("decode fetches: %w", err)
+	}
+	return list.Items, list.More, nil
+}

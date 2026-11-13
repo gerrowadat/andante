@@ -10,7 +10,7 @@
 <body>
 <header>
   <a class="brand" href="{{root}}/">andante</a>
-  <nav><a href="{{root}}/">Your reads</a><a href="{{root}}/sources">Browse</a><a href="{{root}}/add">Add</a>{{if .CanInvite}}<a href="{{root}}/invites">Invites</a>{{end}}{{if .Admin}}<a href="{{root}}/users">Users</a>{{end}}<a href="{{root}}/account">{{.Me}}</a></nav>
+  <nav><a href="{{root}}/">Your reads</a><a href="{{root}}/sources">Browse</a><a href="{{root}}/add">Add</a>{{if .CanInvite}}<a href="{{root}}/invites">Invites</a>{{end}}{{if .Admin}}<a href="{{root}}/users">Users</a><a href="{{root}}/logs">Logs</a>{{end}}<a href="{{root}}/account">{{.Me}}</a></nav>
   <form method="post" action="{{root}}/logout"><input type="hidden" name="csrf" value="{{.CSRF}}"><button>Log out</button></form>
 </header>
 <main>
