@@ -4,6 +4,6 @@
 <form method="post" action="{{root}}/reads/{{.ID}}/pace">
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
   {{template "pace" .Pace}}
-  <p><button>Change it</button></p>
+  <button>Change it</button>
 </form>
 {{end}}{{end}}

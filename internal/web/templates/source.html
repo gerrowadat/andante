@@ -8,8 +8,11 @@
   <dt>Last checked</dt><dd>{{with .Checked}}{{.}}{{else}}never{{end}}</dd>
   {{with .Source.LastError}}<dt>Last error</dt><dd>{{.}}</dd>{{end}}
 </dl>
-<p><a href="{{root}}/sources/{{.Source.ID}}/track"><b>Track this</b></a> · choose a pace, and get a feed.</p>
-<form method="post" action="{{root}}/sources/{{.Source.ID}}/crawl"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Check for new entries now</button></form>
+<div class="actions">
+<a href="{{root}}/sources/{{.Source.ID}}/track" role="button">Track this</a>
+<form method="post" action="{{root}}/sources/{{.Source.ID}}/crawl"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="secondary outline">Check for new entries now</button></form>
+</div>
+<p class="muted">Tracking it means choosing a pace, and getting a feed.</p>
 {{with .Mine}}<h2>Your reads of it</h2><ul>{{range .}}<li><a href="{{root}}/reads/{{.ID}}">{{.Name}}</a></li>{{end}}</ul>{{end}}
 <h2>The first entries</h2>
 {{with .Entries}}<ol>{{range .}}<li>{{if .Url}}<a href="{{.Url}}" rel="noreferrer">{{.Title}}</a>{{else}}{{.Title}}{{end}}{{with .Date}} <small>{{.}}</small>{{end}}</li>{{end}}</ol>
@@ -18,9 +21,11 @@
 <h2>Change it</h2>
 <form method="post" action="{{root}}/sources/{{.Source.ID}}/edit">
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
-  <label>Title <input type="text" name="title" value="{{.Source.Title}}" required class="long"></label>
-  <label>Kind <select name="kind">{{range .Kinds}}<option value="{{.}}"{{if eq . $.Data.Source.DefaultKind}} selected{{end}}>{{.}}</option>{{end}}</select></label>
-  <label>State <select name="state"><option value="indexing"{{if ne .Source.State "paused"}} selected{{end}}>running</option><option value="paused"{{if eq .Source.State "paused"}} selected{{end}}>paused</option></select></label>
+  <label>Title <input type="text" name="title" value="{{.Source.Title}}" required></label>
+  <div class="grid">
+    <label>Kind <select name="kind">{{range .Kinds}}<option value="{{.}}"{{if eq . $.Data.Source.DefaultKind}} selected{{end}}>{{.}}</option>{{end}}</select></label>
+    <label>State <select name="state"><option value="indexing"{{if ne .Source.State "paused"}} selected{{end}}>running</option><option value="paused"{{if eq .Source.State "paused"}} selected{{end}}>paused</option></select></label>
+  </div>
   <button>Save</button>
 </form>
 <p><a href="{{root}}/sources/{{.Source.ID}}/delete">Delete this source</a></p>
@@ -29,11 +34,11 @@
 {{if not .Crawled}}<p class="muted">The catalogue didn't answer.</p>
 {{else}}{{with .Kept}}<p>The last page the crawl couldn't get past, on {{.At}}: {{.Message}}</p>
 <details><summary>The page as the crawl saw it{{if .Cut}} (the start of it){{end}}</summary><pre class="page">{{.Page}}</pre></details>
-{{end}}{{if .CrawlLog}}<table>
-<tr><th>When</th><th>What</th><th>Status</th></tr>
-{{range .CrawlLog}}{{if .Event}}<tr class="{{.Level}}"><td>{{.At}}</td><td>{{.Message}}{{if .HasPage}} <small>(the page is above)</small>{{end}}</td><td>{{.Level}}</td></tr>
+{{end}}{{if .CrawlLog}}<div class="overflow-auto"><table>
+<thead><tr><th>When</th><th>What</th><th>Status</th></tr></thead>
+<tbody>{{range .CrawlLog}}{{if .Event}}<tr class="{{.Level}}"><td>{{.At}}</td><td>{{.Message}}{{if .HasPage}} <small>(the page is above)</small>{{end}}</td><td>{{.Level}}</td></tr>
 {{else}}<tr><td>{{.At}}</td><td class="url">{{.URL}}</td><td>{{.Status}}{{with .Error}} <small>{{.}}</small>{{end}}</td></tr>
-{{end}}{{end}}</table>
+{{end}}{{end}}</tbody></table></div>
 {{else}}<p class="muted">Nothing crawled yet.</p>{{end}}{{end}}
 <p><a href="{{root}}/logs?service=catalogue&amp;source={{.Source.Slug}}">What the catalogue logged about it</a></p>
 {{end}}

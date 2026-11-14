@@ -1,45 +1,47 @@
 {{define "content"}}{{with .Data}}
 <h1>Users</h1>
-<table>
-<tr><th>Name</th><th>Role</th><th>State</th><th>Two-factor</th><th>Invited by</th><th></th></tr>
-{{range .Users}}<tr>
+<div class="overflow-auto"><table>
+<thead><tr><th>Name</th><th>Role</th><th>State</th><th>Two-factor</th><th>Invited by</th><th></th></tr></thead>
+<tbody>{{range .Users}}<tr>
   <td>{{.Name}}</td><td>{{.Role}}</td><td>{{if .Disabled}}disabled{{else}}active{{end}}</td><td>{{if .TwoFactor}}on{{else}}off{{end}}</td><td>{{.InvitedBy}}</td>
   <td>
     <form class="inline" method="post" action="{{root}}/users/{{.ID}}"><input type="hidden" name="csrf" value="{{$.CSRF}}">
-      {{if eq .Role "admin"}}<button name="action" value="user">Make a user</button>{{else}}<button name="action" value="admin">Make an admin</button>{{end}}
-      {{if .Disabled}}<button name="action" value="enable">Enable</button>{{else}}<button name="action" value="disable">Disable</button>{{end}}
+      {{if eq .Role "admin"}}<button class="secondary" name="action" value="user">Make a user</button>{{else}}<button class="secondary" name="action" value="admin">Make an admin</button>{{end}}
+      {{if .Disabled}}<button class="secondary" name="action" value="enable">Enable</button>{{else}}<button class="secondary" name="action" value="disable">Disable</button>{{end}}
     </form>
     <form class="inline" method="post" action="{{root}}/users/invite"><input type="hidden" name="csrf" value="{{$.CSRF}}">
-      <input type="hidden" name="name" value="{{.Name}}"><input type="hidden" name="reset" value="1"><button>New password link</button>
+      <input type="hidden" name="name" value="{{.Name}}"><input type="hidden" name="reset" value="1"><button class="secondary">New password link</button>
     </form>
-    {{if .TwoFactor}}<form class="inline" method="post" action="{{root}}/users/{{.ID}}/two-factor/off"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Turn off two-factor</button></form>{{end}}
+    {{if .TwoFactor}}<form class="inline" method="post" action="{{root}}/users/{{.ID}}/two-factor/off"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="secondary">Turn off two-factor</button></form>{{end}}
     {{if not .Self}}<a href="{{root}}/users/{{.ID}}/delete">Delete</a>{{end}}
   </td>
-</tr>{{end}}
-</table>
+</tr>{{end}}</tbody>
+</table></div>
 {{with .Invite}}<p class="note">Send this to {{.Name}}. It works once, until {{.Expires}}: <span class="url">{{.URL}}</span></p>{{end}}
 <p class="muted">A new password link lets someone set a new password, and using it logs them out everywhere else. Disabling someone logs them out and stops their API tokens. Their feed links keep working, so that friends on a group read aren't cut off.</p>
 <h2>Two-factor</h2>
 <form method="post" action="{{root}}/users/two-factor">
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
-  <label class="choice"><input type="checkbox" name="require" value="1"{{if .RequireTwoFactor}} checked{{end}}> Everyone who logs in with a password needs two-factor</label>
+  <label><input type="checkbox" name="require" value="1"{{if .RequireTwoFactor}} checked{{end}}> Everyone who logs in with a password needs two-factor</label>
   <button>Save</button>
 </form>
 <p class="muted">Someone without it is sent to set it up before they can do anything else. Logins with single sign-on are left to the provider. Turning off someone's two-factor is for when they've lost their phone and their recovery codes.</p>
 <h2>Invites</h2>
 <form method="post" action="{{root}}/users/invite-settings">
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
-  <label class="choice"><input type="checkbox" name="users" value="1"{{if .UsersInvite}} checked{{end}}> Everyone can invite people</label>
-  <label class="choice">Unused places each <input type="number" name="limit" value="{{.InviteLimit}}" min="0" max="10000"></label>
+  <label><input type="checkbox" name="users" value="1"{{if .UsersInvite}} checked{{end}}> Everyone can invite people</label>
+  <label>Unused places each <input type="number" name="limit" value="{{.InviteLimit}}" min="0" max="10000"></label>
   <button>Save</button>
 </form>
 <p class="muted">What a user invites is always a user. A place is one use left on one of their links, so a link for three people takes three. Admins have no limit. Make links on the <a href="{{root}}/invites">invites page</a>, and find whose invites let who in with the invited by column.</p>
 <h2>Passwords</h2>
 <form method="post" action="{{root}}/users/password-policy">
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
-  <label class="choice">Fewest characters <input type="number" name="min_length" value="{{.Policy.MinLength}}" min="{{.Shortest}}" max="{{.Most}}"></label>
-  <label class="choice">Characters that aren't letters <input type="number" name="non_letters" value="{{.Policy.NonLetters}}" min="0" max="{{.Most}}"></label>
-  <label class="choice">Kinds of character <input type="number" name="classes" value="{{.Policy.Classes}}" min="0" max="{{.Kinds}}"></label>
+  <div class="grid">
+    <label>Fewest characters <input type="number" name="min_length" value="{{.Policy.MinLength}}" min="{{.Shortest}}" max="{{.Most}}"></label>
+    <label>Characters that aren't letters <input type="number" name="non_letters" value="{{.Policy.NonLetters}}" min="0" max="{{.Most}}"></label>
+    <label>Kinds of character <input type="number" name="classes" value="{{.Policy.Classes}}" min="0" max="{{.Kinds}}"></label>
+  </div>
   <button>Save</button>
 </form>
 <p class="muted">A character that isn't a letter is a digit, a symbol or a space. The kinds are lower-case letters, capitals, digits and anything else. This applies to passwords set from now on, not to ones people already have. Passwords on a common list, ones with the person's name in and ones of one repeated character are always refused.</p>

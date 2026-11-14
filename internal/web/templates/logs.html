@@ -1,16 +1,18 @@
 {{define "content"}}{{with .Data}}
 <h1>Logs</h1>
 <form method="get" action="{{root}}/logs">
-  <label>Service <select name="service"><option value="server"{{if not .Catalogue}} selected{{end}}>server</option><option value="catalogue"{{if .Catalogue}} selected{{end}}>catalogue</option></select></label>
-  <label>At least <select name="level">{{range .Levels}}<option{{if eq . $.Data.Level}} selected{{end}}>{{.}}</option>{{end}}</select></label>
-  <label>Source <input type="text" name="source" value="{{.Source}}" placeholder="slug"></label>
-  <label>Read <input type="text" name="read" value="{{if .Read}}{{.Read}}{{end}}" placeholder="server only" inputmode="numeric"></label>
+  <div class="grid">
+    <label>Service <select name="service"><option value="server"{{if not .Catalogue}} selected{{end}}>server</option><option value="catalogue"{{if .Catalogue}} selected{{end}}>catalogue</option></select></label>
+    <label>At least <select name="level">{{range .Levels}}<option{{if eq . $.Data.Level}} selected{{end}}>{{.}}</option>{{end}}</select></label>
+    <label>Source <input type="text" name="source" value="{{.Source}}" placeholder="slug"></label>
+    <label>Read <input type="text" name="read" value="{{if .Read}}{{.Read}}{{end}}" placeholder="server only" inputmode="numeric"></label>
+  </div>
   <button>Show</button>
 </form>
-{{if .Rows}}<table class="log">
-<tr><th>Time (UTC)</th><th>Level</th><th>Message</th><th>Details</th></tr>
-{{range .Rows}}<tr class="{{.Level}}"><td>{{.Time}}</td><td>{{.Level}}</td><td>{{.Message}}</td><td><code>{{.Attrs}}</code></td></tr>{{end}}
-</table>
+{{if .Rows}}<div class="overflow-auto"><table class="log">
+<thead><tr><th>Time (UTC)</th><th>Level</th><th>Message</th><th>Details</th></tr></thead>
+<tbody>{{range .Rows}}<tr class="{{.Level}}"><td>{{.Time}}</td><td>{{.Level}}</td><td>{{.Message}}</td><td><code>{{.Attrs}}</code></td></tr>{{end}}</tbody>
+</table></div>
 {{with .Older}}<p><a href="{{root}}/logs{{.}}">Older</a></p>{{end}}
 {{else}}<p class="muted">Nothing logged that matches.</p>{{end}}
 <p class="muted">Each service keeps its last --log-history records in memory, so a restart empties this. The catalogue logs its crawls, by source. The server logs each feed request with the read it was for, and the token's number, never the token.</p>

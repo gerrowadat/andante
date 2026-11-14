@@ -156,7 +156,12 @@ func staticHandler() http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		w.Header().Set("Cache-Control", "public, max-age=3600")
+		// A vendored file has its version in its path, so it never changes.
+		if strings.HasPrefix(r.URL.Path, "/static/vendor/") {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		} else {
+			w.Header().Set("Cache-Control", "public, max-age=3600")
+		}
 		files.ServeHTTP(w, r)
 	})
 }

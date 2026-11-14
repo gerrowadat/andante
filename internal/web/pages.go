@@ -7,9 +7,14 @@ import "html/template"
 
 const pageFrame = `<!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>andante</title></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>andante</title>
+<link rel="stylesheet" href="{{root}}/static/vendor/pico-2.1.1/pico.min.css">
+<link rel="stylesheet" href="{{root}}/static/style.css">
+</head>
 <body>
+<main class="container narrow">
 {{block "body" .}}{{end}}
+</main>
 </body>
 </html>
 `

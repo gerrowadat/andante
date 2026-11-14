@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 Dave O'Connor
+#
+# Dependabot can't see the website's vendored files, so this asks each one's
+# GitHub releases whether there's anything newer than vendor.json has, and opens
+# an issue if there is. It doesn't upgrade anything: that's a change to
+# vendor.json and `make vendor-web`, in a PR like any other.
+name: vendor-web
+
+on:
+  schedule:
+    - cron: "41 6 * * 1" # Mondays, 06:41 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Look for newer releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          jq -r '.files[] | [.name, .version, .repo] | @tsv' internal/web/static/vendor.json | sort -u |
+            while IFS="$(printf '\t')" read -r name version repo; do
+              latest=$(gh api "repos/$repo/releases/latest" --jq .tag_name)
+              latest=${latest#v}
+              [ "$latest" = "$version" ] && continue
+              title="Vendored $name $latest is out (we have $version)"
+              if [ -n "$(gh issue list --state open --search "in:title \"$title\"" --json number --jq '.[].number')" ]; then
+                continue
+              fi
+              gh issue create --title "$title" --body "https://github.com/$repo/releases/tag/$(gh api "repos/$repo/releases/latest" --jq .tag_name)
+
+          Change its version, path, URL and hash in internal/web/static/vendor.json, run \`make vendor-web\`, and update the paths the templates link to."
+            done

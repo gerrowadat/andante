@@ -1,14 +1,14 @@
 {{define "content"}}<h1>Your reads</h1>
 {{with .Data}}
-<table>
-<tr><th>Read</th><th>Pace</th><th>So far</th><th>Next</th></tr>
-{{range .}}<tr>
+<div class="overflow-auto"><table>
+<thead><tr><th>Read</th><th>Pace</th><th>So far</th><th>Next</th></tr></thead>
+<tbody>{{range .}}<tr>
   <td><a href="{{root}}/reads/{{.ID}}">{{.Name}}</a><br><small>{{.Source}}</small></td>
   <td>{{.Pace}}</td>
   <td>{{.Released}} of {{.Indexed}}{{if ne .State "active"}}<br><small>{{.State}}</small>{{end}}</td>
   <td>{{with .Next}}<time datetime="{{.Machine}}">{{.Human}}</time>{{else}}<span class="muted">-</span>{{end}}</td>
-</tr>{{end}}
-</table>
+</tr>{{end}}</tbody>
+</table></div>
 {{else}}
 <p>Nothing yet. <a href="{{root}}/sources">Browse</a> what's here already, or <a href="{{root}}/add">add a site</a> by its address.</p>
 {{end}}{{end}}
