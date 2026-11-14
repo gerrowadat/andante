@@ -1,24 +1,23 @@
 {{define "content"}}{{with .Data}}
 <h1>{{.Address}}</h1>
 {{if not .Done}}
-<p>Looking. This page checks again every few seconds.</p>
+<p aria-busy="true">Looking. This page checks again every few seconds.</p>
 {{else if .Failed}}
 <p class="alert">{{.Failed}}</p>
 {{else if not .Candidates}}
 <p>Nothing obvious turned up.</p>
 {{else}}
 {{range $i, $c := .Candidates}}
-<section>
-  <h2>{{$c.Title}}</h2>
-  <p><small>{{$c.How}} · {{$c.Kind}}</small></p>
+<article>
+  <header><h2>{{$c.Title}}</h2><small>{{$c.How}} · {{$c.Kind}}</small></header>
   {{with $c.Existing}}<p class="note">This is already here. <a href="{{root}}/sources/{{.}}">Go to it</a>, and track it from there.</p>
   {{else}}
   {{with $c.Similar}}<p class="note">These look close: {{range .}}<a href="{{root}}/sources/{{.}}">source {{.}}</a> {{end}}. Check them first.</p>{{end}}
   {{with $c.Sample}}<p>The first entries:</p><ol>{{range .}}<li>{{.}}</li>{{end}}</ol>{{end}}
   {{range $c.Warnings}}<p class="muted">{{.}}</p>{{end}}
-  <form method="post" action="{{root}}/add/{{$.Data.ID}}/{{$i}}"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Add this</button></form>
+  <footer><form method="post" action="{{root}}/add/{{$.Data.ID}}/{{$i}}"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Add this</button></form></footer>
   {{end}}
-</section>
+</article>
 {{end}}
 {{end}}
 {{if .Done}}
@@ -27,8 +26,11 @@
 <form method="post" action="{{root}}/add">
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
   <input type="hidden" name="first" value="1">
-  <label>First page <input type="url" name="url" required class="long"></label>
-  <button>Try it</button>
+  <label for="first">First page</label>
+  <fieldset role="group">
+    <input type="url" id="first" name="url" required>
+    <button>Try it</button>
+  </fieldset>
 </form>
 {{end}}
 {{end}}{{end}}

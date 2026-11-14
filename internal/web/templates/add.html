@@ -3,7 +3,10 @@
 <p>Paste a site's address, or its feed's. andante works out how to read it, which can take a minute or two, because it only asks a site for one page every few seconds.</p>
 <form method="post" action="{{root}}/add">
   <input type="hidden" name="csrf" value="{{.CSRF}}">
-  <label>Address <input type="url" name="url" required class="long" placeholder="https://comic.example/"></label>
-  <button>Look</button>
+  <label for="url">Address</label>
+  <fieldset role="group">
+    <input type="url" id="url" name="url" required placeholder="https://comic.example/">
+    <button>Look</button>
+  </fieldset>
 </form>
 {{end}}

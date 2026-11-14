@@ -1,6 +1,6 @@
 # Proposal: A Better Website
 
-Status: proposed.
+Status: phase 1 (the stylesheet) is built, and described in [pages.md](../design/pages.md). The rest is proposed.
 
 The website works, but it looks like a 2003 admin panel and it behaves like one. The worst of it is
 the Add page, which says "this page checks again every few seconds" and reloads itself with a
@@ -117,8 +117,11 @@ stuck behind old caches.
 The policy gains `script-src 'self'` and nothing else:
 
 ```
-default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' https:; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'
+default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'
 ```
+
+`data:` images weren't in the plan. Pico draws its checkbox, radio and select icons as SVG `data:`
+URLs, and phase 1 added it to the policy for them.
 
 No inline scripts and no `unsafe-eval`. htmx needs two settings for that, set in a
 `<meta name="htmx-config">`: `allowEval: false`, and `includeIndicatorStyles: false` (otherwise it

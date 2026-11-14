@@ -34,11 +34,30 @@ the end only one place did: the Add page, which waits on a discovery that takes 
 less vendored dependency to keep patched, and a Content-Security-Policy with no `script-src` at all:
 
 ```
-default-src 'none'; style-src 'self'; img-src https:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'
+default-src 'none'; style-src 'self'; img-src 'self' https: data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'
 ```
 
 `img-src https:` is for source artwork, which is linked from the publisher and never copied, like
-everything else. A test fails if any page it renders has a `<script>` in it.
+everything else. `data:` is for the icons Pico draws in checkboxes, radio buttons and selects, which
+are SVGs in its stylesheet. A test fails if any page it renders has a `<script>` in it.
+
+[A better website](../proposals/web-ui.md) brings htmx back for live progress, and this section
+changes with it.
+
+## Stylesheet
+
+The pages use [Pico CSS](https://picocss.com/), which styles plain HTML (`<nav>`, `<article>`,
+`<table>`, forms) with few classes, and does light and dark from the browser's
+`prefers-color-scheme`. `static/style.css` holds the little Pico doesn't do, using Pico's variables
+for colours so that it follows the mode too. Pico's `.grid` puts related fields side by side, and
+`<fieldset role="group">` joins an input to its button.
+
+Pico is vendored in `static/vendor/`, with its version in the path, and `static/vendor.json` records
+where each file came from and its SHA-256. `make vendor-web` downloads them and checks the hashes,
+and a test fails if a file doesn't match or isn't listed. Because the path changes with the version,
+vendored files are served as immutable for a year, and `style.css` for an hour. Dependabot can't
+see vendored files, so the `vendor-web` workflow checks each one's GitHub releases on Mondays and
+opens an issue when there's a newer one.
 
 ## Pages and the API Share One Layer
 

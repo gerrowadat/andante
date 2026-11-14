@@ -109,6 +109,10 @@ generate: ## Regenerate generated code with sqlc and oapi-codegen
 	$(GO) tool oapi-codegen -config api/oapi-catalogue-client.yaml api/catalogue.yaml
 	$(GO) tool oapi-codegen -config api/oapi-catalogue-server.yaml api/catalogue.yaml
 
+.PHONY: vendor-web
+vendor-web: ## Download the website's vendored CSS and JavaScript and check their hashes
+	scripts/vendor-web.sh
+
 .PHONY: spec-lint
 spec-lint: ## Lint the API documents with Spectral, in Docker as CI does
 	docker run --rm -v "$(CURDIR):/work:ro" -w /work $(SPECTRAL_IMAGE) \

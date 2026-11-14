@@ -1,0 +1,108 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 Dave O'Connor
+
+package web
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"io/fs"
+	"net/http"
+	"net/http/httptest"
+	"regexp"
+	"strings"
+	"testing"
+)
+
+type vendored struct {
+	Files []struct {
+		Path, URL, SHA256 string
+	}
+}
+
+// A vendored file is exactly what vendor.json says it is, so nobody edits one by
+// hand, and nothing sits in vendor/ that vendor.json doesn't account for.
+func TestVendoredFilesMatchTheirHashes(t *testing.T) {
+	raw, err := staticFiles.ReadFile("static/vendor.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v vendored
+	if err := json.Unmarshal(raw, &v); err != nil {
+		t.Fatal(err)
+	}
+	listed := map[string]bool{}
+	for _, f := range v.Files {
+		listed["static/"+f.Path] = true
+		body, err := staticFiles.ReadFile("static/" + f.Path)
+		if err != nil {
+			t.Errorf("%s: %v", f.Path, err)
+			continue
+		}
+		if sum := sha256.Sum256(body); hex.EncodeToString(sum[:]) != f.SHA256 {
+			t.Errorf("%s doesn't match its hash in vendor.json: run make vendor-web", f.Path)
+		}
+	}
+	err = fs.WalkDir(staticFiles, "static/vendor", func(path string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() && !listed[path] {
+			t.Errorf("%s isn't in vendor.json", path)
+		}
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Every stylesheet a page links to is there, so upgrading a library and forgetting
+// a template fails here and not in someone's browser.
+func TestEveryLinkedStylesheetIsServed(t *testing.T) {
+	sources := []string{pageFrame}
+	err := fs.WalkDir(templateFiles, "templates", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		body, err := templateFiles.ReadFile(path)
+		sources = append(sources, string(body))
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	link := regexp.MustCompile(`<link rel="stylesheet" href="\{\{root\}\}(/static/[^"]+)">`)
+	files := staticHandler()
+	seen := 0
+	for _, s := range sources {
+		for _, m := range link.FindAllStringSubmatch(s, -1) {
+			seen++
+			w := httptest.NewRecorder()
+			files.ServeHTTP(w, httptest.NewRequest(http.MethodGet, m[1], nil))
+			if w.Code != http.StatusOK {
+				t.Errorf("%s: %d", m[1], w.Code)
+			}
+		}
+	}
+	if seen < 4 {
+		t.Errorf("found %d stylesheet links, want both on the layout and both on the login pages", seen)
+	}
+}
+
+// A vendored file has its version in its path, so a browser can keep it for good.
+// Our own stylesheet changes without its name changing, so it can't.
+func TestVendoredFilesAreCachedForGood(t *testing.T) {
+	files := staticHandler()
+	for path, want := range map[string]string{
+		"/static/vendor/pico-2.1.1/pico.min.css": "public, max-age=31536000, immutable",
+		"/static/style.css":                      "public, max-age=3600",
+	} {
+		w := httptest.NewRecorder()
+		files.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		if got := w.Header().Get("Cache-Control"); w.Code != http.StatusOK || got != want {
+			t.Errorf("%s: %d, Cache-Control %q, want %q", path, w.Code, got, want)
+		}
+		if strings.HasSuffix(path, ".css") && !strings.HasPrefix(w.Header().Get("Content-Type"), "text/css") {
+			t.Errorf("%s: Content-Type %q", path, w.Header().Get("Content-Type"))
+		}
+	}
+}

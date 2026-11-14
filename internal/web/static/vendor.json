@@ -1,0 +1,20 @@
+{
+  "files": [
+    {
+      "name": "pico",
+      "version": "2.1.1",
+      "repo": "picocss/pico",
+      "path": "vendor/pico-2.1.1/pico.min.css",
+      "url": "https://cdn.jsdelivr.net/npm/@picocss/pico@2.1.1/css/pico.min.css",
+      "sha256": "fbc9a63fc9fc9f72d12fd7fc9806e11fa9f77ae4f9cad146b27003a1119ba3db"
+    },
+    {
+      "name": "pico",
+      "version": "2.1.1",
+      "repo": "picocss/pico",
+      "path": "vendor/pico-2.1.1/LICENSE.md",
+      "url": "https://cdn.jsdelivr.net/npm/@picocss/pico@2.1.1/LICENSE.md",
+      "sha256": "afaff063e044233f917b7807dccab022f09dca474f92b642846bee4850655bbf"
+    }
+  ]
+}

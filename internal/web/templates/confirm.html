@@ -1,8 +1,10 @@
 {{define "content"}}{{with .Data}}
+<article>
 <h1>{{.Question}}</h1>
 <p>{{.Detail}}</p>
-<form method="post" action="{{root}}{{.Action}}">
+<form method="post" action="{{root}}{{.Action}}" class="actions">
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
-  <button>{{.Button}}</button> <a href="{{root}}{{.Back}}">No, go back</a>
+  <button>{{.Button}}</button> <a href="{{root}}{{.Back}}" role="button" class="secondary outline">No, go back</a>
 </form>
+</article>
 {{end}}{{end}}

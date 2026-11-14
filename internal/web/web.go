@@ -49,8 +49,8 @@ const (
 
 	// securityPolicy lets a page do nothing but post forms to this site, use its own
 	// stylesheet and images, and show a source's artwork, which lives on the publisher's
-	// site.
-	securityPolicy = "default-src 'none'; style-src 'self'; img-src 'self' https:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+	// site. data: images are the icons Pico draws in checkboxes and selects.
+	securityPolicy = "default-src 'none'; style-src 'self'; img-src 'self' https: data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 
 	hstsAge = "max-age=31536000"
 

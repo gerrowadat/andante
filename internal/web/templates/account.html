@@ -3,8 +3,10 @@
 {{if .Password}}<h2>Password</h2>
 <form method="post" action="{{root}}/account/password">
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
-  <label>Current password <input type="password" name="current" autocomplete="current-password" required></label>
-  <label>New password <input type="password" name="password" autocomplete="new-password" minlength="{{.Policy.MinLength}}" maxlength="128" required></label>
+  <div class="grid">
+    <label>Current password <input type="password" name="current" autocomplete="current-password" required></label>
+    <label>New password <input type="password" name="password" autocomplete="new-password" minlength="{{.Policy.MinLength}}" maxlength="128" required></label>
+  </div>
   <p class="muted">{{.Policy.Rule}}</p>
   <button>Change it</button>
 </form>
@@ -12,33 +14,39 @@
 {{if .TwoFactor}}<p>On. You have {{.RecoveryLeft}} recovery codes left.</p>
 <form method="post" action="{{root}}/account/two-factor/off">
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
-  <label class="choice">A code, or a recovery code <input type="text" name="code" autocomplete="one-time-code" required></label>
-  <button>Turn it off</button>
+  <label for="off-code">A code, or a recovery code</label>
+  <fieldset role="group">
+    <input type="text" id="off-code" name="code" autocomplete="one-time-code" required>
+    <button>Turn it off</button>
+  </fieldset>
 </form>
 {{else}}<p>Off. With it on, logging in takes a code from an app on your phone as well as your password.</p>
-<p><a href="{{root}}/account/two-factor">Set it up</a></p>{{end}}
+<p><a href="{{root}}/account/two-factor" role="button" class="outline">Set it up</a></p>{{end}}
 {{end}}
 <h2>Where you're logged in</h2>
-<table>
-<tr><th>From</th><th>Since</th><th>Last seen</th><th></th></tr>
-{{range .Sessions}}<tr>
+<div class="overflow-auto"><table>
+<thead><tr><th>From</th><th>Since</th><th>Last seen</th><th></th></tr></thead>
+<tbody>{{range .Sessions}}<tr>
   <td>{{.IP}}<br><small>{{.Agent}}</small></td><td>{{.Since}}</td><td>{{.Seen}}</td>
-  <td>{{if .Current}}<span class="muted">this one</span>{{else}}<form class="inline" method="post" action="{{root}}/account/sessions/{{.ID}}/end"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Log it out</button></form>{{end}}</td>
-</tr>{{end}}
-</table>
+  <td>{{if .Current}}<span class="muted">this one</span>{{else}}<form class="inline" method="post" action="{{root}}/account/sessions/{{.ID}}/end"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="secondary">Log it out</button></form>{{end}}</td>
+</tr>{{end}}</tbody>
+</table></div>
 <h2>API tokens</h2>
 <p>For the <code>andante</code> command line, or anything else that uses the API.</p>
 {{with .NewToken}}<p class="note">Here's the new token. It's only shown once: <code>{{.}}</code></p>{{end}}
-<table>
-<tr><th>Label</th><th>Made</th><th>Last used</th><th></th></tr>
-{{range .Tokens}}<tr>
+<div class="overflow-auto"><table>
+<thead><tr><th>Label</th><th>Made</th><th>Last used</th><th></th></tr></thead>
+<tbody>{{range .Tokens}}<tr>
   <td>{{.Label}}</td><td>{{.Made}}</td><td>{{with .Used}}{{.}}{{else}}<span class="muted">never</span>{{end}}</td>
-  <td>{{if .Revoked}}<span class="muted">revoked</span>{{else}}<form class="inline" method="post" action="{{root}}/account/tokens/{{.ID}}/revoke"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Revoke</button></form>{{end}}</td>
-</tr>{{end}}
-</table>
+  <td>{{if .Revoked}}<span class="muted">revoked</span>{{else}}<form class="inline" method="post" action="{{root}}/account/tokens/{{.ID}}/revoke"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="secondary">Revoke</button></form>{{end}}</td>
+</tr>{{end}}</tbody>
+</table></div>
 <form method="post" action="{{root}}/account/tokens">
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
-  <label class="choice">Label <input type="text" name="label" required placeholder="laptop"></label>
-  <button>Make a token</button>
+  <label for="token-label">Label</label>
+  <fieldset role="group">
+    <input type="text" id="token-label" name="label" required placeholder="laptop">
+    <button>Make a token</button>
+  </fieldset>
 </form>
 {{end}}{{end}}

@@ -5,15 +5,26 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 {{with .Refresh}}<meta http-equiv="refresh" content="{{.}}">{{end}}
 <title>{{.Title}} · andante</title>
+<link rel="stylesheet" href="{{root}}/static/vendor/pico-2.1.1/pico.min.css">
 <link rel="stylesheet" href="{{root}}/static/style.css">
 </head>
 <body>
-<header>
-  <a class="brand" href="{{root}}/">andante</a>
-  <nav><a href="{{root}}/">Your reads</a><a href="{{root}}/sources">Browse</a><a href="{{root}}/add">Add</a>{{if .CanInvite}}<a href="{{root}}/invites">Invites</a>{{end}}{{if .Admin}}<a href="{{root}}/users">Users</a><a href="{{root}}/logs">Logs</a>{{end}}<a href="{{root}}/account">{{.Me}}</a></nav>
-  <form method="post" action="{{root}}/logout"><input type="hidden" name="csrf" value="{{.CSRF}}"><button>Log out</button></form>
+<header class="container">
+<nav>
+  <ul><li><a class="brand" href="{{root}}/">andante</a></li></ul>
+  <ul>
+    <li><a href="{{root}}/">Your reads</a></li>
+    <li><a href="{{root}}/sources">Browse</a></li>
+    <li><a href="{{root}}/add">Add</a></li>
+    {{if .CanInvite}}<li><a href="{{root}}/invites">Invites</a></li>{{end}}
+    {{if .Admin}}<li><a href="{{root}}/users">Users</a></li>
+    <li><a href="{{root}}/logs">Logs</a></li>{{end}}
+    <li><a href="{{root}}/account">{{.Me}}</a></li>
+    <li><form method="post" action="{{root}}/logout"><input type="hidden" name="csrf" value="{{.CSRF}}"><button class="secondary outline">Log out</button></form></li>
+  </ul>
+</nav>
 </header>
-<main>
+<main class="container">
 {{with .Error}}<p class="alert" role="alert">{{.}}</p>{{end}}
 {{with .Notice}}<p class="note" role="status">{{.}}</p>{{end}}
 {{template "content" .}}

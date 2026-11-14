@@ -29,6 +29,7 @@ version CI pins. A different local version can disagree with CI.
 | `make check` | Everything CI checks on a pull request, plus a secret scan: one line per step, and the failure for a step that fails. See `scripts/check.sh` |
 | `make fmt` | `gofmt` over the tree |
 | `make generate` | Regenerates both services' sqlc output and oapi-codegen code. Needs a C compiler. CI fails if the result differs |
+| `make vendor-web` | Downloads the website's vendored CSS and JavaScript listed in `internal/web/static/vendor.json`, and checks their hashes |
 | `make docker` | Builds the image for this machine's platform as `andante:dev` |
 | `make docker-scan` | Builds that image and scans it as CI does; needs Trivy |
 | `make deploy-check` | Validates the Compose stack and the Nomad job locally, and tests the Prometheus alerts; needs `nomad` and Docker |
