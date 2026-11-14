@@ -29,8 +29,9 @@ SELECT * FROM entries WHERE source_id = $1 ORDER BY seq DESC LIMIT 1;
 
 -- name: NotifySourceChanged :exec
 -- Postgres sends it when the transaction commits, so a listener never hears of a
--- change before it can read it.
-SELECT pg_notify('andante_source', sqlc.arg(source_id)::bigint::text);
+-- change before it can read it. The payload starts with the schema, because a
+-- channel is heard across the whole database, and two copies can share one.
+SELECT pg_notify('andante_source', current_schema() || ' ' || sqlc.arg(source_id)::bigint::text);
 
 -- name: SyncRevision :one
 SELECT revision FROM sync_state FOR UPDATE;

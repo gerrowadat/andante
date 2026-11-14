@@ -7,11 +7,13 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 )
 
 // SourceChannel is the Postgres channel ApplyChanges announces a changed source on,
-// with its ID as the payload. Every server sharing the database hears it.
+// with the schema and the source's ID as the payload. Every server sharing the
+// database hears it, and only listens to its own schema's.
 const SourceChannel = "andante_source"
 
 // closeTimeout bounds saying goodbye to the database on a connection that may be
@@ -37,13 +39,21 @@ func (s *Store) ListenSources(ctx context.Context, ready func(), changed func(so
 	if _, err := conn.Exec(ctx, "LISTEN "+SourceChannel); err != nil {
 		return fmt.Errorf("listen: %w", err)
 	}
+	var schema string
+	if err := conn.QueryRow(ctx, "SELECT current_schema()").Scan(&schema); err != nil {
+		return fmt.Errorf("listen: %w", err)
+	}
 	ready()
 	for {
 		notice, err := conn.WaitForNotification(ctx)
 		if err != nil {
 			return fmt.Errorf("listen: %w", err)
 		}
-		id, err := strconv.ParseInt(notice.Payload, 10, 64)
+		from, raw, _ := strings.Cut(notice.Payload, " ")
+		if from != schema {
+			continue // Another copy's, in the same database.
+		}
+		id, err := strconv.ParseInt(raw, 10, 64)
 		if err != nil {
 			continue
 		}

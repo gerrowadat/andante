@@ -154,10 +154,15 @@ A named event (`done`, or `gone` when a source is deleted) tells htmx to stop, t
 A look at a site is in memory, so its job closes a channel when it changes, and the stream waits
 on that. The server asks the catalogue for the look as a stream of its own (below), and each step
 that comes back is a change: the page lists the steps so far, with a spinner on the one under way,
-and once the answer's in they fold away under "How andante looked". A job keeps 50 steps at most. Sources change when the sync applies something from the catalogue. `ApplyChanges` sends
-`pg_notify('andante_source', id)` once for each source a batch touched, inside its transaction, so
+and once the answer's in they fold away under "How andante looked". A job keeps 50 steps at most.
+
+Sources change when the sync applies something from the catalogue. `ApplyChanges` sends
+`pg_notify('andante_source', ...)` once for each source a batch touched, inside its transaction, so
 Postgres delivers it on commit and a listener never hears of a change before it can read it. This
-works with several servers on one database, which an in-process broker wouldn't. Each server holds
+works with several servers on one database, which an in-process broker wouldn't. A channel is heard
+across the whole database, so the payload is the schema and the source's ID, and a listener ignores
+other schemas'. Otherwise two copies of andante sharing a database would hear each other, as the
+tests, each in a schema of their own, did. Each server holds
 one `LISTEN` connection, taken out of the pool, and only while someone has a source page open. If
 it loses the connection it gets it back with a growing wait, and every open page looks again, since
 it could have missed something. A crawl brings changes in bursts, so the source stream waits a
