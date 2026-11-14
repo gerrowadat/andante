@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -55,9 +56,47 @@ func TestVendoredFilesMatchTheirHashes(t *testing.T) {
 	}
 }
 
-// Every stylesheet a page links to is there, so upgrading a library and forgetting
-// a template fails here and not in someone's browser.
-func TestEveryLinkedStylesheetIsServed(t *testing.T) {
+// Every stylesheet and script a page links to is there, so upgrading a library and
+// forgetting a template fails here and not in someone's browser.
+func TestEveryLinkedFileIsServed(t *testing.T) {
+	link := regexp.MustCompile(`<(?:link rel="stylesheet" href|script defer src)="\{\{root\}\}(/static/[^"]+)">`)
+	files := staticHandler()
+	seen := 0
+	for _, s := range templateSources(t) {
+		for _, m := range link.FindAllStringSubmatch(s, -1) {
+			seen++
+			w := httptest.NewRecorder()
+			files.ServeHTTP(w, httptest.NewRequest(http.MethodGet, m[1], nil))
+			if w.Code != http.StatusOK {
+				t.Errorf("%s: %d", m[1], w.Code)
+			}
+		}
+	}
+	if seen < 6 {
+		t.Errorf("found %d links, want both stylesheets and both scripts on the layout and the stylesheets on the login pages", seen)
+	}
+}
+
+// A script is a file of ours, never inline, and nothing uses hx-on, which htmx runs
+// with eval. The policy would stop both, and this says so before a browser does.
+func TestTemplatesHaveNoInlineScripts(t *testing.T) {
+	script := regexp.MustCompile(`<script[^>]*>`)
+	ours := regexp.MustCompile(`^<script defer src="\{\{root\}\}/static/[^"]+">$`)
+	for _, s := range templateSources(t) {
+		for _, tag := range script.FindAllStringIndex(s, -1) {
+			opening := s[tag[0]:tag[1]]
+			if !ours.MatchString(opening) || !strings.HasPrefix(s[tag[1]:], "</script>") {
+				t.Errorf("a script that isn't one of our files: %s", opening)
+			}
+		}
+		if strings.Contains(s, "hx-on") {
+			t.Error("a template uses hx-on")
+		}
+	}
+}
+
+func templateSources(t *testing.T) []string {
+	t.Helper()
 	sources := []string{pageFrame}
 	err := fs.WalkDir(templateFiles, "templates", func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
@@ -70,22 +109,7 @@ func TestEveryLinkedStylesheetIsServed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	link := regexp.MustCompile(`<link rel="stylesheet" href="\{\{root\}\}(/static/[^"]+)">`)
-	files := staticHandler()
-	seen := 0
-	for _, s := range sources {
-		for _, m := range link.FindAllStringSubmatch(s, -1) {
-			seen++
-			w := httptest.NewRecorder()
-			files.ServeHTTP(w, httptest.NewRequest(http.MethodGet, m[1], nil))
-			if w.Code != http.StatusOK {
-				t.Errorf("%s: %d", m[1], w.Code)
-			}
-		}
-	}
-	if seen < 4 {
-		t.Errorf("found %d stylesheet links, want both on the layout and both on the login pages", seen)
-	}
+	return sources
 }
 
 // A vendored file has its version in its path, so a browser can keep it for good.
@@ -94,15 +118,18 @@ func TestVendoredFilesAreCachedForGood(t *testing.T) {
 	files := staticHandler()
 	for path, want := range map[string]string{
 		"/static/vendor/pico-2.1.1/pico.min.css": "public, max-age=31536000, immutable",
+		"/static/vendor/htmx-4.0.1/htmx.min.js":  "public, max-age=31536000, immutable",
 		"/static/style.css":                      "public, max-age=3600",
+		"/static/site.js":                        "public, max-age=3600",
 	} {
 		w := httptest.NewRecorder()
 		files.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
 		if got := w.Header().Get("Cache-Control"); w.Code != http.StatusOK || got != want {
 			t.Errorf("%s: %d, Cache-Control %q, want %q", path, w.Code, got, want)
 		}
-		if strings.HasSuffix(path, ".css") && !strings.HasPrefix(w.Header().Get("Content-Type"), "text/css") {
-			t.Errorf("%s: Content-Type %q", path, w.Header().Get("Content-Type"))
+		want := map[string]string{".css": "text/css", ".js": "text/javascript"}[filepath.Ext(path)]
+		if !strings.HasPrefix(w.Header().Get("Content-Type"), want) {
+			t.Errorf("%s: Content-Type %q, want %s", path, w.Header().Get("Content-Type"), want)
 		}
 	}
 }

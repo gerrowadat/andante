@@ -1,5 +1,5 @@
 {{define "content"}}<h1>Browse</h1>
-<form method="get" action="{{root}}/sources">
+<form method="get" action="{{root}}/sources" hx-get="{{root}}/sources" hx-trigger="submit, input delay:300ms" hx-sync="this:replace" hx-target="#results" hx-select="#results" hx-swap="outerHTML" hx-push-url="true">
   <fieldset role="group">
     <input type="search" name="q" value="{{.Data.Query}}" placeholder="Search" aria-label="Search">
     <select name="kind" aria-label="Kind">
@@ -9,6 +9,7 @@
     <button>Find</button>
   </fieldset>
 </form>
+<div id="results">
 {{with .Data.Sources}}
 <div class="overflow-auto"><table>
 <thead><tr><th>Source</th><th>Kind</th><th>State</th><th>Last checked</th></tr></thead>
@@ -20,4 +21,5 @@
 {{with $.Data.Next}}<p><a href="{{root}}{{.}}">Next page</a></p>{{end}}
 {{else}}
 <p>Nothing matches. You can <a href="{{root}}/add">add a site</a> by its address.</p>
-{{end}}{{end}}
+{{end}}
+</div>{{end}}

@@ -615,7 +615,7 @@ func TestHeaders(t *testing.T) {
 	for _, path := range []string{"/login", "/", "/invite/nonsense"} {
 		got := f.do(t, http.MethodGet, path, nil, home, "")
 		for name, want := range map[string]string{
-			"Content-Security-Policy":   "default-src 'none'; style-src 'self'; img-src 'self' https: data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+			"Content-Security-Policy":   "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
 			"Strict-Transport-Security": "max-age=31536000",
 			"X-Content-Type-Options":    "nosniff",
 			"Referrer-Policy":           "no-referrer",

@@ -15,6 +15,22 @@
       "path": "vendor/pico-2.1.1/LICENSE.md",
       "url": "https://cdn.jsdelivr.net/npm/@picocss/pico@2.1.1/LICENSE.md",
       "sha256": "afaff063e044233f917b7807dccab022f09dca474f92b642846bee4850655bbf"
+    },
+    {
+      "name": "htmx",
+      "version": "4.0.1",
+      "repo": "bigskysoftware/htmx",
+      "path": "vendor/htmx-4.0.1/htmx.min.js",
+      "url": "https://cdn.jsdelivr.net/npm/htmx.org@4.0.1/dist/htmx.min.js",
+      "sha256": "a0abb04f2f45a1f89d1d4844023245537e5e6014c87b144553e0607b4cc32130"
+    },
+    {
+      "name": "htmx",
+      "version": "4.0.1",
+      "repo": "bigskysoftware/htmx",
+      "path": "vendor/htmx-4.0.1/LICENSE",
+      "url": "https://cdn.jsdelivr.net/npm/htmx.org@4.0.1/LICENSE",
+      "sha256": "d3d2456f76414f2456104660ebd65aff1c04cd7966b942bdabd63f3cdb316a38"
     }
   ]
 }
