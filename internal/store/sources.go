@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/gerrowadat/andante/internal/store/db"
 	"github.com/jackc/pgx/v5"
@@ -101,6 +102,32 @@ func (s *Store) ListEntries(ctx context.Context, sourceID int64, after, limit in
 	return entries, nil
 }
 
+// Progress is how far indexing a source has got: how many entries there are, and
+// the last of them, which is nil if there are none.
+type Progress struct {
+	Entries int64
+	Last    *db.Entry
+}
+
+// SourceProgress returns how far indexing a source has got.
+func (s *Store) SourceProgress(ctx context.Context, sourceID int64) (Progress, error) {
+	count, err := s.queries.CountEntries(ctx, sourceID)
+	if err != nil {
+		return Progress{}, fmt.Errorf("count entries of source %d: %w", sourceID, err)
+	}
+	if count == 0 {
+		return Progress{}, nil
+	}
+	last, err := s.queries.LastEntry(ctx, sourceID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Progress{}, nil
+	}
+	if err != nil {
+		return Progress{}, fmt.Errorf("last entry of source %d: %w", sourceID, err)
+	}
+	return Progress{Entries: count, Last: &last}, nil
+}
+
 // Change is one change from the catalogue. Exactly one of Source, Entry and
 // DeletedSource is set.
 type Change struct {
@@ -125,6 +152,9 @@ func (s *Store) SyncRevision(ctx context.Context) (int64, error) {
 //
 // A deleted source that a read still uses stays. The catalogue refuses to delete a
 // source with demand, so this takes a race, and a read shouldn't pay for it.
+//
+// Each source that changed is announced on SourceChannel when the transaction
+// commits, for pages that show it as it changes.
 func (s *Store) ApplyChanges(ctx context.Context, changes []Change) error {
 	if len(changes) == 0 {
 		return nil
@@ -135,6 +165,7 @@ func (s *Store) ApplyChanges(ctx context.Context, changes []Change) error {
 		if err != nil {
 			return err
 		}
+		var changed []int64
 		for _, c := range changes {
 			if c.Revision <= revision {
 				continue
@@ -143,12 +174,22 @@ func (s *Store) ApplyChanges(ctx context.Context, changes []Change) error {
 			switch {
 			case c.Source != nil:
 				err = q.UpsertSource(ctx, *c.Source)
+				changed = append(changed, c.Source.ID)
 			case c.Entry != nil:
 				err = q.UpsertEntry(ctx, *c.Entry)
+				changed = append(changed, c.Entry.SourceID)
 			case c.DeletedSource != nil:
 				err = deleteSource(ctx, q, *c.DeletedSource)
+				changed = append(changed, *c.DeletedSource)
 			}
 			if err != nil {
+				return err
+			}
+		}
+		// A crawl's batch is many changes to one source, and one notice covers them.
+		slices.Sort(changed)
+		for _, id := range slices.Compact(changed) {
+			if err := q.NotifySourceChanged(ctx, id); err != nil {
 				return err
 			}
 		}

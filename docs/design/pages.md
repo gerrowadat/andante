@@ -48,6 +48,7 @@ What htmx does:
   so it's swapped in the same way.
 - Browse searches as you type, 300ms after the last key, swapping `#results` and pushing the
   `?q=` URL so a search can still be linked to.
+- The Add page and the source page follow an event stream, through htmx 4's `hx-sse` extension.
 
 Every element with `hx-get` or `hx-post` is a form whose `action` and `method` say the same thing,
 so with JavaScript off it posts and redirects as it always did. The tests check that on every page
@@ -63,8 +64,8 @@ htmx's own config is in a `<meta name="htmx-config">`: `includeIndicatorCSS: fal
 otherwise it adds a stylesheet of its own, and `history: "reload"`, so the back button loads the
 page again and never restores one from a copy.
 
-The Add page still uses a `<meta http-equiv="refresh">` while it waits on a discovery.
-[A better website](../proposals/web-ui.md) replaces that with live progress.
+The Add page and the source page show progress as it happens, over Server-Sent Events, which is
+below.
 
 ### htmx 4
 
@@ -124,13 +125,72 @@ adding a site do talk to the catalogue, and show the error when it's down.
 ## Adding a Site
 
 Discovery takes a few seconds, sometimes longer, which is too long to hold a form submission open.
-The Add page starts it in the background and sends you to a page that refreshes until it's done.
+The Add page starts it in the background and sends you to a page that waits for it: with
+JavaScript, it follows the look's event stream and shows the answer when it comes, and without, a
+`<meta http-equiv="refresh">` inside `<noscript>` reloads it every few seconds.
 The jobs are kept in memory, last an hour, and are private to whoever started them, and each user
 can have three running. A restart loses them, which costs you pasting the address again.
 
 A candidate that's already a source goes straight to that source. Close matches are listed as links
 next to the candidate, with a note to check them first. If nothing turns up, the page asks for the
 address of the very first page, and crawls forward from there.
+
+## Live Progress
+
+Two pages show things as they happen, each with a stream of its own in the route table, so the
+login, ownership and route tests cover them like any other page:
+
+| Stream | Path | Owner | What it sends |
+|---|---|---|---|
+| Discovery | `GET /add/{job}/events` | the job's user | the waiting part of the page, again when the look finishes, then `done` |
+| Source | `GET /sources/{id}/events` | anyone logged in | the state, entry count and latest entry, the first entries, and the crawl log for admins |
+
+Each event is HTML from the same template the page uses on first load (`look` in `found.html`,
+`progress`, `first-entries` and `crawl-log` in `source.html`), so there's one way to render each
+part. The source stream swaps the progress in place and the other two by ID, with `hx-swap-oob`.
+A named event (`done`, or `gone` when a source is deleted) tells htmx to stop, through
+`hx-sse:close`, and otherwise it reconnects by itself and gets the current state first.
+
+A look at a site is in memory, so its job closes a channel when it finishes, and the stream waits
+on that. Sources change when the sync applies something from the catalogue. `ApplyChanges` sends
+`pg_notify('andante_source', id)` once for each source a batch touched, inside its transaction, so
+Postgres delivers it on commit and a listener never hears of a change before it can read it. This
+works with several servers on one database, which an in-process broker wouldn't. Each server holds
+one `LISTEN` connection, taken out of the pool, and only while someone has a source page open. If
+it loses the connection it gets it back with a growing wait, and every open page looks again, since
+it could have missed something. A crawl brings changes in bursts, so the source stream waits a
+second after hearing of one and renders once.
+
+The details that make a stream last:
+
+- The server's read and write timeouts would end it, so the handler clears the read deadline and
+  sets a write deadline before each write, through `http.ResponseController`.
+- A comment every 15 seconds keeps proxies from closing it, and `X-Accel-Buffering: no` stops
+  nginx holding events back.
+- Each person can have eight open on a server. Past that it's a 429, which `site.js` shows in
+  `#status`.
+- Streams end when the server starts shutting down, so they don't hold the shutdown up.
+
+The metrics are `andante_web_streams` (open, by stream), `andante_web_stream_events_total`,
+`andante_web_streams_refused_total` and `andante_web_listen_failures_total`.
+
+The e2e suite drives Chrome with [chromedp](https://github.com/chromedp/chromedp) through the Add
+page, once with JavaScript on (the answer shows without a reload, and nothing breaks the CSP) and
+once with it off (the refresh gets there). CI sets `ANDANTE_REQUIRE_BROWSER`, so they can't skip
+there. Locally they skip without a Chrome, or use the one in `ANDANTE_E2E_CHROME`.
+
+### Where Live Progress Diverged
+
+- **No read stream yet.** The proposal had one for the Read page, but its phase only named the Add
+  and source pages, and a read's position moves with the clock as much as with the sync, which
+  needs more than a `NOTIFY`.
+- **The state is in words, and can't tell indexing from waiting.** The source page says
+  "indexing", "reached the live end" or "parked", and the entry count and latest entry. Whether
+  indexing has caught up with readers depends on the catalogue's lookahead, which the server
+  doesn't know.
+- **Discovery has two states, looking and done.** The stages come with streaming discovery on the
+  catalogue, in the next phase.
+- **The listener is lazy.** It holds a connection only while a source page is open.
 
 ## Pace
 

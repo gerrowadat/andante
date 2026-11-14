@@ -4,6 +4,7 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net/http"
@@ -142,45 +143,83 @@ func (s *site) source(w http.ResponseWriter, r *http.Request, v visitor) {
 	s.showSource(w, r, v, http.StatusOK, "", "")
 }
 
-func (s *site) showSource(w http.ResponseWriter, r *http.Request, v visitor, status int, problem, notice string) {
-	source, ok := s.sourceOf(w, r)
-	if !ok {
-		return
+// sourcePage is what the source page shows. The parts that change as the source is
+// indexed are templates of their own, which its event stream sends again.
+type sourcePage struct {
+	Source      db.Source
+	Home, Image string
+	Checked     string
+	// Doing says in words what indexing is up to.
+	Doing   string
+	Count   int64
+	Latest  *entryRow
+	Entries []entryRow
+	Mine    []db.Read
+	Kinds   []string
+	Admin   bool
+	// CrawlLog and Kept are for an admin, and Crawled says whether the
+	// catalogue could say what's in them.
+	CrawlLog []crawlRow
+	Kept     *keptPage
+	Crawled  bool
+}
+
+func entryOf(e db.Entry) entryRow {
+	title := text(e.Title)
+	if title == "" {
+		title = "Entry " + strconv.Itoa(int(e.Seq))
 	}
+	return entryRow{Title: title, Url: webOnly(text(e.Url)), Date: stamp(e.OriginalDate)}
+}
+
+// doing says what indexing a source is up to. The server can't tell indexing from
+// waiting for readers to get further, because how far ahead to keep is the
+// catalogue's business.
+func doing(source db.Source) string {
+	switch source.State {
+	case "indexing":
+		return "Indexing, a little way ahead of its readers."
+	case "tail":
+		if source.DueAt == nil {
+			return "Reached the live end, and parked until someone reads it."
+		}
+		return "Reached the live end. It checks for new entries every so often."
+	case "paused":
+		return "Paused."
+	case "error":
+		return "Stopped by an error."
+	}
+	return source.State
+}
+
+func (s *site) sourceData(r *http.Request, v visitor, id int64) (sourcePage, error) {
 	ctx := r.Context()
+	source, err := s.opts.Store.GetSource(ctx, id)
+	if err != nil {
+		return sourcePage{}, err
+	}
 	entries, err := s.opts.Store.ListEntries(ctx, source.ID, -1<<31, sampleSize)
 	if err != nil {
-		s.fail(w, err)
-		return
+		return sourcePage{}, err
+	}
+	progress, err := s.opts.Store.SourceProgress(ctx, source.ID)
+	if err != nil {
+		return sourcePage{}, err
 	}
 	mine, err := s.opts.Store.ListReads(ctx, v.actor, false, 0, maxReads)
 	if err != nil {
-		s.fail(w, err)
-		return
+		return sourcePage{}, err
 	}
-	data := struct {
-		Source      db.Source
-		Home, Image string
-		Checked     string
-		Parked      bool
-		Entries     []entryRow
-		Mine        []db.Read
-		Kinds       []string
-		// CrawlLog and Kept are for an admin, and Crawled says whether the
-		// catalogue could say what's in them.
-		CrawlLog []crawlRow
-		Kept     *keptPage
-		Crawled  bool
-	}{
+	data := sourcePage{
 		Source: source, Home: webOnly(source.HomeUrl), Image: webOnly(text(source.ImageUrl)), Checked: stamp(source.LastCrawledAt),
-		Parked: source.State == "tail" && source.DueAt == nil, Kinds: kinds,
+		Doing: doing(source), Count: progress.Entries, Kinds: kinds, Admin: v.actor.Admin,
+	}
+	if progress.Last != nil {
+		last := entryOf(*progress.Last)
+		data.Latest = &last
 	}
 	for _, e := range entries {
-		title := text(e.Title)
-		if title == "" {
-			title = "Entry " + strconv.Itoa(int(e.Seq))
-		}
-		data.Entries = append(data.Entries, entryRow{Title: title, Url: webOnly(text(e.Url)), Date: stamp(e.OriginalDate)})
+		data.Entries = append(data.Entries, entryOf(e))
 	}
 	for _, read := range mine {
 		if read.SourceID == source.ID {
@@ -190,7 +229,79 @@ func (s *site) showSource(w http.ResponseWriter, r *http.Request, v visitor, sta
 	if v.actor.Admin {
 		data.CrawlLog, data.Kept, data.Crawled = s.crawlLog(r, v, source.ID)
 	}
-	s.show(w, v, status, sourceView, pageData{Title: source.Title, Error: problem, Notice: notice, Data: data})
+	return data, nil
+}
+
+func (s *site) showSource(w http.ResponseWriter, r *http.Request, v visitor, status int, problem, notice string) {
+	id, ok := idOf(r)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	data, err := s.sourceData(r, v, id)
+	if errors.Is(err, store.ErrNotFound) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	s.show(w, v, status, sourceView, pageData{Title: data.Source.Title, Error: problem, Notice: notice, Data: data})
+}
+
+// sourceEvents streams a source's progress as the sync brings changes to it: the
+// same parts of the page the source page shows, each time they change.
+func (s *site) sourceEvents(w http.ResponseWriter, r *http.Request, v visitor) {
+	source, ok := s.sourceOf(w, r)
+	if !ok {
+		return
+	}
+	// Before the first look, so that nothing in between is missed.
+	changed, stop := s.watcher.watch(source.ID)
+	defer stop()
+	stream, ok := s.openStream(w, r, v, "source")
+	if !ok {
+		return
+	}
+	defer s.closeStream(stream, v)
+	for {
+		data, err := s.sourceData(r, v, source.ID)
+		if errors.Is(err, store.ErrNotFound) {
+			_ = stream.send("", []byte(`<p class="alert">This source has been deleted.</p>`))
+			_ = stream.send("gone", nil)
+			return
+		}
+		if err != nil {
+			if r.Context().Err() == nil {
+				s.opts.Logger.Warn("could not show a source's progress", "source_id", source.ID, "error", err)
+			}
+			return
+		}
+		var b bytes.Buffer
+		if err := s.views[sourceView].ExecuteTemplate(&b, "live", data); err != nil {
+			s.opts.Logger.Warn("could not write a page", "error", err)
+			return
+		}
+		if stream.send("", b.Bytes()) != nil {
+			return
+		}
+		if !s.await(r, stream, changed) {
+			return
+		}
+		// A crawl brings its changes in a burst, which is better shown once.
+		select {
+		case <-r.Context().Done():
+			return
+		case <-s.opts.Stopping:
+			return
+		case <-time.After(settle):
+		}
+		select {
+		case <-changed:
+		default:
+		}
+	}
 }
 
 func (s *site) crawl(w http.ResponseWriter, r *http.Request, v visitor) {

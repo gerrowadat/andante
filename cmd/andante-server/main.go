@@ -283,6 +283,7 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		OIDC:            oidcOptions(cfg),
 		Throttle:        guesses,
 		Bootstrap:       setup,
+		Stopping:        ctx.Done(),
 	})
 
 	public := server.NewPublic(server.PublicOptions{

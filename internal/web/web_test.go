@@ -74,6 +74,8 @@ type fixture struct {
 	server   *httptest.Server
 	oidc     *web.OIDCOptions
 	setup    *bootstrap.Service
+	// stopping is the server shutting down, as far as the website knows.
+	stopping chan struct{}
 	mu       sync.Mutex
 	now      time.Time
 }
@@ -107,10 +109,11 @@ func (f *fixture) serve(t *testing.T, baseURL string, passwordLogin bool) {
 		t.Fatal(err)
 	}
 	f.registry = prometheus.NewRegistry()
+	f.stopping = make(chan struct{})
 	f.server = httptest.NewServer(web.New(web.Options{
 		Store: f.store, Hasher: f.hasher, Clients: clients, BaseURL: baseURL, PasswordLogin: passwordLogin,
 		Registry: f.registry, Logger: slog.New(slog.DiscardHandler), Now: f.clock,
-		App: f.stack.App, DefaultTimezone: "UTC", Box: box, OIDC: f.oidc, Bootstrap: f.setup,
+		App: f.stack.App, DefaultTimezone: "UTC", Box: box, OIDC: f.oidc, Bootstrap: f.setup, Stopping: f.stopping,
 	}))
 	t.Cleanup(f.server.Close)
 }

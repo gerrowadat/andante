@@ -1,7 +1,15 @@
 {{define "content"}}{{with .Data}}
 <h1>{{.Address}}</h1>
+<div id="look"{{if not .Done}} hx-sse:connect="{{root}}/add/{{.ID}}/events" hx-sse:close="done"{{end}}>
+{{template "look" $}}
+</div>
+{{end}}{{end}}
+
+{{/* look is the part of the page that changes while andante looks, and what the
+     page's event stream sends. */}}
+{{define "look"}}{{with .Data}}
 {{if not .Done}}
-<p aria-busy="true">Looking. This page checks again every few seconds.</p>
+<p aria-busy="true">Looking. What turns up shows here as soon as it's ready.</p>
 {{else if .Failed}}
 <p class="alert">{{.Failed}}</p>
 {{else if not .Candidates}}

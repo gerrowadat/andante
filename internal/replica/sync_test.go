@@ -302,3 +302,49 @@ func TestRunKeepsTheCopyCurrent(t *testing.T) {
 		t.Errorf("metric series = %d", got)
 	}
 }
+
+// Pages that show a source as it's indexed hear from the sync when it changes, once
+// for each source however many entries came, and only once the copy has it.
+func TestTheSyncAnnouncesWhatChanged(t *testing.T) {
+	s := stacktest.New(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	a, b := addSource(t, s, "a"), addSource(t, s, "b")
+	catchUp(t, s)
+
+	ready := make(chan struct{})
+	heard := make(chan int64, 10)
+	done := make(chan error, 1)
+	go func() {
+		done <- s.Store.ListenSources(ctx, func() { close(ready) }, func(id int64) { heard <- id })
+	}()
+	<-ready
+
+	index(t, s, a.ID, "https://a.example/1")
+	index(t, s, a.ID, "https://a.example/2")
+	catchUp(t, s)
+	select {
+	case id := <-heard:
+		if id != a.ID {
+			t.Errorf("heard of source %d, want %d", id, a.ID)
+		}
+		progress, err := s.Store.SourceProgress(ctx, id)
+		if err != nil || progress.Entries != 2 || progress.Last == nil || *progress.Last.Url != "https://a.example/2" {
+			t.Errorf("progress when heard = %+v, %v", progress, err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("heard nothing")
+	}
+	select {
+	case id := <-heard:
+		t.Errorf("heard of source %d again", id)
+	case <-time.After(200 * time.Millisecond):
+	}
+	if progress, err := s.Store.SourceProgress(ctx, b.ID); err != nil || progress.Entries != 0 || progress.Last != nil {
+		t.Errorf("progress of an empty source = %+v, %v", progress, err)
+	}
+
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Errorf("listening ended with %v", err)
+	}
+}

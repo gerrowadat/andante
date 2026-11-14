@@ -93,6 +93,9 @@ type Options struct {
 	Throttle *throttle.Throttle
 	// Bootstrap makes the first admin. Nil leaves /setup out.
 	Bootstrap *bootstrap.Service
+	// Stopping closes when the server begins to shut down, which ends the pages'
+	// event streams so that they don't hold the shutdown up. Nil never closes.
+	Stopping <-chan struct{}
 }
 
 type site struct {
@@ -113,6 +116,10 @@ type site struct {
 	oidc       *oidcLogin
 	oidcLogins *prometheus.CounterVec
 	inviteUses *prometheus.CounterVec
+	// streams is for the pages that show things as they happen.
+	streams     streamMetrics
+	streamLimit *streamLimit
+	watcher     *watcher
 }
 
 // New returns the website's handler.
@@ -146,6 +153,9 @@ func New(opts Options) http.Handler {
 			Help: "Invites used, by result: ok, or refused when the link was used up, withdrawn or out of date.",
 		}, []string{"result"}),
 	}
+	s.streams = newStreamMetrics(opts.Registry)
+	s.streamLimit = &streamLimit{byUser: map[int64]int{}}
+	s.watcher = newWatcher(opts)
 	opts.Registry.MustRegister(newSessions(opts))
 	if opts.OIDC != nil {
 		s.oidc = newOIDCLogin(*opts.OIDC, opts.BaseURL)

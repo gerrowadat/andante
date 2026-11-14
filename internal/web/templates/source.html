@@ -2,12 +2,9 @@
 {{with .Image}}<img class="art" src="{{.}}" alt="">{{end}}
 <h1>{{.Source.Title}}</h1>
 <p>{{if .Home}}<a href="{{.Home}}" rel="noreferrer">{{.Source.HomeUrl}}</a>{{else}}{{.Source.HomeUrl}}{{end}}</p>
-<dl>
-  <dt>Kind</dt><dd>{{.Source.DefaultKind}}</dd>
-  <dt>State</dt><dd>{{.Source.State}}{{if .Parked}}, parked until someone reads it{{end}}</dd>
-  <dt>Last checked</dt><dd>{{with .Checked}}{{.}}{{else}}never{{end}}</dd>
-  {{with .Source.LastError}}<dt>Last error</dt><dd>{{.}}</dd>{{end}}
-</dl>
+<div id="progress" hx-sse:connect="{{root}}/sources/{{.Source.ID}}/events" hx-sse:close="gone">
+{{template "progress" .}}
+</div>
 <div class="actions">
 <a href="{{root}}/sources/{{.Source.ID}}/track" role="button">Track this</a>
 <form method="post" action="{{root}}/sources/{{.Source.ID}}/crawl"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="secondary outline">Check for new entries now</button></form>
@@ -15,8 +12,7 @@
 <p class="muted">Tracking it means choosing a pace, and getting a feed.</p>
 {{with .Mine}}<h2>Your reads of it</h2><ul>{{range .}}<li><a href="{{root}}/reads/{{.ID}}">{{.Name}}</a></li>{{end}}</ul>{{end}}
 <h2>The first entries</h2>
-{{with .Entries}}<ol>{{range .}}<li>{{if .Url}}<a href="{{.Url}}" rel="noreferrer">{{.Title}}</a>{{else}}{{.Title}}{{end}}{{with .Date}} <small>{{.}}</small>{{end}}</li>{{end}}</ol>
-{{else}}<p class="muted">Nothing indexed yet.</p>{{end}}
+<div id="first-entries">{{template "first-entries" .}}</div>
 {{if $.Admin}}
 <h2>Change it</h2>
 <form method="post" action="{{root}}/sources/{{.Source.ID}}/edit">
@@ -31,7 +27,31 @@
 <p><a href="{{root}}/sources/{{.Source.ID}}/delete">Delete this source</a></p>
 <h2>Crawl log</h2>
 <p class="muted">What the crawl fetched, decided and ran into, newest first.</p>
-{{if not .Crawled}}<p class="muted">The catalogue didn't answer.</p>
+<div id="crawl-log">{{template "crawl-log" .}}</div>
+<p><a href="{{root}}/logs?service=catalogue&amp;source={{.Source.Slug}}">What the catalogue logged about it</a></p>
+{{end}}
+{{end}}{{end}}
+
+
+{{/* The parts of the page that change as the source is indexed. live is what its
+     event stream sends: progress in place, and the others by their IDs. */}}
+{{define "live"}}{{template "progress" .}}
+<div id="first-entries" hx-swap-oob="true">{{template "first-entries" .}}</div>
+{{if .Admin}}<div id="crawl-log" hx-swap-oob="true">{{template "crawl-log" .}}</div>{{end}}
+{{end}}
+
+{{define "progress"}}<dl>
+  <dt>Kind</dt><dd>{{.Source.DefaultKind}}</dd>
+  <dt>State</dt><dd>{{.Doing}}</dd>
+  <dt>Entries</dt><dd>{{.Count}} so far{{with .Latest}}. The latest is {{if .Url}}<a href="{{.Url}}" rel="noreferrer">{{.Title}}</a>{{else}}{{.Title}}{{end}}{{with .Date}} <small>{{.}}</small>{{end}}{{end}}</dd>
+  <dt>Last checked</dt><dd>{{with .Checked}}{{.}}{{else}}never{{end}}</dd>
+  {{with .Source.LastError}}<dt>Last error</dt><dd>{{.}}</dd>{{end}}
+</dl>{{end}}
+
+{{define "first-entries"}}{{with .Entries}}<ol>{{range .}}<li>{{if .Url}}<a href="{{.Url}}" rel="noreferrer">{{.Title}}</a>{{else}}{{.Title}}{{end}}{{with .Date}} <small>{{.}}</small>{{end}}</li>{{end}}</ol>
+{{else}}<p class="muted">Nothing indexed yet.</p>{{end}}{{end}}
+
+{{define "crawl-log"}}{{if not .Crawled}}<p class="muted">The catalogue didn't answer.</p>
 {{else}}{{with .Kept}}<p>The last page the crawl couldn't get past, on {{.At}}: {{.Message}}</p>
 <details><summary>The page as the crawl saw it{{if .Cut}} (the start of it){{end}}</summary><pre class="page">{{.Page}}</pre></details>
 {{end}}{{if .CrawlLog}}<div class="overflow-auto"><table>
@@ -39,7 +59,4 @@
 <tbody>{{range .CrawlLog}}{{if .Event}}<tr class="{{.Level}}"><td>{{.At}}</td><td>{{.Message}}{{if .HasPage}} <small>(the page is above)</small>{{end}}</td><td>{{.Level}}</td></tr>
 {{else}}<tr><td>{{.At}}</td><td class="url">{{.URL}}</td><td>{{.Status}}{{with .Error}} <small>{{.}}</small>{{end}}</td></tr>
 {{end}}{{end}}</tbody></table></div>
-{{else}}<p class="muted">Nothing crawled yet.</p>{{end}}{{end}}
-<p><a href="{{root}}/logs?service=catalogue&amp;source={{.Source.Slug}}">What the catalogue logged about it</a></p>
-{{end}}
-{{end}}{{end}}
+{{else}}<p class="muted">Nothing crawled yet.</p>{{end}}{{end}}{{end}}

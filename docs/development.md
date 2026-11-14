@@ -42,6 +42,12 @@ Database tests use `storetest`, which gives each test its own schema. They skip 
 `ANDANTE_TEST_DATABASE_URL` is unset. CI sets `ANDANTE_REQUIRE_DB=1`, which turns that skip into a
 failure, so run `make test-db` before pushing anything that touches the database.
 
+## Tests That Need a Browser
+
+Two e2e tests drive Chrome through the website with chromedp. They look for Chrome or Chromium on
+the `PATH`, or use the one `ANDANTE_E2E_CHROME` names, and skip if there isn't one. CI's e2e runs set
+`ANDANTE_REQUIRE_BROWSER=1`, which turns that skip into a failure.
+
 ## Changing the Schema
 
 Add a numbered file to `migrations/` and queries to `queries/`, under `internal/store/` for the server
