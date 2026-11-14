@@ -20,6 +20,7 @@ type Metrics struct {
 	state     *prometheus.GaugeVec
 	probeRuns *prometheus.CounterVec
 	finds     *prometheus.CounterVec
+	stages    *prometheus.CounterVec
 }
 
 // NewMetrics registers discovery's metrics.
@@ -47,6 +48,10 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 			Name: "andante_discoveries_total",
 			Help: "Attempts to work out how to read a site, by result.",
 		}, []string{"result"}),
+		stages: factory.NewCounterVec(prometheus.CounterOpts{
+			Name: "andante_discovery_stages_total",
+			Help: "Steps taken while working out how to read a site, by step.",
+		}, []string{"step"}),
 		probeRuns: factory.NewCounterVec(prometheus.CounterOpts{
 			Name: "andante_probe_runs_total",
 			Help: "Probes, by result.",
@@ -56,3 +61,6 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 
 // CountFind records how an attempt to read a site went.
 func (m *Metrics) CountFind(result string) { m.finds.WithLabelValues(result).Inc() }
+
+// CountStage records a step taken while working out how to read a site.
+func (m *Metrics) CountStage(step string) { m.stages.WithLabelValues(step).Inc() }

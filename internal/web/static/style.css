@@ -31,3 +31,4 @@ tr.warn > td { background: color-mix(in srgb, #c90 18%, transparent); }
 tr.error > td { background: color-mix(in srgb, var(--pico-del-color) 20%, transparent); }
 pre.page { max-height: 30rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .85em; }
 ul.codes { columns: 2; list-style: none; padding: 0; }
+.stages li:not([aria-busy]) { color: var(--pico-muted-color); }

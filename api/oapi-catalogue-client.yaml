@@ -8,3 +8,6 @@ generate:
 output-options:
   nullable-type: true
   name-normalizer: ToCamelCaseWithInitialisms
+  # DiscoveryStage is only named in the discovery stream's x-events, which
+  # oapi-codegen can't see, and the server's reader needs it.
+  skip-prune: true

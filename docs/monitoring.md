@@ -31,6 +31,7 @@ you create. Tokens and read IDs are never labels.
 | `andante_source_state` | `source`, `state` | 1 for the state a source is in, 0 for the others |
 | `andante_probe_runs_total` | `result` | Probes run |
 | `andante_discoveries_total` | `result` | Attempts to work out how to read a site: `existing`, `found`, `none` or `failed` |
+| `andante_discovery_stages_total` | `step` | Steps taken while working out how to read a site: `fetch`, `feed`, `feeds`, `paged` or `probe` |
 | `andante_feed_requests_total` | `format`, `role`, `status` | Feed requests |
 | `andante_feed_render_duration_seconds` | | Time to render a feed |
 | `andante_logins_total` | `result` | Login attempts: `ok`, `failed` or `throttled` |

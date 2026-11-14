@@ -5,9 +5,12 @@ package api_test
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -51,7 +54,7 @@ func newFixture(t *testing.T) *fixture {
 func feedConfig(t *testing.T, url string) client.SourceConfig {
 	t.Helper()
 	var config client.SourceConfig
-	if err := config.FromFeedConfig(client.FeedConfig{Strategy: client.Feed, FeedURL: url}); err != nil {
+	if err := config.FromFeedConfig(client.FeedConfig{Strategy: client.FeedConfigStrategyFeed, FeedURL: url}); err != nil {
 		t.Fatal(err)
 	}
 	return config
@@ -392,11 +395,11 @@ func TestCrawlLog(t *testing.T) {
 		t.Fatalf("list crawl log: %v %s", err, resp.Body)
 	}
 	page := resp.JSON200
-	if len(page.Items) != 2 || !page.More || page.Items[0].URL.MustGet() != pages[2] || page.Items[0].Kind != client.Fetch {
+	if len(page.Items) != 2 || !page.More || page.Items[0].URL.MustGet() != pages[2] || page.Items[0].Kind != client.CrawlLogKindFetch {
 		t.Fatalf("page = %+v", page)
 	}
 	event := page.Items[1]
-	if event.Kind != client.Event || *event.Level != client.LogLevelWarn || event.Message.MustGet() != "no next link" || !event.HasPage {
+	if event.Kind != client.CrawlLogKindEvent || *event.Level != client.LogLevelWarn || event.Message.MustGet() != "no next link" || !event.HasPage {
 		t.Errorf("event = %+v", event)
 	}
 	before := event.ID
@@ -408,7 +411,7 @@ func TestCrawlLog(t *testing.T) {
 		t.Errorf("older = %+v", page)
 	}
 
-	kind := client.Fetch
+	kind := client.CrawlLogKindFetch
 	resp, err = f.client.ListCrawlLogWithResponse(ctx, s.ID, &client.ListCrawlLogParams{Kind: &kind})
 	if err != nil || resp.JSON200 == nil || len(resp.JSON200.Items) != 3 {
 		t.Errorf("only fetches: %v %s", err, resp.Body)
@@ -442,5 +445,85 @@ func TestCrawlLog(t *testing.T) {
 	missing, err := f.client.ListCrawlLogWithResponse(ctx, s.ID+1000, nil)
 	if err != nil || missing.StatusCode() != http.StatusNotFound {
 		t.Errorf("unknown source: %v %d", err, missing.StatusCode())
+	}
+}
+
+func (f *fixture) discover(t *testing.T, accept, body string) (*http.Response, string) {
+	t.Helper()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, f.url+"/discoveries", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+stacktest.CatalogueToken)
+	req.Header.Set("Content-Type", "application/json")
+	if accept != "" {
+		req.Header.Set("Accept", accept)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp, string(b)
+}
+
+func TestDiscoveryStreamsWhenAsked(t *testing.T) {
+	f := newFixture(t)
+	site := sitetest.Serve(t, "discover-full")
+	body := `{"url":"` + site.URL + `/"}`
+
+	resp, plain := f.discover(t, "", body)
+	if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Type") != "application/json" || !strings.HasPrefix(plain, `{"candidates":[`) {
+		t.Fatalf("plain answer: %d %s %s", resp.StatusCode, resp.Header.Get("Content-Type"), plain)
+	}
+
+	resp, stream := f.discover(t, "application/json;q=0.5, text/event-stream", body)
+	if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Type") != "text/event-stream" {
+		t.Fatalf("stream: %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
+	}
+	if !strings.HasPrefix(stream, "event: stage\ndata: {\"message\":\"Fetching "+site.URL+"/\",\"step\":\"fetch\"}\n\n") {
+		t.Errorf("stream starts %q", stream)
+	}
+	if !strings.Contains(stream, `"step":"probe"`) || !strings.HasSuffix(stream, "\n\n") {
+		t.Errorf("stream = %q", stream)
+	}
+	// The last event has the same body as the plain answer, apart from the times.
+	last := stream[strings.LastIndex(strings.TrimSuffix(stream, "\n\n"), "\n\n")+2:]
+	data, ok := strings.CutPrefix(last, "event: result\ndata: ")
+	if !ok {
+		t.Fatalf("last event = %q", last)
+	}
+	var streamed, answered client.DiscoveryResult
+	if err := json.Unmarshal([]byte(data), &streamed); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(plain), &answered); err != nil {
+		t.Fatal(err)
+	}
+	if len(streamed.Candidates) != 1 || streamed.Candidates[0].Title != answered.Candidates[0].Title ||
+		len(streamed.Candidates[0].Sample) != len(answered.Candidates[0].Sample) {
+		t.Errorf("streamed %+v, answered %+v", streamed, answered)
+	}
+}
+
+func TestDiscoveryStreamSaysWhenItFails(t *testing.T) {
+	f := newFixture(t)
+	site := sitetest.Serve(t, "discover-full")
+	resp, stream := f.discover(t, "text/event-stream", `{"url":"`+site.URL+`/nothing"}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	if !strings.Contains(stream, "event: error\ndata: {") || !strings.Contains(stream, `"status":422`) {
+		t.Errorf("stream = %q", stream)
+	}
+
+	// Refused before it starts, it's a problem like any other.
+	resp, body := f.discover(t, "text/event-stream", `{"url":"ftp://a.example/"}`)
+	if resp.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(body, "absolute http(s)") {
+		t.Errorf("refusal: %d %s", resp.StatusCode, body)
 	}
 }

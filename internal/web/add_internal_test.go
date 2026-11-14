@@ -40,3 +40,38 @@ func TestJobsAreBoundedForEachPerson(t *testing.T) {
 		t.Errorf("jobs = %d", len(j.byID))
 	}
 }
+
+func TestAJobKeepsItsStages(t *testing.T) {
+	j := newJobs()
+	created, _ := j.start(1, "https://example.com/", time.Now())
+	before, _ := j.get(created.id, 1)
+	j.stage(created.id, "one")
+	select {
+	case <-before.changed:
+	default:
+		t.Fatal("a stage didn't wake a page waiting on the job")
+	}
+	after, _ := j.get(created.id, 1)
+	if after.changed == before.changed {
+		t.Fatal("the job's still on a closed channel")
+	}
+	j.stage(created.id, "two")
+	if len(after.stages) != 1 {
+		t.Errorf("a copy's stages changed under it: %v", after.stages)
+	}
+	if got := foundOf(after); len(got.Stages) != 0 || got.Current != "one" {
+		t.Errorf("found = %+v", got)
+	}
+	for range stagesEach * 2 {
+		j.stage(created.id, "more")
+	}
+	j.finish(created.id, nil, "")
+	j.stage(created.id, "after the end")
+	done, _ := j.get(created.id, 1)
+	if len(done.stages) != stagesEach || done.stages[1] != "two" {
+		t.Errorf("stages = %d, %v", len(done.stages), done.stages[:2])
+	}
+	if got := foundOf(done); len(got.Stages) != stagesEach || got.Current != "" {
+		t.Errorf("a finished job shows %d stages and %q under way", len(got.Stages), got.Current)
+	}
+}

@@ -9,7 +9,11 @@
      page's event stream sends. */}}
 {{define "look"}}{{with .Data}}
 {{if not .Done}}
-<p aria-busy="true">Looking. What turns up shows here as soon as it's ready.</p>
+<p>Looking. What turns up shows here as soon as it's ready.</p>
+<ol class="stages">
+  {{range .Stages}}<li>{{.}}</li>{{end}}
+  <li aria-busy="true">{{or .Current "Starting"}}</li>
+</ol>
 {{else if .Failed}}
 <p class="alert">{{.Failed}}</p>
 {{else if not .Candidates}}
@@ -29,6 +33,7 @@
 {{end}}
 {{end}}
 {{if .Done}}
+{{with .Stages}}<details class="stages"><summary>How andante looked</summary><ol>{{range .}}<li>{{.}}</li>{{end}}</ol></details>{{end}}
 <h2>Not right?</h2>
 <p>Give the address of the very first page, and andante walks forward from there by each page's "next" link.</p>
 <form method="post" action="{{root}}/add">

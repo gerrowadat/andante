@@ -37,16 +37,43 @@ func (e CrawlConfigStrategy) Valid() bool {
 
 // Defines values for CrawlLogKind.
 const (
-	Event CrawlLogKind = "event"
-	Fetch CrawlLogKind = "fetch"
+	CrawlLogKindEvent CrawlLogKind = "event"
+	CrawlLogKindFetch CrawlLogKind = "fetch"
 )
 
 // Valid indicates whether the value is a known member of the CrawlLogKind enum.
 func (e CrawlLogKind) Valid() bool {
 	switch e {
-	case Event:
+	case CrawlLogKindEvent:
 		return true
-	case Fetch:
+	case CrawlLogKindFetch:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DiscoveryStageStep.
+const (
+	DiscoveryStageStepFeed  DiscoveryStageStep = "feed"
+	DiscoveryStageStepFeeds DiscoveryStageStep = "feeds"
+	DiscoveryStageStepFetch DiscoveryStageStep = "fetch"
+	DiscoveryStageStepPaged DiscoveryStageStep = "paged"
+	DiscoveryStageStepProbe DiscoveryStageStep = "probe"
+)
+
+// Valid indicates whether the value is a known member of the DiscoveryStageStep enum.
+func (e DiscoveryStageStep) Valid() bool {
+	switch e {
+	case DiscoveryStageStepFeed:
+		return true
+	case DiscoveryStageStepFeeds:
+		return true
+	case DiscoveryStageStepFetch:
+		return true
+	case DiscoveryStageStepPaged:
+		return true
+	case DiscoveryStageStepProbe:
 		return true
 	default:
 		return false
@@ -55,13 +82,13 @@ func (e CrawlLogKind) Valid() bool {
 
 // Defines values for FeedConfigStrategy.
 const (
-	Feed FeedConfigStrategy = "feed"
+	FeedConfigStrategyFeed FeedConfigStrategy = "feed"
 )
 
 // Valid indicates whether the value is a known member of the FeedConfigStrategy enum.
 func (e FeedConfigStrategy) Valid() bool {
 	switch e {
-	case Feed:
+	case FeedConfigStrategyFeed:
 		return true
 	default:
 		return false
@@ -330,6 +357,18 @@ type DiscoveryResult struct {
 	// Candidates Best first. Empty means nothing worked, so ask for the first page's URL.
 	Candidates []Candidate `json:"candidates"`
 }
+
+// DiscoveryStage A step a discovery has started on, for showing progress.
+type DiscoveryStage struct {
+	// Message The step in words, for a person.
+	Message string `json:"message"`
+
+	// Step fetch is the address itself, feed a feed found there, feeds a look for a feed at another address, paged a check for older pages of a feed, and probe trying one candidate.
+	Step DiscoveryStageStep `json:"step"`
+}
+
+// DiscoveryStageStep fetch is the address itself, feed a feed found there, feeds a look for a feed at another address, paged a check for older pages of a feed, and probe trying one candidate.
+type DiscoveryStageStep string
 
 // Enclosure defines model for Enclosure.
 type Enclosure struct {
@@ -884,6 +923,8 @@ type ClientInterface interface {
 	//
 	// Takes a site's address and returns ranked candidate sources, each tried with a probe. Saves nothing. If the catalogue already has the serial it says so, without making a request. This keeps to the crawl interval, so it can take minutes.
 	//
+	// Asked for with `Accept: text/event-stream`, the answer is a stream of Server-Sent Events instead: a `stage` event (a DiscoveryStage) as each step starts, then one `result` event (a DiscoveryResult) or one `error` event (a Problem), and then the stream ends. A request that's refused before it starts, such as one with a bad URL, is still a plain problem.
+	//
 	// Takes any type of body and a specified content type.
 	//
 	// Corresponds with POST /discoveries (the `CreateDiscovery` operationId).
@@ -892,6 +933,8 @@ type ClientInterface interface {
 	// CreateDiscovery Work out how to read a site
 	//
 	// Takes a site's address and returns ranked candidate sources, each tried with a probe. Saves nothing. If the catalogue already has the serial it says so, without making a request. This keeps to the crawl interval, so it can take minutes.
+	//
+	// Asked for with `Accept: text/event-stream`, the answer is a stream of Server-Sent Events instead: a `stage` event (a DiscoveryStage) as each step starts, then one `result` event (a DiscoveryResult) or one `error` event (a Problem), and then the stream ends. A request that's refused before it starts, such as one with a bad URL, is still a plain problem.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -1034,6 +1077,8 @@ func (c *Client) ListChanges(ctx context.Context, params *ListChangesParams, req
 //
 // Takes a site's address and returns ranked candidate sources, each tried with a probe. Saves nothing. If the catalogue already has the serial it says so, without making a request. This keeps to the crawl interval, so it can take minutes.
 //
+// Asked for with `Accept: text/event-stream`, the answer is a stream of Server-Sent Events instead: a `stage` event (a DiscoveryStage) as each step starts, then one `result` event (a DiscoveryResult) or one `error` event (a Problem), and then the stream ends. A request that's refused before it starts, such as one with a bad URL, is still a plain problem.
+//
 // Takes any type of body and a specified content type.
 //
 // Corresponds with POST /discoveries (the `CreateDiscovery` operationId).
@@ -1052,6 +1097,8 @@ func (c *Client) CreateDiscoveryWithBody(ctx context.Context, contentType string
 // CreateDiscovery Work out how to read a site
 //
 // Takes a site's address and returns ranked candidate sources, each tried with a probe. Saves nothing. If the catalogue already has the serial it says so, without making a request. This keeps to the crawl interval, so it can take minutes.
+//
+// Asked for with `Accept: text/event-stream`, the answer is a stream of Server-Sent Events instead: a `stage` event (a DiscoveryStage) as each step starts, then one `result` event (a DiscoveryResult) or one `error` event (a Problem), and then the stream ends. A request that's refused before it starts, such as one with a bad URL, is still a plain problem.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -2001,6 +2048,8 @@ type ClientWithResponsesInterface interface {
 	//
 	// Takes a site's address and returns ranked candidate sources, each tried with a probe. Saves nothing. If the catalogue already has the serial it says so, without making a request. This keeps to the crawl interval, so it can take minutes.
 	//
+	// Asked for with `Accept: text/event-stream`, the answer is a stream of Server-Sent Events instead: a `stage` event (a DiscoveryStage) as each step starts, then one `result` event (a DiscoveryResult) or one `error` event (a Problem), and then the stream ends. A request that's refused before it starts, such as one with a bad URL, is still a plain problem.
+	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with POST /discoveries (the `CreateDiscovery` operationId).
@@ -2009,6 +2058,8 @@ type ClientWithResponsesInterface interface {
 	// CreateDiscoveryWithResponse Work out how to read a site
 	//
 	// Takes a site's address and returns ranked candidate sources, each tried with a probe. Saves nothing. If the catalogue already has the serial it says so, without making a request. This keeps to the crawl interval, so it can take minutes.
+	//
+	// Asked for with `Accept: text/event-stream`, the answer is a stream of Server-Sent Events instead: a `stage` event (a DiscoveryStage) as each step starts, then one `result` event (a DiscoveryResult) or one `error` event (a Problem), and then the stream ends. A request that's refused before it starts, such as one with a bad URL, is still a plain problem.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -2709,6 +2760,8 @@ func (c *ClientWithResponses) ListChangesWithResponse(ctx context.Context, param
 //
 // Takes a site's address and returns ranked candidate sources, each tried with a probe. Saves nothing. If the catalogue already has the serial it says so, without making a request. This keeps to the crawl interval, so it can take minutes.
 //
+// Asked for with `Accept: text/event-stream`, the answer is a stream of Server-Sent Events instead: a `stage` event (a DiscoveryStage) as each step starts, then one `result` event (a DiscoveryResult) or one `error` event (a Problem), and then the stream ends. A request that's refused before it starts, such as one with a bad URL, is still a plain problem.
+//
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with POST /discoveries (the `CreateDiscovery` operationId).
@@ -2723,6 +2776,8 @@ func (c *ClientWithResponses) CreateDiscoveryWithBodyWithResponse(ctx context.Co
 // CreateDiscoveryWithResponse Work out how to read a site
 //
 // Takes a site's address and returns ranked candidate sources, each tried with a probe. Saves nothing. If the catalogue already has the serial it says so, without making a request. This keeps to the crawl interval, so it can take minutes.
+//
+// Asked for with `Accept: text/event-stream`, the answer is a stream of Server-Sent Events instead: a `stage` event (a DiscoveryStage) as each step starts, then one `result` event (a DiscoveryResult) or one `error` event (a Problem), and then the stream ends. A request that's refused before it starts, such as one with a bad URL, is still a plain problem.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -3005,6 +3060,9 @@ func ParseCreateDiscoveryResponse(rsp *http.Response) (*CreateDiscoveryResponse,
 			return nil, err
 		}
 		response.ApplicationProblemJSONDefault = &dest
+
+	case rsp.StatusCode == 200:
+		// Content-type (text/event-stream) unsupported
 
 	}
 
