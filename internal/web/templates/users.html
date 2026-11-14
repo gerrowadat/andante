@@ -45,4 +45,15 @@
   <button>Save</button>
 </form>
 <p class="muted">A character that isn't a letter is a digit, a symbol or a space. The kinds are lower-case letters, capitals, digits and anything else. This applies to passwords set from now on, not to ones people already have. Passwords on a common list, ones with the person's name in and ones of one repeated character are always refused.</p>
+<h2>Theme</h2>
+<form method="post" action="{{root}}/users/theme">
+  <input type="hidden" name="csrf" value="{{$.CSRF}}">
+  <fieldset>
+    <legend>How every page looks, for everyone</legend>
+    {{range .Themes}}<label><input type="radio" name="theme" value="{{.Name}}"{{if eq .Name $.Data.Theme}} checked{{end}}> <strong>{{.Name}}</strong>: {{.Description}}</label>
+    {{end}}
+  </fieldset>
+  <button>Save</button>
+</form>
+<p class="muted">Each theme has light and dark colours, and the browser picks one. The feed page uses the theme too.</p>
 {{end}}{{end}}

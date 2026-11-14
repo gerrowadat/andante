@@ -473,6 +473,12 @@ paths:
                 password_min_length: 8
                 password_non_letters: 1
                 password_classes: 0
+                theme: default
+                themes:
+                  - name: default
+                    description: "Pico CSS as it comes: blue on white, or on near-black in dark mode."
+                  - name: paper
+                    description: Warm paper and dark ink, with a serif face. Easy on the eyes for long reads.
         default:
           $ref: "#/components/responses/Problem"
     patch:
@@ -487,6 +493,8 @@ paths:
         invite_limit unused places each. password_min_length, password_non_letters and
         password_classes apply to passwords set from then on, not to ones people already
         have. password_non_letters can't be more than password_min_length.
+        theme is the website's look, for every page and every person, and has to be one
+        of the names in themes.
       requestBody:
         required: true
         content:
@@ -509,6 +517,10 @@ paths:
                 password_min_length: 8
                 password_non_letters: 1
                 password_classes: 0
+                theme: default
+                themes:
+                  - name: default
+                    description: "Pico CSS as it comes: blue on white, or on near-black in dark mode."
         default:
           $ref: "#/components/responses/Problem"
   /sources:
@@ -1575,7 +1587,7 @@ components:
           type: boolean
     Settings:
       type: object
-      required: [require_two_factor, who_can_invite, invite_limit, password_min_length, password_non_letters, password_classes]
+      required: [require_two_factor, who_can_invite, invite_limit, password_min_length, password_non_letters, password_classes, theme, themes]
       properties:
         require_two_factor:
           type: boolean
@@ -1589,6 +1601,27 @@ components:
           $ref: "#/components/schemas/PasswordNonLetters"
         password_classes:
           $ref: "#/components/schemas/PasswordClasses"
+        theme:
+          $ref: "#/components/schemas/ThemeName"
+        themes:
+          type: array
+          description: The themes there are to choose from, the default first.
+          items:
+            $ref: "#/components/schemas/Theme"
+    Theme:
+      type: object
+      required: [name, description]
+      properties:
+        name:
+          $ref: "#/components/schemas/ThemeName"
+        description:
+          type: string
+    ThemeName:
+      type: string
+      pattern: "^[a-z][a-z0-9-]{0,31}$"
+      description: >-
+        A theme's name. The themes are built into the server as Design Tokens files, and
+        it's "default", Pico CSS's own look, to start with.
     SettingsPatch:
       type: object
       additionalProperties: false
@@ -1605,6 +1638,8 @@ components:
           $ref: "#/components/schemas/PasswordNonLetters"
         password_classes:
           $ref: "#/components/schemas/PasswordClasses"
+        theme:
+          $ref: "#/components/schemas/ThemeName"
     PasswordMinLength:
       type: integer
       format: int32

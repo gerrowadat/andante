@@ -246,3 +246,24 @@ func TestAddingASiteWithoutJavaScript(t *testing.T) {
 		t.Errorf("what turned up: %s", page)
 	}
 }
+
+// The theme an admin picks is what the browser draws with, and its stylesheet gets
+// past the Content-Security-Policy.
+func TestTheThemeInABrowser(t *testing.T) {
+	ctx := headless(t, true)
+	base, b, _, _ := loggedIn(t)
+	b.get(t, "/users")
+	b.post(t, "/users/theme", url.Values{"theme": {"paper"}})
+
+	if err := chromedp.Do(ctx, withSession(base, b.session), chromedp.Navigate(base+"/"), chromedp.WaitReady(chromedp.CSS("main"))); err != nil {
+		t.Fatal(err)
+	}
+	radius, err := chromedp.Run(ctx, chromedp.Evaluate[string](`getComputedStyle(document.documentElement).getPropertyValue("--pico-border-radius").trim()`))
+	if err != nil || radius != "0.125rem" {
+		t.Errorf("--pico-border-radius = %q, %v; want paper's 0.125rem", radius, err)
+	}
+	font, err := chromedp.Run(ctx, chromedp.Evaluate[string](`getComputedStyle(document.body).fontFamily`))
+	if err != nil || !strings.Contains(font, "Iowan Old Style") {
+		t.Errorf("font-family = %q, %v; want paper's", font, err)
+	}
+}

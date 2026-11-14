@@ -20,6 +20,7 @@ import (
 	"github.com/gerrowadat/andante/internal/schedule"
 	"github.com/gerrowadat/andante/internal/store"
 	"github.com/gerrowadat/andante/internal/store/db"
+	"github.com/gerrowadat/andante/internal/theme"
 	"github.com/gerrowadat/andante/pkg/client"
 	"github.com/gerrowadat/andante/pkg/pacing"
 )
@@ -750,6 +751,11 @@ func (s *site) showUsers(w http.ResponseWriter, r *http.Request, v visitor, stat
 		s.fail(w, err)
 		return
 	}
+	current, err := s.opts.Store.GetTheme(r.Context())
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
 	data := struct {
 		Users            []userRow
 		Invite           *inviteNote
@@ -759,7 +765,10 @@ func (s *site) showUsers(w http.ResponseWriter, r *http.Request, v visitor, stat
 		Policy           password.Policy
 		Shortest, Most   int
 		Kinds            int
+		Theme            string
+		Themes           []*theme.Theme
 	}{
+		Theme: current, Themes: theme.MustBuiltin().All(),
 		Invite: invite, RequireTwoFactor: required, UsersInvite: invites.Who == store.InvitesByUsers, InviteLimit: invites.Limit,
 		Policy: policy, Shortest: password.Shortest, Most: password.MaxLength, Kinds: password.Kinds,
 	}

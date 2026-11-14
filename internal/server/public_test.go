@@ -503,9 +503,12 @@ func TestNextPageHeaders(t *testing.T) {
 	s := f.source(t, "page")
 	f.entries(t, s, 3, "")
 	path := "/f/" + f.token(t, f.read(t, s).Read.ID, feed.RoleOwner) + "/next"
-	resp, _ := f.get(t, path)
+	resp, body := f.get(t, path)
+	if !strings.Contains(body, `<link rel="stylesheet" href="/static/theme.css">`) {
+		t.Errorf("the confirmation isn't styled:\n%s", body)
+	}
 	policy := resp.Header.Get("Content-Security-Policy")
-	if !strings.Contains(policy, "frame-ancestors 'none'") {
+	if !strings.Contains(policy, "frame-ancestors 'none'") || strings.Contains(policy, "script-src") {
 		t.Errorf("policy = %q", policy)
 	}
 	// form-action would stop the redirect to the publisher's site.
@@ -829,8 +832,17 @@ func TestTheFeedPage(t *testing.T) {
 			t.Errorf("a viewer's page has %q", unwanted)
 		}
 	}
+	// It looks like the website, theme and all, and loads nothing but its stylesheets.
+	for _, want := range []string{
+		`<link rel="stylesheet" href="/static/vendor/pico-2.1.1/pico.min.css">`, `<link rel="stylesheet" href="/static/theme.css">`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the page has no %q:\n%s", want, body)
+		}
+	}
 	for header, want := range map[string]string{
 		"Referrer-Policy": "no-referrer", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+		"Content-Security-Policy": "default-src 'none'; style-src 'self'; img-src data:; base-uri 'none'; frame-ancestors 'none'",
 	} {
 		if got := resp.Header.Get(header); got != want {
 			t.Errorf("%s = %q, want %q", header, got, want)

@@ -118,6 +118,13 @@ ON CONFLICT (only_row) DO UPDATE SET
     password_non_letters = excluded.password_non_letters,
     password_classes = excluded.password_classes;
 
+-- name: GetTheme :one
+SELECT coalesce((SELECT theme FROM settings), 'default')::text AS theme;
+
+-- name: SetTheme :exec
+INSERT INTO settings (theme) VALUES (sqlc.arg(theme)::text)
+ON CONFLICT (only_row) DO UPDATE SET theme = excluded.theme;
+
 -- name: InsertAudit :exec
 INSERT INTO audit_log (at, who, action, target, ip) VALUES ($1, $2, $3, $4, $5);
 

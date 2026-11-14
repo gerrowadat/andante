@@ -263,8 +263,12 @@ func (a *app) logsCmd() *cobra.Command {
 
 func (a *app) settingsCmd() *cobra.Command {
 	showSettings := func(w *table, s *client.Settings) {
-		w.printf("Require two-factor:\t%t\nWho can invite:\t%s\nInvite limit:\t%d\nPassword min length:\t%d\nPassword non-letters:\t%d\nPassword classes:\t%d\n",
-			s.RequireTwoFactor, s.WhoCanInvite, s.InviteLimit, s.PasswordMinLength, s.PasswordNonLetters, s.PasswordClasses)
+		themes := make([]string, len(s.Themes))
+		for i, t := range s.Themes {
+			themes[i] = t.Name
+		}
+		w.printf("Require two-factor:\t%t\nWho can invite:\t%s\nInvite limit:\t%d\nPassword min length:\t%d\nPassword non-letters:\t%d\nPassword classes:\t%d\nTheme:\t%s\nThemes:\t%s\n",
+			s.RequireTwoFactor, s.WhoCanInvite, s.InviteLimit, s.PasswordMinLength, s.PasswordNonLetters, s.PasswordClasses, s.Theme, strings.Join(themes, ", "))
 	}
 	settings := operation(&cobra.Command{
 		Use:   "settings",
@@ -286,6 +290,7 @@ func (a *app) settingsCmd() *cobra.Command {
 		minLength        int32
 		nonLetters       int32
 		classes          int32
+		themeName        string
 	)
 	set := operation(&cobra.Command{
 		Use:   "set",
@@ -312,6 +317,9 @@ func (a *app) settingsCmd() *cobra.Command {
 			if cmd.Flags().Changed("password-classes") {
 				patch.PasswordClasses = &classes
 			}
+			if cmd.Flags().Changed("theme") {
+				patch.Theme = &themeName
+			}
 			resp, err := a.client.UpdateSettingsWithApplicationMergePatchPlusJSONBodyWithResponse(cmd.Context(), patch)
 			if err != nil {
 				return err
@@ -326,6 +334,7 @@ func (a *app) settingsCmd() *cobra.Command {
 	set.Flags().Int32Var(&nonLetters, "password-non-letters", 0, "how many characters of a new password can't be letters: digits, symbols or spaces")
 	set.Flags().Int32Var(&classes, "password-classes", 0,
 		"how many of lower-case letters, capitals, digits and anything else a new password needs, 0 to 4")
+	set.Flags().StringVar(&themeName, "theme", "", "the website's theme, one of those andante settings lists")
 	settings.AddCommand(set)
 	return settings
 }

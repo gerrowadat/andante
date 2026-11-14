@@ -223,6 +223,17 @@ func (q *Queries) GetPasswordPolicy(ctx context.Context) (GetPasswordPolicyRow, 
 	return i, err
 }
 
+const getTheme = `-- name: GetTheme :one
+SELECT coalesce((SELECT theme FROM settings), 'default')::text AS theme
+`
+
+func (q *Queries) GetTheme(ctx context.Context) (string, error) {
+	row := q.db.QueryRow(ctx, getTheme)
+	var theme string
+	err := row.Scan(&theme)
+	return theme, err
+}
+
 const hasLoggedInFrom = `-- name: HasLoggedInFrom :one
 SELECT EXISTS (
     SELECT 1 FROM sessions WHERE user_id = $1 AND ip = $2 AND created_at > $3
@@ -652,6 +663,16 @@ type SetPasswordPolicyParams struct {
 // The store has already checked the whole policy, so this writes all of it.
 func (q *Queries) SetPasswordPolicy(ctx context.Context, arg SetPasswordPolicyParams) error {
 	_, err := q.db.Exec(ctx, setPasswordPolicy, arg.PasswordMinLength, arg.PasswordNonLetters, arg.PasswordClasses)
+	return err
+}
+
+const setTheme = `-- name: SetTheme :exec
+INSERT INTO settings (theme) VALUES ($1::text)
+ON CONFLICT (only_row) DO UPDATE SET theme = excluded.theme
+`
+
+func (q *Queries) SetTheme(ctx context.Context, theme string) error {
+	_, err := q.db.Exec(ctx, setTheme, theme)
 	return err
 }
 

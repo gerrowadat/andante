@@ -43,6 +43,7 @@ you create. Tokens and read IDs are never labels.
 | `andante_web_stream_events_total` | `stream` | Events sent on those streams |
 | `andante_web_streams_refused_total` | `stream` | Streams refused because someone had too many open |
 | `andante_web_listen_failures_total` | | Times the server lost, or couldn't get, the database connection that hears about changed sources |
+| `andante_web_theme_fallbacks_total` | `reason` | Times the website served the default theme in place of the chosen one: `unreadable` (the database couldn't be read) or `unknown` (the setting names a theme this server doesn't have) |
 | `andante_api_requests_total` | `route`, `status` | API requests |
 | `andante_log_records_total` | `level` | Records logged: `debug`, `info`, `warn` or `error` |
 

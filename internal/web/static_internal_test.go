@@ -65,6 +65,9 @@ func TestEveryLinkedFileIsServed(t *testing.T) {
 	for _, s := range templateSources(t) {
 		for _, m := range link.FindAllStringSubmatch(s, -1) {
 			seen++
+			if m[1] == "/static/theme.css" {
+				continue // Served from the database's setting, and tested with it.
+			}
 			w := httptest.NewRecorder()
 			files.ServeHTTP(w, httptest.NewRequest(http.MethodGet, m[1], nil))
 			if w.Code != http.StatusOK {
@@ -72,8 +75,26 @@ func TestEveryLinkedFileIsServed(t *testing.T) {
 			}
 		}
 	}
-	if seen < 6 {
-		t.Errorf("found %d links, want both stylesheets and both scripts on the layout and the stylesheets on the login pages", seen)
+	if seen < 8 {
+		t.Errorf("found %d links, want the stylesheets and scripts on the layout and the stylesheets on the login pages", seen)
+	}
+}
+
+// The layout and the login pages link the stylesheets that the feed page is told
+// about, in the same order, since the theme has to come after Pico.
+func TestStylesheetsAreTheOnesPagesLink(t *testing.T) {
+	var want strings.Builder
+	for _, s := range Stylesheets {
+		want.WriteString(`<link rel="stylesheet" href="{{root}}/` + s + `">` + "\n")
+	}
+	layout, err := templateFiles.ReadFile("templates/layout.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, src := range map[string]string{"layout": string(layout), "pageFrame": pageFrame} {
+		if !strings.Contains(src, want.String()) {
+			t.Errorf("%s doesn't link %v in that order", name, Stylesheets)
+		}
 	}
 }
 

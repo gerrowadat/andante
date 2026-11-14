@@ -155,6 +155,7 @@ type Setting struct {
 	PasswordMinLength  int32
 	PasswordNonLetters int32
 	PasswordClasses    int32
+	Theme              string
 }
 
 type Source struct {

@@ -1293,6 +1293,12 @@ type Settings struct {
 	PasswordNonLetters PasswordNonLetters `json:"password_non_letters"`
 	RequireTwoFactor   bool               `json:"require_two_factor"`
 
+	// Theme A theme's name. The themes are built into the server as Design Tokens files, and it's "default", Pico CSS's own look, to start with.
+	Theme ThemeName `json:"theme"`
+
+	// Themes The themes there are to choose from, the default first.
+	Themes []Theme `json:"themes"`
+
 	// WhoCanInvite Who can make invites. With users, what they invite is always a user.
 	WhoCanInvite WhoCanInvite `json:"who_can_invite"`
 }
@@ -1311,6 +1317,9 @@ type SettingsPatch struct {
 	// PasswordNonLetters How many characters of a new password have to be something other than a letter: a digit, a symbol or a space. It's 1 to start with.
 	PasswordNonLetters *PasswordNonLetters `json:"password_non_letters,omitempty"`
 	RequireTwoFactor   *bool               `json:"require_two_factor,omitempty"`
+
+	// Theme A theme's name. The themes are built into the server as Design Tokens files, and it's "default", Pico CSS's own look, to start with.
+	Theme *ThemeName `json:"theme,omitempty"`
 
 	// WhoCanInvite Who can make invites. With users, what they invite is always a user.
 	WhoCanInvite *WhoCanInvite `json:"who_can_invite,omitempty"`
@@ -1385,6 +1394,17 @@ type SourcePatch struct {
 
 // SourcePatchState defines model for SourcePatch.State.
 type SourcePatchState string
+
+// Theme defines model for Theme.
+type Theme struct {
+	Description string `json:"description"`
+
+	// Name A theme's name. The themes are built into the server as Design Tokens files, and it's "default", Pico CSS's own look, to start with.
+	Name ThemeName `json:"name"`
+}
+
+// ThemeName A theme's name. The themes are built into the server as Design Tokens files, and it's "default", Pico CSS's own look, to start with.
+type ThemeName = string
 
 // User defines model for User.
 type User struct {
@@ -2522,7 +2542,7 @@ type ClientInterface interface {
 
 	// UpdateSettingsWithBody Change the site's settings
 	//
-	// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length.
+	// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length. theme is the website's look, for every page and every person, and has to be one of the names in themes.
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -2531,7 +2551,7 @@ type ClientInterface interface {
 
 	// UpdateSettingsWithApplicationMergePatchPlusJSONBody Change the site's settings
 	//
-	// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length.
+	// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length. theme is the website's look, for every page and every person, and has to be one of the names in themes.
 	//
 	// Takes a body of the `application/merge-patch+json` content type.
 	//
@@ -3350,7 +3370,7 @@ func (c *Client) GetSettings(ctx context.Context, reqEditors ...RequestEditorFn)
 
 // UpdateSettingsWithBody Change the site's settings
 //
-// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length.
+// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length. theme is the website's look, for every page and every person, and has to be one of the names in themes.
 //
 // Takes any type of body and a specified content type.
 //
@@ -3369,7 +3389,7 @@ func (c *Client) UpdateSettingsWithBody(ctx context.Context, contentType string,
 
 // UpdateSettingsWithApplicationMergePatchPlusJSONBody Change the site's settings
 //
-// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length.
+// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length. theme is the website's look, for every page and every person, and has to be one of the names in themes.
 //
 // Takes a body of the `application/merge-patch+json` content type.
 //
@@ -6197,7 +6217,7 @@ type ClientWithResponsesInterface interface {
 
 	// UpdateSettingsWithBodyWithResponse Change the site's settings
 	//
-	// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length.
+	// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length. theme is the website's look, for every page and every person, and has to be one of the names in themes.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -6206,7 +6226,7 @@ type ClientWithResponsesInterface interface {
 
 	// UpdateSettingsWithApplicationMergePatchPlusJSONBodyWithResponse Change the site's settings
 	//
-	// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length.
+	// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length. theme is the website's look, for every page and every person, and has to be one of the names in themes.
 	//
 	// Takes a body of the `application/merge-patch+json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -9039,7 +9059,7 @@ func (c *ClientWithResponses) GetSettingsWithResponse(ctx context.Context, reqEd
 
 // UpdateSettingsWithBodyWithResponse Change the site's settings
 //
-// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length.
+// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length. theme is the website's look, for every page and every person, and has to be one of the names in themes.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -9054,7 +9074,7 @@ func (c *ClientWithResponses) UpdateSettingsWithBodyWithResponse(ctx context.Con
 
 // UpdateSettingsWithApplicationMergePatchPlusJSONBodyWithResponse Change the site's settings
 //
-// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length.
+// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length. theme is the website's look, for every page and every person, and has to be one of the names in themes.
 //
 // Takes a body of the `application/merge-patch+json` content type, and returns a wrapper object for the known response body format(s).
 //

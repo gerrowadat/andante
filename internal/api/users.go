@@ -14,6 +14,7 @@ import (
 	"github.com/gerrowadat/andante/internal/password"
 	"github.com/gerrowadat/andante/internal/store"
 	"github.com/gerrowadat/andante/internal/store/db"
+	"github.com/gerrowadat/andante/internal/theme"
 	"github.com/gerrowadat/andante/pkg/client"
 )
 
@@ -109,11 +110,22 @@ func (h *handler) settings(ctx context.Context) (client.Settings, error) {
 	if err != nil {
 		return client.Settings{}, err
 	}
-	return client.Settings{
+	current, err := h.store.GetTheme(ctx)
+	if err != nil {
+		return client.Settings{}, err
+	}
+	themes := theme.MustBuiltin().All()
+	body := client.Settings{
 		RequireTwoFactor: on, WhoCanInvite: client.WhoCanInvite(invites.Who), InviteLimit: invites.Limit,
 		PasswordMinLength: int32(policy.MinLength), PasswordNonLetters: int32(policy.NonLetters), //nolint:gosec // Validated.
 		PasswordClasses: int32(policy.Classes), //nolint:gosec // Validated.
-	}, nil
+		Theme:           current,
+		Themes:          make([]client.Theme, len(themes)),
+	}
+	for i, t := range themes {
+		body.Themes[i] = client.Theme{Name: t.Name, Description: t.Description}
+	}
+	return body, nil
 }
 
 func (h *handler) GetSettings(ctx context.Context, _ gen.GetSettingsRequestObject) (gen.GetSettingsResponseObject, error) {
@@ -174,6 +186,15 @@ func (h *handler) UpdateSettings(ctx context.Context, r gen.UpdateSettingsReques
 				h.audit(ctx, "settings.changed", fmt.Sprintf("%s.%d", c.name, *c.to))
 			}
 		}
+	}
+	if name := r.Body.Theme; name != nil {
+		if _, ok := theme.MustBuiltin().Lookup(*name); !ok {
+			return nil, invalidRequest(fmt.Sprintf("there's no theme called %q", *name))
+		}
+		if err := h.store.SetTheme(ctx, *name); err != nil {
+			return nil, err
+		}
+		h.audit(ctx, "settings.changed", "theme."+*name)
 	}
 	body, err := h.settings(ctx)
 	if err != nil {

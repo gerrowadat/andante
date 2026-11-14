@@ -29,6 +29,7 @@ import (
 	"github.com/gerrowadat/andante/internal/seal"
 	"github.com/gerrowadat/andante/internal/server"
 	"github.com/gerrowadat/andante/internal/store"
+	"github.com/gerrowadat/andante/internal/theme"
 	"github.com/gerrowadat/andante/internal/throttle"
 	"github.com/gerrowadat/andante/internal/web"
 	"github.com/prometheus/client_golang/prometheus"
@@ -200,6 +201,11 @@ func rotate(ctx context.Context, st *store.Store, cmd rotateCmd) error {
 }
 
 func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
+	// The themes are built in, but a bad one should stop the server here and not
+	// later, in the middle of serving a page.
+	if _, err := theme.Builtin(); err != nil {
+		return fmt.Errorf("themes: %w", err)
+	}
 	st, err := store.Open(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return err

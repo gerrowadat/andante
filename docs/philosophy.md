@@ -76,6 +76,8 @@ choices:
 | API errors | Problem Details ([RFC 9457](https://www.rfc-editor.org/rfc/rfc9457)), `application/problem+json` |
 | API auth | Bearer tokens ([RFC 6750](https://www.rfc-editor.org/rfc/rfc6750)) |
 | API pagination | Opaque cursors, with `Link` headers ([RFC 8288](https://www.rfc-editor.org/rfc/rfc8288)) |
+| Website themes | [Design Tokens Format Module 2025.10](https://w3c.github.io/cg-reports/design-tokens/CG-FINAL-format-20251028/) (W3C Community Group) |
+| Live pages | [Server-Sent Events](https://html.spec.whatwg.org/multipage/server-sent-events.html) |
 | Metrics | Prometheus exposition format / OpenMetrics |
 | Health | `/healthz` (alive) and `/readyz` (can serve) |
 | Containers | OCI image + `org.opencontainers.image.*` annotations |

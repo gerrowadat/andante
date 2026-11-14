@@ -22,9 +22,11 @@ import (
 
 	"github.com/gerrowadat/andante/internal/feed"
 	"github.com/gerrowadat/andante/internal/reads"
+	"github.com/gerrowadat/andante/internal/rootpath"
 	"github.com/gerrowadat/andante/internal/schedule"
 	"github.com/gerrowadat/andante/internal/store"
 	"github.com/gerrowadat/andante/internal/store/db"
+	"github.com/gerrowadat/andante/internal/web"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"golang.org/x/time/rate"
@@ -45,6 +47,10 @@ const (
 	labelUnknown = "unknown"
 )
 
+// pagePolicy is the Content-Security-Policy of the pages here: the website's
+// stylesheets and the icons Pico draws as data: URLs, and nothing else.
+const pagePolicy = "default-src 'none'; style-src 'self'; img-src data:; base-uri 'none'; frame-ancestors 'none'"
+
 // PublicOptions configure the public listener's feed routes.
 type PublicOptions struct {
 	Store       *store.Store
@@ -60,7 +66,9 @@ type PublicOptions struct {
 // index and never causes a crawl. The feed URL is the only credential, so an
 // unknown or revoked token gets a 404, which does not confirm it ever existed.
 type public struct {
-	opts     PublicOptions
+	opts PublicOptions
+	// styles are the website's stylesheets, for the pages a feed URL has.
+	styles   []string
 	requests *prometheus.CounterVec
 	render   prometheus.Histogram
 
@@ -74,8 +82,14 @@ func NewPublic(opts PublicOptions) http.Handler {
 		opts.Now = time.Now
 	}
 	factory := promauto.With(opts.Registry)
+	root, _ := rootpath.FromBaseURL(opts.BaseURL) // Checked with the server's flags.
+	styles := make([]string, len(web.Stylesheets))
+	for i, s := range web.Stylesheets {
+		styles[i] = root + "/" + s
+	}
 	p := &public{
 		opts:     opts,
+		styles:   styles,
 		limiters: make(map[int64]*rate.Limiter),
 		requests: factory.NewCounterVec(prometheus.CounterOpts{
 			Name: "andante_feed_requests_total",
@@ -279,11 +293,15 @@ func validCSRF(raw, got string, now time.Time) bool {
 
 var confirmPage = template.Must(template.New("next").Parse(`<!doctype html>
 <html>
-<head><meta charset="utf-8"><title>Next one now?</title></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Next one now?</title>
+{{range .Styles}}<link rel="stylesheet" href="{{.}}">
+{{end}}</head>
 <body>
+<main class="container narrow">
   <h1>{{.Title}}</h1>
   <p>Release the next entry now?</p>
   <form method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><button>Next one now</button></form>
+</main>
 </body>
 </html>
 `))
@@ -309,7 +327,7 @@ func (p *public) ownerControls(w http.ResponseWriter, r *http.Request) (string, 
 	// also why the policy has no form-action: browsers apply it to the redirect.
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+	w.Header().Set("Content-Security-Policy", pagePolicy)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	return raw, token, true
 }
@@ -325,15 +343,18 @@ func (p *public) confirmNext(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := confirmPage.Execute(w, map[string]string{"Title": read.Name, "CSRF": csrfToken(raw, p.opts.Now())}); err != nil {
+	if err := confirmPage.Execute(w, map[string]any{"Title": read.Name, "CSRF": csrfToken(raw, p.opts.Now()), "Styles": p.styles}); err != nil {
 		p.opts.Logger.Warn("could not write the confirmation page", "error", err)
 	}
 }
 
 var feedPage = template.Must(template.New("feed").Parse(`<!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{{.Title}}</title></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{{.Title}}</title>
+{{range .Styles}}<link rel="stylesheet" href="{{.}}">
+{{end}}</head>
 <body>
+<main class="container narrow">
   <h1>{{.Title}}</h1>
   <p>A paced replay of {{if .Home}}<a href="{{.Home}}" rel="noreferrer">{{.Source}}</a>{{else}}{{.Source}}{{end}}, read as {{.Read}}. This isn't the publisher's own feed.</p>
   <dl>
@@ -349,6 +370,7 @@ var feedPage = template.Must(template.New("feed").Parse(`<!doctype html>
     <li><a href="{{.JSON}}">JSON Feed</a></li>
   </ul>
   {{with .NextNow}}<p><a href="{{.}}">Release the next one now</a></p>{{end}}
+</main>
 </body>
 </html>
 `))
@@ -395,7 +417,7 @@ func (p *public) feedPage(w http.ResponseWriter, r *http.Request, raw string) {
 		"Pace": schedule.Describe(view.Pacing), "Paused": view.State == "paused",
 		"Released": max(view.Position-start+1, 0), "Indexed": 0,
 		"Atom": feed.URL(p.opts.BaseURL, raw, "atom"), "RSS": feed.URL(p.opts.BaseURL, raw, "rss"),
-		"JSON": feed.URL(p.opts.BaseURL, raw, "json"),
+		"JSON": feed.URL(p.opts.BaseURL, raw, "json"), "Styles": p.styles,
 	}
 	if view.IndexEnd != nil {
 		data["Indexed"] = max(*view.IndexEnd-start+1, 0)
@@ -414,7 +436,7 @@ func (p *public) feedPage(w http.ResponseWriter, r *http.Request, raw string) {
 	// The URL is the credential, and the links on the page lead to other people's sites.
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+	w.Header().Set("Content-Security-Policy", pagePolicy)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	p.served(token, labelPage, http.StatusOK)

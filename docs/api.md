@@ -131,7 +131,9 @@ Leaving no active admin, or deleting yourself, is a 409.
 `GET /settings` and `PATCH /settings` are for admins too. Besides `require_two_factor` and the
 invite settings, `password_min_length` (8 to 128, 8 to start with), `password_non_letters` (up to the
 minimum length, 1 to start with) and `password_classes` (0 to 4, 0 to start with) say what a new
-password has to be. They don't touch passwords already set.
+password has to be. They don't touch passwords already set. `theme` is the website's theme, one of
+the names in `themes`, which lists the built-in ones with a description of each; anything else is a
+400.
 
 ## Importing OPML
 

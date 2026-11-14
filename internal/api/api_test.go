@@ -2156,4 +2156,24 @@ func TestSettings(t *testing.T) {
 			t.Errorf("%+v: %v %d", patch, err, bad.StatusCode())
 		}
 	}
+
+	if got.JSON200.Theme != "default" || len(got.JSON200.Themes) < 2 || got.JSON200.Themes[0].Name != "default" || got.JSON200.Themes[0].Description == "" {
+		t.Errorf("themes by default: %q %+v", got.JSON200.Theme, got.JSON200.Themes)
+	}
+	paper := "paper"
+	themed, err := f.client.UpdateSettingsWithApplicationMergePatchPlusJSONBodyWithResponse(ctx, client.SettingsPatch{Theme: &paper})
+	if err != nil || themed.JSON200 == nil || themed.JSON200.Theme != "paper" {
+		t.Fatalf("theme: %v %s", err, themed.Body)
+	}
+	if stored, err := f.store.GetTheme(ctx); err != nil || stored != "paper" {
+		t.Errorf("stored theme = %q, %v", stored, err)
+	}
+	for _, name := range []string{"nope", "Not A Name"} {
+		if bad, err := f.client.UpdateSettingsWithApplicationMergePatchPlusJSONBodyWithResponse(ctx, client.SettingsPatch{Theme: &name}); err != nil || bad.StatusCode() != http.StatusBadRequest {
+			t.Errorf("theme %q: %v %d", name, err, bad.StatusCode())
+		}
+	}
+	if stored, err := f.store.GetTheme(ctx); err != nil || stored != "paper" {
+		t.Errorf("theme after refusals = %q, %v", stored, err)
+	}
 }
