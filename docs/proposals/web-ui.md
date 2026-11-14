@@ -89,13 +89,17 @@ andante takes a small fixed set of tokens (colours, font family, radius, spacing
 Pico's variables. Anything outside that set is refused, and values are checked by type (a colour
 has to parse as a colour), so a theme can't inject arbitrary CSS.
 
-Built-in themes are embedded. An admin can upload more through the API, and they're stored in the
-server's database, like everything else a person configures. Each user picks a theme and light,
-dark or follow-the-system on their Account page; the admin picks the default, which is also what
-the public feed page uses.
+The themes are built in: Design Tokens files embedded in the binary, checked when the server starts.
+There's one theme for the whole site, which an admin picks as a new field in `/api/v1/settings`
+(in `openapi.yaml` first) and on the Users page's settings. Every page uses it, the public feed
+page included. Light or dark follows the browser's `prefers-color-scheme`, which Pico does on its
+own, so there's no per-user setting.
 
 The server renders each theme to `/static/themes/{name}.css` with an ETag, so it's still
 `style-src 'self'`.
+
+Per-user themes and themes an admin uploads are left for later. Using the tokens format now means
+an uploaded theme would be the same kind of file as a built-in one, checked the same way.
 
 ## Shipping the Libraries
 
@@ -119,7 +123,7 @@ default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' https:; 
 No inline scripts and no `unsafe-eval`. htmx needs two settings for that, set in a
 `<meta name="htmx-config">`: `allowEval: false`, and `includeIndicatorStyles: false` (otherwise it
 adds an inline `<style>`). `hx-on` attributes need eval, so we don't use them; the few bits of
-behaviour htmx doesn't cover (a "copy feed link" button, the theme switch) go in one small
+behaviour htmx doesn't cover (a "copy feed link" button) go in one small
 `site.js` of our own.
 
 The test that fails on any `<script>` changes to fail on any inline script or `hx-on`, and on any
@@ -209,21 +213,14 @@ Once htmx is there:
 Each is one PR.
 
 1. **Stylesheet and layout.** Vendor Pico, rewrite `layout.html` and `style.css` on top of it, go
-   through the templates, add light, dark and system modes. No JavaScript yet.
+   through the templates, with light and dark following the browser. No JavaScript yet.
 2. **htmx and the CSP.** Vendor htmx, change the policy and its tests, and do the cheap
    improvements above. `pages.md` gets its "No JavaScript" section rewritten to say why there is
    some now.
 3. **Live progress.** The stream handlers, `NOTIFY` from the sync, the Add page and the source
    page. The meta refresh moves into `<noscript>`.
 4. **Discovery stages.** The streaming discovery on the catalogue and its reader in the server.
-5. **Themes.** Design Tokens import, `/api/v1/themes` and a theme preference on the user, in
-   `openapi.yaml` first. The Account page picker and the admin's default.
+5. **Themes.** A few built-in themes as Design Tokens files, and the site theme in
+   `/api/v1/settings`, in `openapi.yaml` first.
 
 Phases 1 and 2 are mostly visible to people using it. 3 is the one that gets rid of the reload.
-
-## Open Questions
-
-- Should themes be per user, or only a site-wide setting chosen by the admin? Per user costs one
-  column and a picker. Site-wide is simpler and probably enough for a small install.
-- Should admins be able to upload themes at all, or should the built-in ones be it for now?
-- The public feed page: the admin's default theme, or the read owner's?
