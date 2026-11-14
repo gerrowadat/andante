@@ -41,6 +41,7 @@ Start at the [project README](../README.md) if you don't know what andante is ye
 - [`proposals/`](proposals/): ideas that aren't built:
   - [Discovery](proposals/discovery.md): later strategies, and mid-archive insertions.
   - [Feed links](proposals/feed-links.md): per-read link templates, such as for discussion.
+  - [A better website](proposals/web-ui.md): live progress, a proper stylesheet and themes, with htmx and Pico CSS.
 
 ## Building It
 
