@@ -74,6 +74,9 @@ Each idea then gets a normal probe, and one that fails is dropped, so a broken f
 that would work. A paged feed's probe stops after two pages, because walking the whole of one here
 would take as long as indexing it. The config on the candidate has no such limit.
 
+Each step is reported as it starts, for the Add page to show, and `POST /discoveries` streams them
+when asked to. See [Discovery Stages](pages.md#discovery-stages).
+
 ### Duplicates
 
 Each source has a canonical key: its strategy plus its normalised feed URL, start URL or URL template

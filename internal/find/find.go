@@ -65,6 +65,25 @@ type Candidate struct {
 	SimilarSourceIDs []int64
 }
 
+// The steps of a look at a site, as Stage.Step.
+const (
+	StepFetch = "fetch" // Fetching the address itself.
+	StepFeed  = "feed"  // Reading a feed the address is or links to.
+	StepFeeds = "feeds" // Looking for a feed where one usually is.
+	StepPaged = "paged" // Checking whether a feed has older pages.
+	StepProbe = "probe" // Trying a candidate.
+)
+
+// Stage is a step a look at a site has started on. Each step is a request to the
+// site at least, and they're spaced by the crawl interval, so a person waiting
+// wants to see them.
+type Stage struct {
+	Step, Message string
+}
+
+// Report is told of each stage as it starts. It's called on Find's goroutine.
+type Report func(Stage)
+
 // Finder works out how to read a site.
 type Finder struct {
 	store   *store.Store
@@ -107,6 +126,14 @@ func (f *Finder) known(ctx context.Context, address string) (*Candidate, error) 
 	return nil, nil //nolint:nilnil // Not knowing it is a normal answer.
 }
 
+// stage reports a step, if anyone's listening, and counts it either way.
+func (f *Finder) stage(report Report, step, message string) {
+	f.metrics.CountStage(step)
+	if report != nil {
+		report(Stage{Step: step, Message: message})
+	}
+}
+
 // idea is a candidate that hasn't been tried yet.
 type idea struct {
 	title, home, strategy, kind string
@@ -117,7 +144,8 @@ type idea struct {
 
 // Find returns candidates for an address, best first. None means nothing worked, and a
 // person will need to find the first page. An error means the site couldn't be read.
-func (f *Finder) Find(ctx context.Context, address string, limit int) ([]Candidate, error) {
+// report, which can be nil, hears of each stage as it starts.
+func (f *Finder) Find(ctx context.Context, address string, limit int, report Report) ([]Candidate, error) {
 	c, err := f.known(ctx, address)
 	if err != nil {
 		return nil, err
@@ -127,12 +155,12 @@ func (f *Finder) Find(ctx context.Context, address string, limit int) ([]Candida
 		return []Candidate{*c}, nil
 	}
 
-	ideas, err := f.look(ctx, address)
+	ideas, err := f.look(ctx, address, report)
 	if err != nil {
 		f.metrics.CountFind(resultFailed)
 		return nil, err
 	}
-	candidates, err := f.try(ctx, ideas, limit)
+	candidates, err := f.try(ctx, ideas, limit, report)
 	if err != nil {
 		f.metrics.CountFind(resultFailed)
 		return nil, err
@@ -146,21 +174,23 @@ func (f *Finder) Find(ctx context.Context, address string, limit int) ([]Candida
 }
 
 // look fetches what it takes to come up with ideas.
-func (f *Finder) look(ctx context.Context, address string) ([]idea, error) {
+func (f *Finder) look(ctx context.Context, address string, report Report) ([]idea, error) {
 	fetcher := f.prober.Fetcher()
+	f.stage(report, StepFetch, "Fetching "+address)
 	resp, err := fetcher.Fetch(ctx, address)
 	if err != nil {
 		return nil, err
 	}
 	if info, ok := strategies.ReadFeed(resp.Body, resp.URL); ok {
-		return []idea{feedIdea(ctx, fetcher, resp.URL, resp.URL, info)}, nil
+		f.stage(report, StepFeed, "That's a feed: "+feedName(info))
+		return []idea{f.feedIdea(ctx, fetcher, resp.URL, resp.URL, info, report)}, nil
 	}
 
 	site, err := extract.ReadSite(extract.Page{URL: resp.URL, Body: resp.Body})
 	if err != nil {
 		return nil, err
 	}
-	ideas := feedIdeas(ctx, fetcher, resp.URL, site)
+	ideas := f.feedIdeas(ctx, fetcher, resp.URL, site, report)
 	complete := slices.ContainsFunc(ideas, func(i idea) bool { return !i.partial })
 	if site.First != "" && canon.URL(site.First) != canon.URL(resp.URL) && !complete {
 		// A crawl gets everything, and a feed that's cut off doesn't, so it goes first.
@@ -172,9 +202,19 @@ func (f *Finder) look(ctx context.Context, address string) ([]idea, error) {
 	return ideas, nil
 }
 
-func feedIdeas(ctx context.Context, fetcher discovery.PageFetcher, home string, site extract.Site) []idea {
+// feedName is what a stage calls a feed.
+func feedName(info strategies.FeedInfo) string {
+	if info.Title != "" {
+		return info.Title
+	}
+	return "untitled"
+}
+
+func (f *Finder) feedIdeas(ctx context.Context, fetcher discovery.PageFetcher, home string, site extract.Site, report Report) []idea {
 	addresses := site.Feeds
+	step, verb := StepFeed, "Reading the feed at "
 	if len(addresses) == 0 {
+		step, verb = StepFeeds, "No feed is linked, so trying "
 		base, err := url.Parse(home)
 		if err != nil {
 			return nil
@@ -197,6 +237,7 @@ func feedIdeas(ctx context.Context, fetcher discovery.PageFetcher, home string, 
 			continue
 		}
 		tried[key] = true
+		f.stage(report, step, verb+address)
 		resp, err := fetcher.Fetch(ctx, address)
 		var backoff *discovery.BackoffError
 		if errors.As(err, &backoff) {
@@ -209,7 +250,7 @@ func feedIdeas(ctx context.Context, fetcher discovery.PageFetcher, home string, 
 		if !ok {
 			continue
 		}
-		i := feedIdea(ctx, fetcher, home, resp.URL, info)
+		i := f.feedIdea(ctx, fetcher, home, resp.URL, info, report)
 		if i.title == "" {
 			i.title = site.Title
 		}
@@ -223,7 +264,7 @@ func feedIdeas(ctx context.Context, fetcher discovery.PageFetcher, home string, 
 
 // feedIdea works out how to read a feed. Only a feed that looks cut off needs another
 // request, to see whether it's paged.
-func feedIdea(ctx context.Context, fetcher discovery.PageFetcher, home, address string, info strategies.FeedInfo) idea {
+func (f *Finder) feedIdea(ctx context.Context, fetcher discovery.PageFetcher, home, address string, info strategies.FeedInfo, report Report) idea {
 	if info.HomeURL != "" {
 		home = info.HomeURL
 	}
@@ -234,6 +275,7 @@ func feedIdea(ctx context.Context, fetcher discovery.PageFetcher, home, address 
 	if !info.CutOff {
 		return i
 	}
+	f.stage(report, StepPaged, "The feed only has the latest, so checking for older pages")
 	if paged(ctx, fetcher, address, info) {
 		i.strategy = strategyPaged
 		i.config = map[string]any{"strategy": strategyPaged, "feed_url": address}
@@ -262,12 +304,13 @@ func paged(ctx context.Context, fetcher discovery.PageFetcher, address string, i
 
 // try probes each idea. One that fails is dropped, so a broken feed doesn't hide a
 // crawl that would work. Only if they all fail is that an error.
-func (f *Finder) try(ctx context.Context, ideas []idea, limit int) ([]Candidate, error) {
+func (f *Finder) try(ctx context.Context, ideas []idea, limit int, report Report) ([]Candidate, error) {
 	var (
 		candidates []Candidate
 		failure    error
 	)
-	for _, i := range ideas {
+	for n, i := range ideas {
+		f.stage(report, StepProbe, fmt.Sprintf("Trying %d of %d: %s", n+1, len(ideas), i.describe()))
 		c, err := f.tryOne(ctx, i, limit)
 		if err != nil {
 			failure = err
@@ -279,6 +322,18 @@ func (f *Finder) try(ctx context.Context, ideas []idea, limit int) ([]Candidate,
 		return nil, failure
 	}
 	return candidates, nil
+}
+
+// describe says how an idea would read the site.
+func (i idea) describe() string {
+	switch i.strategy {
+	case strategyFeed:
+		return "its feed"
+	case strategyPaged:
+		return "its feed, page by page"
+	default:
+		return "page by page, from the first"
+	}
 }
 
 func (f *Finder) tryOne(ctx context.Context, i idea, limit int) (Candidate, error) {

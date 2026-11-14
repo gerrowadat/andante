@@ -44,7 +44,7 @@ func newFixture(t *testing.T) *fixture {
 
 func (f *fixture) find(t *testing.T, address string) []find.Candidate {
 	t.Helper()
-	candidates, err := f.finder.Find(t.Context(), address, 3)
+	candidates, err := f.finder.Find(t.Context(), address, 3, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,17 +235,23 @@ func TestNothingToGoOn(t *testing.T) {
 
 func metric(t *testing.T, f *fixture, result string) prometheus.Collector {
 	t.Helper()
+	return f.counter(t, "andante_discoveries_total", result)
+}
+
+// counter is the value of one label of a counter with one label.
+func (f *fixture) counter(t *testing.T, name, label string) prometheus.Collector {
+	t.Helper()
 	counter := prometheus.NewCounter(prometheus.CounterOpts{Name: "x"})
 	families, err := f.registry.Gather()
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, family := range families {
-		if family.GetName() != "andante_discoveries_total" {
+		if family.GetName() != name {
 			continue
 		}
 		for _, m := range family.GetMetric() {
-			if m.GetLabel()[0].GetValue() == result {
+			if m.GetLabel()[0].GetValue() == label {
 				counter.Add(m.GetCounter().GetValue())
 			}
 		}
@@ -319,7 +325,7 @@ func TestSomethingThatLooksClose(t *testing.T) {
 func TestDiscoveryKeepsToRobotsAndTheInterval(t *testing.T) {
 	f := newFixture(t)
 	blocked := sitetest.Serve(t, "robots-disallow")
-	if _, err := f.finder.Find(t.Context(), blocked.URL+"/comics/1.html", 3); !errors.Is(err, discovery.ErrDisallowed) {
+	if _, err := f.finder.Find(t.Context(), blocked.URL+"/comics/1.html", 3, nil); !errors.Is(err, discovery.ErrDisallowed) {
 		t.Errorf("a disallowed site = %v", err)
 	}
 	if got := blocked.Count("/comics/1.html"); got != 0 {
@@ -353,10 +359,68 @@ func TestASiteThatWontAnswer(t *testing.T) {
 		http.Error(w, "no", http.StatusForbidden)
 		return true
 	})
-	if _, err := f.finder.Find(t.Context(), site.URL+"/", 3); err == nil {
+	if _, err := f.finder.Find(t.Context(), site.URL+"/", 3, nil); err == nil {
 		t.Error("Find succeeded")
 	}
 	if got := testutil.ToFloat64(metric(t, f, "failed")); got != 1 {
 		t.Errorf("metric = %v", got)
+	}
+}
+
+// stepsOf finds candidates for an address and returns the steps it reported.
+func (f *fixture) stepsOf(t *testing.T, address string) []find.Stage {
+	t.Helper()
+	var stages []find.Stage
+	if _, err := f.finder.Find(t.Context(), address, 3, func(s find.Stage) { stages = append(stages, s) }); err != nil {
+		t.Fatal(err)
+	}
+	return stages
+}
+
+func steps(stages []find.Stage) string {
+	var b strings.Builder
+	for _, s := range stages {
+		b.WriteString(s.Step + " ")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func TestStagesOfAPagedFeed(t *testing.T) {
+	f := newFixture(t)
+	site := sitetest.Serve(t, "discover-wordpress")
+	paged(t, site)
+	stages := f.stepsOf(t, site.URL+"/")
+	if got, want := steps(stages), "fetch feed paged probe"; got != want {
+		t.Fatalf("steps = %q, want %q (%+v)", got, want, stages)
+	}
+	if got := stages[0].Message; got != "Fetching "+site.URL+"/" {
+		t.Errorf("first message = %q", got)
+	}
+	if got := stages[3].Message; got != "Trying 1 of 1: its feed, page by page" {
+		t.Errorf("last message = %q", got)
+	}
+	if got := testutil.ToFloat64(f.counter(t, "andante_discovery_stages_total", "probe")); got != 1 {
+		t.Errorf("probe stages counted = %v", got)
+	}
+}
+
+func TestStagesOfAComicWithNoFeed(t *testing.T) {
+	f := newFixture(t)
+	site := sitetest.Serve(t, "discover-comic")
+	stages := f.stepsOf(t, site.URL+"/")
+	if got, want := steps(stages), "fetch feeds feeds feeds feeds feeds probe"; got != want {
+		t.Fatalf("steps = %q, want %q", got, want)
+	}
+	if got := stages[1].Message; got != "No feed is linked, so trying "+site.URL+"/feed" {
+		t.Errorf("message = %q", got)
+	}
+}
+
+func TestStagesWithoutAListenerAreStillCounted(t *testing.T) {
+	f := newFixture(t)
+	site := sitetest.Serve(t, "discover-full")
+	f.find(t, site.URL+"/")
+	if got := testutil.ToFloat64(f.counter(t, "andante_discovery_stages_total", "fetch")); got != 1 {
+		t.Errorf("fetch stages counted = %v", got)
 	}
 }

@@ -334,6 +334,11 @@ func TestTheSyncAnnouncesWhatChanged(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("heard nothing")
 	}
+	// Another copy in the same database, in a schema of its own, isn't heard.
+	other := stacktest.New(t)
+	elsewhere := addSource(t, other, "a")
+	index(t, other, elsewhere.ID, "https://a.example/1")
+	catchUp(t, other)
 	select {
 	case id := <-heard:
 		t.Errorf("heard of source %d again", id)

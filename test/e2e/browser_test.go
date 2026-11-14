@@ -165,6 +165,11 @@ func TestAddingASiteInABrowser(t *testing.T) {
 	if !looking {
 		t.Fatal("the look was over before the page could watch it")
 	}
+	// The site has no feed, so the catalogue tries where one usually is, a second
+	// apart, and the page shows each step as it starts.
+	if err := chromedp.Do(ctx, chromedp.WaitVisible(chromedp.Search(`//li[@aria-busy="true" and starts-with(text(), "No feed is linked")]`))); err != nil {
+		t.Fatalf("waiting for a step: %v. Logs:\n%s\n%s", err, server.output(), catalogue.output())
+	}
 
 	if err := chromedp.Do(ctx, chromedp.WaitVisible(chromedp.Search(`//button[text()="Add this"]`))); err != nil {
 		t.Fatalf("waiting for what turned up: %v. Logs:\n%s\n%s", err, server.output(), catalogue.output())
@@ -182,6 +187,9 @@ func TestAddingASiteInABrowser(t *testing.T) {
 	}
 	if title, err := chromedp.Run(ctx, chromedp.Text(chromedp.CSS("#look article h2"))); err != nil || title != "The Comic" {
 		t.Errorf("what turned up: %q, %v", title, err)
+	}
+	if steps, err := chromedp.Run(ctx, chromedp.Evaluate[int](`document.querySelectorAll("#look details.stages li").length`)); err != nil || steps < 3 {
+		t.Errorf("the steps it took: %d, %v", steps, err)
 	}
 
 	// The candidate's form still works as a form.
@@ -211,7 +219,7 @@ func TestAddingASiteWithoutJavaScript(t *testing.T) {
 		t.Fatal(err)
 	}
 	var page string
-	looked := false
+	looked, stepped := false, false
 	for deadline := time.Now().Add(time.Minute); ; time.Sleep(200 * time.Millisecond) {
 		// The page can be part way through refreshing, which is worth another try.
 		if doc, err := chromedp.Call(ctx, dom.GetDocument, dom.GetDocumentParams{}); err == nil && doc.Root != nil {
@@ -220,6 +228,7 @@ func TestAddingASiteWithoutJavaScript(t *testing.T) {
 			}
 		}
 		looked = looked || strings.Contains(page, "Looking.")
+		stepped = stepped || strings.Contains(page, "No feed is linked") || strings.Contains(page, "Trying 1 of 1")
 		if strings.Contains(page, "Add this") {
 			break
 		}
@@ -230,7 +239,10 @@ func TestAddingASiteWithoutJavaScript(t *testing.T) {
 	if !looked {
 		t.Error("the look was over before the page could watch it")
 	}
-	if !strings.Contains(page, "The Comic") {
+	if !stepped {
+		t.Error("no page showed a step while it looked")
+	}
+	if !strings.Contains(page, "The Comic") || !strings.Contains(page, "How andante looked") {
 		t.Errorf("what turned up: %s", page)
 	}
 }

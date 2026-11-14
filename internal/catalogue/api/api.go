@@ -76,6 +76,7 @@ type handler struct {
 	probeTimeout time.Duration
 	stopping     context.Context //nolint:containedctx // It's the service's lifetime, not a request's.
 	logs         *logring.Ring
+	logger       *slog.Logger
 }
 
 // New returns the API. Mount it at BasePath.
@@ -97,7 +98,10 @@ func New(opts Options) (http.Handler, error) {
 	}
 	h := &handler{
 		store: opts.Store, strategies: opts.Strategies, prober: opts.Prober, finder: opts.Finder,
-		probeTimeout: opts.ProbeTimeout, stopping: opts.Stopping, logs: opts.Logs,
+		probeTimeout: opts.ProbeTimeout, stopping: opts.Stopping, logs: opts.Logs, logger: opts.Logger,
+	}
+	if h.logger == nil {
+		h.logger = slog.New(slog.DiscardHandler)
 	}
 	if h.logs == nil {
 		h.logs = logring.New(0, prometheus.NewRegistry())
@@ -109,7 +113,7 @@ func New(opts Options) (http.Handler, error) {
 		},
 		SlowRoutes: []string{"POST " + BasePath + "/probes", "POST " + BasePath + "/discoveries"}, ProbeTimeout: opts.ProbeTimeout,
 	}
-	strict := gen.NewStrictHandlerWithOptions(h, nil, gen.StrictHTTPServerOptions{
+	strict := gen.NewStrictHandlerWithOptions(h, []gen.StrictMiddlewareFunc{noteStream}, gen.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, err error) {
 			httpapi.WriteProblem(w, httpapi.RequestProblem(err))
 		},
@@ -460,18 +464,30 @@ func (h *handler) CreateDiscovery(ctx context.Context, r gen.CreateDiscoveryRequ
 	if r.Body.Limit != nil {
 		limit = int(*r.Body.Limit)
 	}
+	if wantsStream(ctx) {
+		return h.streamDiscovery(ctx, r.Body.URL, limit), nil
+	}
 
 	ctx, cancel := context.WithTimeout(ctx, h.probeTimeout)
 	defer cancel()
-	found, err := h.finder.Find(ctx, r.Body.URL, limit)
+	result, err := h.discover(ctx, r.Body.URL, limit, nil)
 	if err != nil {
-		return nil, httpapi.NewProblem(http.StatusUnprocessableEntity, httpapi.TypeProbeFailed, err.Error())
+		return nil, err
+	}
+	return gen.CreateDiscovery200JSONResponse(result), nil
+}
+
+// discover finds candidates for an address, in the API's shape.
+func (h *handler) discover(ctx context.Context, address string, limit int, report find.Report) (client.DiscoveryResult, error) {
+	found, err := h.finder.Find(ctx, address, limit, report)
+	if err != nil {
+		return client.DiscoveryResult{}, httpapi.NewProblem(http.StatusUnprocessableEntity, httpapi.TypeProbeFailed, err.Error())
 	}
 	candidates := make([]client.Candidate, 0, len(found))
 	for _, c := range found {
 		var config client.SourceConfig
 		if err := config.UnmarshalJSON(c.Config); err != nil {
-			return nil, fmt.Errorf("decode config of a candidate: %w", err)
+			return client.DiscoveryResult{}, fmt.Errorf("decode config of a candidate: %w", err)
 		}
 		candidates = append(candidates, client.Candidate{
 			Title: c.Title, DefaultKind: client.Kind(c.Kind), HomeURL: c.HomeURL, Config: config,
@@ -479,7 +495,7 @@ func (h *handler) CreateDiscovery(ctx context.Context, r gen.CreateDiscoveryRequ
 			ExistingSourceID: nullableValue(c.ExistingSourceID), SimilarSourceIds: nonNil(c.SimilarSourceIDs),
 		})
 	}
-	return gen.CreateDiscovery200JSONResponse{Candidates: candidates}, nil
+	return client.DiscoveryResult{Candidates: candidates}, nil
 }
 
 func (h *handler) changes(ctx context.Context, after int64, limit int32) ([]client.Change, error) {

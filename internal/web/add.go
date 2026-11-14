@@ -30,7 +30,10 @@ const (
 	// jobsEach is how many sites one person can be looking at at once.
 	jobsEach = 3
 	// keptEach is how many answers one person keeps. Past it, the oldest goes.
-	keptEach   = 10
+	keptEach = 10
+	// stagesEach is the most steps a job keeps. A look takes a handful, so this is
+	// only a bound on a catalogue that goes on.
+	stagesEach = 50
 	refreshSec = 3
 	sampleShow = 5
 )
@@ -44,7 +47,10 @@ type job struct {
 	done        bool
 	failed      string
 	result      []client.Candidate
-	// changed is closed when the job changes, for a page waiting on it.
+	// stages are the steps the look has started on, in words, the latest last.
+	stages []string
+	// changed is closed when the job changes, for a page waiting on it, and replaced
+	// with a new one unless the job is done.
 	changed chan struct{}
 }
 
@@ -102,6 +108,20 @@ func (j *jobs) get(id string, owner int64) (job, bool) {
 	return *found, true
 }
 
+// stage records a step the look has started on.
+func (j *jobs) stage(id, message string) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	found, ok := j.byID[id]
+	if !ok || found.done || len(found.stages) == stagesEach {
+		return
+	}
+	// A new slice, so a copy someone already has keeps the stages it had.
+	found.stages = append(found.stages[:len(found.stages):len(found.stages)], message)
+	close(found.changed)
+	found.changed = make(chan struct{})
+}
+
 func (j *jobs) finish(id string, result []client.Candidate, failed string) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
@@ -146,7 +166,9 @@ func (s *site) look(id, address string, first bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), lookTimeout)
 	defer cancel()
 	if !first {
-		found, err := s.opts.App.Catalogue.Discover(ctx, client.DiscoveryRequest{URL: address})
+		found, err := s.opts.App.Catalogue.DiscoverStages(ctx, client.DiscoveryRequest{URL: address}, func(st replica.Stage) {
+			s.jobs.stage(id, st.Message)
+		})
 		if err != nil {
 			s.jobs.finish(id, nil, "That didn't work: "+err.Error())
 			return
@@ -160,6 +182,7 @@ func (s *site) look(id, address string, first bool) {
 		return
 	}
 	limit := int32(sampleShow)
+	s.jobs.stage(id, "Following the next links from "+address)
 	probe, err := s.opts.App.Catalogue.Probe(ctx, client.ProbeRequest{Config: config, Limit: &limit})
 	if err != nil {
 		s.jobs.finish(id, nil, "That didn't work: "+err.Error())
@@ -197,10 +220,16 @@ type foundData struct {
 	ID, Address, Failed string
 	Done                bool
 	Candidates          []candidateRow
+	// Stages are the steps so far, and Current the one under way.
+	Stages  []string
+	Current string
 }
 
 func foundOf(j job) foundData {
-	data := foundData{ID: j.id, Address: j.address, Failed: j.failed, Done: j.done}
+	data := foundData{ID: j.id, Address: j.address, Failed: j.failed, Done: j.done, Stages: j.stages}
+	if n := len(j.stages); n > 0 && !j.done {
+		data.Stages, data.Current = j.stages[:n-1], j.stages[n-1]
+	}
 	for _, c := range j.result {
 		row := candidateRow{Title: c.Title, How: how(c), Kind: string(c.DefaultKind), Similar: c.SimilarSourceIds, Warnings: c.Warnings}
 		if existing, err := c.ExistingSourceID.Get(); err == nil {

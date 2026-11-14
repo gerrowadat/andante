@@ -159,6 +159,10 @@ func TestTheAddPageShowsWhatTurnsUp(t *testing.T) {
 	if !strings.Contains(found.data, "Episode 1") || !csrfJob.MatchString(found.data) || !strings.Contains(found.data, alice.csrf) {
 		t.Errorf("what turned up: %s", found.data)
 	}
+	// The steps the catalogue took are kept, folded away.
+	if !strings.Contains(found.data, "How andante looked") || !strings.Contains(found.data, "Fetching "+site.URL+"/feed.xml") {
+		t.Errorf("the steps aren't there: %s", found.data)
+	}
 	if done, ok := events.next(t); !ok || done.name != "done" {
 		t.Errorf("after the candidates: %+v, %v", done, ok)
 	}
@@ -208,6 +212,14 @@ func TestTheWaitingPageRefreshesOnlyWithoutJavaScript(t *testing.T) {
 	events := f.stream(t, alice, started.header.Get("Location")+"/events")
 	if e := events.until(t, "Looking"); e.name != "" {
 		t.Errorf("the first event is %+v", e)
+	}
+	// The catalogue says what it's doing, and the page shows it as it happens.
+	busy := events.until(t, "Fetching "+hang.URL+"/")
+	if item := parse(t, busy.data).Find(`li[aria-busy="true"]`).Text(); item != "Fetching "+hang.URL+"/" {
+		t.Errorf("the step under way is %q", item)
+	}
+	if page := f.get(t, alice, started.header.Get("Location")); !strings.Contains(page.body, "Fetching "+hang.URL+"/") {
+		t.Errorf("the page doesn't show the step: %s", page.body)
 	}
 }
 

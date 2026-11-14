@@ -179,6 +179,13 @@ paths:
         with a probe. Saves nothing. If the catalogue already has the serial it
         says so, without making a request. This keeps to the crawl interval, so
         it can take minutes.
+
+
+        Asked for with `Accept: text/event-stream`, the answer is a stream of
+        Server-Sent Events instead: a `stage` event (a DiscoveryStage) as each
+        step starts, then one `result` event (a DiscoveryResult) or one `error`
+        event (a Problem), and then the stream ends. A request that's refused
+        before it starts, such as one with a bad URL, is still a plain problem.
       requestBody:
         required: true
         content:
@@ -187,11 +194,28 @@ paths:
               $ref: "#/components/schemas/DiscoveryRequest"
       responses:
         "200":
-          description: The candidates.
+          description: The candidates, or the stages and then the candidates.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/DiscoveryResult"
+            text/event-stream:
+              schema:
+                type: string
+              x-events:
+                stage:
+                  $ref: "#/components/schemas/DiscoveryStage"
+                result:
+                  $ref: "#/components/schemas/DiscoveryResult"
+                error:
+                  $ref: "#/components/schemas/Problem"
+              example: |+
+                event: stage
+                data: {"step":"fetch","message":"Fetching https://comic.example/"}
+
+                event: result
+                data: {"candidates":[]}
+
         default:
           $ref: "#/components/responses/Problem"
   /probes:
@@ -881,6 +905,22 @@ components:
           items:
             type: integer
             format: int64
+    DiscoveryStage:
+      type: object
+      description: A step a discovery has started on, for showing progress.
+      required: [step, message]
+      properties:
+        step:
+          type: string
+          enum: [fetch, feed, feeds, paged, probe]
+          description: >-
+            fetch is the address itself, feed a feed found there, feeds a look
+            for a feed at another address, paged a check for older pages of a
+            feed, and probe trying one candidate.
+        message:
+          type: string
+          description: The step in words, for a person.
+          example: Trying 2 of 3, from its feed
     DiscoveryResult:
       type: object
       required: [candidates]

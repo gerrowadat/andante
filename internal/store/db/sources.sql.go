@@ -265,11 +265,12 @@ func (q *Queries) ListSources(ctx context.Context, arg ListSourcesParams) ([]Sou
 }
 
 const notifySourceChanged = `-- name: NotifySourceChanged :exec
-SELECT pg_notify('andante_source', $1::bigint::text)
+SELECT pg_notify('andante_source', current_schema() || ' ' || $1::bigint::text)
 `
 
 // Postgres sends it when the transaction commits, so a listener never hears of a
-// change before it can read it.
+// change before it can read it. The payload starts with the schema, because a
+// channel is heard across the whole database, and two copies can share one.
 func (q *Queries) NotifySourceChanged(ctx context.Context, sourceID int64) error {
 	_, err := q.db.Exec(ctx, notifySourceChanged, sourceID)
 	return err

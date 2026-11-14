@@ -142,7 +142,7 @@ login, ownership and route tests cover them like any other page:
 
 | Stream | Path | Owner | What it sends |
 |---|---|---|---|
-| Discovery | `GET /add/{job}/events` | the job's user | the waiting part of the page, again when the look finishes, then `done` |
+| Discovery | `GET /add/{job}/events` | the job's user | the waiting part of the page, again at each step and when the look finishes, then `done` |
 | Source | `GET /sources/{id}/events` | anyone logged in | the state, entry count and latest entry, the first entries, and the crawl log for admins |
 
 Each event is HTML from the same template the page uses on first load (`look` in `found.html`,
@@ -151,11 +151,18 @@ part. The source stream swaps the progress in place and the other two by ID, wit
 A named event (`done`, or `gone` when a source is deleted) tells htmx to stop, through
 `hx-sse:close`, and otherwise it reconnects by itself and gets the current state first.
 
-A look at a site is in memory, so its job closes a channel when it finishes, and the stream waits
-on that. Sources change when the sync applies something from the catalogue. `ApplyChanges` sends
-`pg_notify('andante_source', id)` once for each source a batch touched, inside its transaction, so
+A look at a site is in memory, so its job closes a channel when it changes, and the stream waits
+on that. The server asks the catalogue for the look as a stream of its own (below), and each step
+that comes back is a change: the page lists the steps so far, with a spinner on the one under way,
+and once the answer's in they fold away under "How andante looked". A job keeps 50 steps at most.
+
+Sources change when the sync applies something from the catalogue. `ApplyChanges` sends
+`pg_notify('andante_source', ...)` once for each source a batch touched, inside its transaction, so
 Postgres delivers it on commit and a listener never hears of a change before it can read it. This
-works with several servers on one database, which an in-process broker wouldn't. Each server holds
+works with several servers on one database, which an in-process broker wouldn't. A channel is heard
+across the whole database, so the payload is the schema and the source's ID, and a listener ignores
+other schemas'. Otherwise two copies of andante sharing a database would hear each other, as the
+tests, each in a schema of their own, did. Each server holds
 one `LISTEN` connection, taken out of the pool, and only while someone has a source page open. If
 it loses the connection it gets it back with a growing wait, and every open page looks again, since
 it could have missed something. A crawl brings changes in bursts, so the source stream waits a
@@ -188,9 +195,36 @@ there. Locally they skip without a Chrome, or use the one in `ANDANTE_E2E_CHROME
   "indexing", "reached the live end" or "parked", and the entry count and latest entry. Whether
   indexing has caught up with readers depends on the catalogue's lookahead, which the server
   doesn't know.
-- **Discovery has two states, looking and done.** The stages come with streaming discovery on the
-  catalogue, in the next phase.
 - **The listener is lazy.** It holds a connection only while a source page is open.
+
+## Discovery Stages
+
+`POST /discoveries` on the catalogue answers with Server-Sent Events when it's asked for them with
+`Accept: text/event-stream`: a `stage` event as each step starts, then one `result`, with the same
+body as the JSON answer, or one `error` with a problem. Without that header it answers as it always
+did, so the public API and the CLI don't change. A request refused before it starts, such as one
+with a bad URL, is still a plain problem with its status, since a stream has already said 200.
+
+A stage is a `step` (`fetch`, `feed`, `feeds`, `paged` or `probe`) and a `message` in words, such as
+"No feed is linked, so trying https://comic.example/feed.xml" or "Trying 2 of 3: its feed". Each
+is a request to the site at least, and they're a crawl interval apart, which is why they're worth
+showing. `internal/find` reports them through a callback, and counts them in
+`andante_discovery_stages_total`, whether anyone's listening or not. The catalogue runs the look
+while it writes the response, through a pipe to the generated code, which flushes each event, and
+sends a comment every 15 seconds so a quiet stream doesn't look idle to anything in between.
+
+`internal/replica` reads the stream with about forty lines of its own (`DiscoverStages`), since the
+generated client can't. It only needs `event` and `data`, and skips ids, retries and comments, so a
+library would have been more than the job. A catalogue that answers with JSON anyway still works.
+
+### Where Discovery Stages Diverged
+
+- **The events are documented in an `x-events` extension.** OpenAPI 3.1 can't describe what's in
+  each event of a stream (3.2's `itemSchema` can), so the media type is a string, and `x-events`
+  names the schema of each event. oapi-codegen can't see that, so the catalogue's client is
+  generated without pruning, to keep `DiscoveryStage`.
+- **The "first page" path has one stage of its own.** It's a probe, which doesn't stream, so the
+  server says it's following the next links and waits.
 
 ## Pace
 

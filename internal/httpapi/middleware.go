@@ -101,6 +101,10 @@ func (r *statusRecorder) WriteHeader(status int) {
 // Unwrap lets http.ResponseController reach the connection.
 func (r *statusRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
 
+// Flush passes a flush on, for a streamed answer. Code that checks for an
+// http.Flusher, as oapi-codegen's does, doesn't look through Unwrap.
+func (r *statusRecorder) Flush() { _ = http.NewResponseController(r.ResponseWriter).Flush() }
+
 // CountRequests records requests by route and status. The route pattern is only
 // known inside the mux, on a request this middleware never sees, so RecordRoute
 // passes it back through a pointer in the context.
