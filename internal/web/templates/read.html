@@ -1,18 +1,35 @@
 {{define "content"}}{{with .Data}}
 <h1>{{.Read.Name}}</h1>
 <p>A read of <a href="{{root}}/sources/{{.Source.ID}}">{{.Source.Title}}</a>.</p>
+<div id="summary">
 <dl>
   <dt>Pace</dt><dd>{{.Pace}}</dd>
   <dt>So far</dt><dd>{{.Released}} of {{.Indexed}} released{{if ne .State "active"}}, {{.State}}{{end}}</dd>
   {{with .Next}}<dt>Next</dt><dd><time datetime="{{.Machine}}">{{.Human}}</time></dd>{{end}}
 </dl>
+<h2>Change it</h2>
+<div class="actions">
+{{if eq .State "paused"}}<form method="post" action="{{root}}/reads/{{.Read.ID}}/resume" hx-post="{{root}}/reads/{{.Read.ID}}/resume" hx-target="#summary" hx-select="#summary" hx-swap="outerHTML" hx-select-oob="#status:innerHTML,#history"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Resume</button></form>
+{{else}}<form method="post" action="{{root}}/reads/{{.Read.ID}}/pause" hx-post="{{root}}/reads/{{.Read.ID}}/pause" hx-target="#summary" hx-select="#summary" hx-swap="outerHTML" hx-select-oob="#status:innerHTML,#history"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="secondary">Pause</button></form>{{end}}
+<form method="post" action="{{root}}/reads/{{.Read.ID}}/skip" hx-post="{{root}}/reads/{{.Read.ID}}/skip" hx-target="#summary" hx-select="#summary" hx-swap="outerHTML" hx-select-oob="#status:innerHTML,#history"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="secondary">Release the next one now</button></form>
+</div>
+<form method="post" action="{{root}}/reads/{{.Read.ID}}/jump" hx-post="{{root}}/reads/{{.Read.ID}}/jump" hx-target="#summary" hx-select="#summary" hx-swap="outerHTML" hx-select-oob="#status:innerHTML,#history">
+  <input type="hidden" name="csrf" value="{{$.CSRF}}">
+  <label for="seq">Release everything up to entry</label>
+  <fieldset role="group">
+    <input type="number" id="seq" name="seq" min="0" required>
+    <button class="secondary">Jump</button>
+  </fieldset>
+</form>
+<p><a href="{{root}}/reads/{{.Read.ID}}/pace">Change the pace</a> · <a href="{{root}}/reads/{{.Read.ID}}/delete">Delete this read</a></p>
+</div>
 <h2>Feed links</h2>
 <p>Give each person their own link, so that you can stop one without stopping the rest. Treat them like passwords.</p>
 <div class="overflow-auto"><table>
 <thead><tr><th>For</th><th>Link</th><th>Last seen</th><th></th></tr></thead>
 <tbody>{{range .Tokens}}<tr>
   <td>{{.Label}}{{if .Owner}} <small>(can release the next one)</small>{{end}}</td>
-  <td>{{if .Revoked}}<span class="muted">stopped</span>{{else if .Page}}<a class="url" href="{{.Page}}">{{.Page}}</a>{{else}}<span class="muted">can't be shown</span>{{end}}</td>
+  <td>{{if .Revoked}}<span class="muted">stopped</span>{{else if .Page}}<a class="url" href="{{.Page}}">{{.Page}}</a> <button type="button" class="copy secondary outline" data-copy="{{.Page}}" hidden>Copy</button>{{else}}<span class="muted">can't be shown</span>{{end}}</td>
   <td>{{with .Seen}}{{.}}{{else}}<span class="muted">never</span>{{end}}</td>
   <td>{{if not .Revoked}}<form class="inline" method="post" action="{{root}}/tokens/{{.ID}}/revoke"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="read" value="{{$.Data.Read.ID}}"><button class="secondary">Stop</button></form>{{end}}</td>
 </tr>{{end}}</tbody>
@@ -27,24 +44,11 @@
   <label><input type="checkbox" name="owner" value="1"> Can release the next one</label>
 </form>
 {{if $.Admin}}<p><a href="{{root}}/logs?read={{.Read.ID}}">Feed requests for this read</a></p>{{end}}
-<h2>Change it</h2>
-<div class="actions">
-{{if eq .State "paused"}}<form method="post" action="{{root}}/reads/{{.Read.ID}}/resume"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Resume</button></form>
-{{else}}<form method="post" action="{{root}}/reads/{{.Read.ID}}/pause"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="secondary">Pause</button></form>{{end}}
-<form method="post" action="{{root}}/reads/{{.Read.ID}}/skip"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="secondary">Release the next one now</button></form>
-</div>
-<form method="post" action="{{root}}/reads/{{.Read.ID}}/jump">
-  <input type="hidden" name="csrf" value="{{$.CSRF}}">
-  <label for="seq">Release everything up to entry</label>
-  <fieldset role="group">
-    <input type="number" id="seq" name="seq" min="0" required>
-    <button class="secondary">Jump</button>
-  </fieldset>
-</form>
-<p><a href="{{root}}/reads/{{.Read.ID}}/pace">Change the pace</a> · <a href="{{root}}/reads/{{.Read.ID}}/delete">Delete this read</a></p>
+<div id="history">
 <h2>History</h2>
 <div class="overflow-auto"><table>
 <thead><tr><th>When</th><th>What</th><th>From entry</th></tr></thead>
 <tbody>{{range .History}}<tr><td>{{.When}}</td><td>{{.What}}</td><td>{{.From}}</td></tr>{{end}}</tbody>
 </table></div>
+</div>
 {{end}}{{end}}

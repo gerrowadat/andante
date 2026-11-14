@@ -1,6 +1,7 @@
 # Proposal: A Better Website
 
-Status: phase 1 (the stylesheet) is built, and described in [pages.md](../design/pages.md). The rest is proposed.
+Status: phases 1 (the stylesheet) and 2 (htmx and the CSP) are built, and described in
+[pages.md](../design/pages.md), which also says where they differ from this. The rest is proposed.
 
 The website works, but it looks like a 2003 admin panel and it behaves like one. The worst of it is
 the Add page, which says "this page checks again every few seconds" and reloads itself with a

@@ -25,24 +25,54 @@ The code is in `internal/web`: the route table in `pages_app.go`, the handlers i
 `add.go`, and the templates and stylesheet embedded from `templates/` and `static/`. The feed page is
 in `internal/server/public.go`, because it's part of the feeds.
 
-## No JavaScript
+## JavaScript
 
-The pages are server-rendered `html/template`, and every one works with JavaScript off, because
-there is none. The proposal planned on vendoring htmx for the few places that needed it, and in
-the end only one place did: the Add page, which waits on a discovery that takes a few seconds. A
-`<meta http-equiv="refresh">` every three seconds does that job well enough. Dropping htmx means one
-less vendored dependency to keep patched, and a Content-Security-Policy with no `script-src` at all:
+The pages are server-rendered `html/template`, and every one works with JavaScript off. On top of
+that there's [htmx](https://htmx.org/) and one small `static/site.js` of our own, both served from
+`static/`, and nothing inline. The Content-Security-Policy is:
 
 ```
-default-src 'none'; style-src 'self'; img-src 'self' https: data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'
+default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'
 ```
 
 `img-src https:` is for source artwork, which is linked from the publisher and never copied, like
 everything else. `data:` is for the icons Pico draws in checkboxes, radio buttons and selects, which
-are SVGs in its stylesheet. A test fails if any page it renders has a `<script>` in it.
+are SVGs in its stylesheet. There's no `unsafe-eval`, so anything in htmx that runs code from an
+attribute (`hx-on`, trigger filters, `js:` values) is blocked, and we don't use it.
 
-[A better website](../proposals/web-ui.md) brings htmx back for live progress, and this section
-changes with it.
+What htmx does:
+
+- Pause, resume, skip and jump on the Read page post as before and follow the redirect, then swap
+  `#summary` (the pace, the position and the controls), `#history` and `#status` out of the page that
+  comes back. A refusal (a jump backwards, say) renders the whole page with the reason in `#status`,
+  so it's swapped in the same way.
+- Browse searches as you type, 300ms after the last key, swapping `#results` and pushing the
+  `?q=` URL so a search can still be linked to.
+
+Every element with `hx-get` or `hx-post` is a form whose `action` and `method` say the same thing,
+so with JavaScript off it posts and redirects as it always did. The tests check that on every page
+they render, and that there's no inline script and no `hx-on`.
+
+`site.js` shows a copy button next to each feed link (only where the browser has a clipboard, which
+means https or localhost), and when a request htmx made fails with something other than a page,
+such as an expired session's plain-text 403, it puts the message in `#status` so the button doesn't
+seem to do nothing. `#status` is where the layout puts errors and notices, and it's an
+`aria-live` region so screen readers announce what lands there.
+
+htmx's own config is in a `<meta name="htmx-config">`: `includeIndicatorCSS: false`, since
+otherwise it adds a stylesheet of its own, and `history: "reload"`, so the back button loads the
+page again and never restores one from a copy.
+
+The Add page still uses a `<meta http-equiv="refresh">` while it waits on a discovery.
+[A better website](../proposals/web-ui.md) replaces that with live progress.
+
+### htmx 4
+
+The proposal was written against htmx 2. By the time it was built htmx 4 was the stable release,
+and it suits us better: it uses `fetch`, doesn't keep copies of pages in `localStorage` (which would
+have held feed links), and only evaluates code for the attributes we don't use. The settings the
+proposal named (`allowEval`, `includeIndicatorStyles`) are htmx 2's and don't exist in 4. Attributes
+aren't inherited in 4 unless you ask, so each form carries its own `hx-target` and `hx-select`.
 
 ## Stylesheet
 
@@ -52,10 +82,10 @@ The pages use [Pico CSS](https://picocss.com/), which styles plain HTML (`<nav>`
 for colours so that it follows the mode too. Pico's `.grid` puts related fields side by side, and
 `<fieldset role="group">` joins an input to its button.
 
-Pico is vendored in `static/vendor/`, with its version in the path, and `static/vendor.json` records
+Pico and htmx are vendored in `static/vendor/`, with its version in the path, and `static/vendor.json` records
 where each file came from and its SHA-256. `make vendor-web` downloads them and checks the hashes,
 and a test fails if a file doesn't match or isn't listed. Because the path changes with the version,
-vendored files are served as immutable for a year, and `style.css` for an hour. Dependabot can't
+vendored files are served as immutable for a year, and `style.css` and `site.js` for an hour. Dependabot can't
 see vendored files, so the `vendor-web` workflow checks each one's GitHub releases on Mondays and
 opens an issue when there's a newer one.
 

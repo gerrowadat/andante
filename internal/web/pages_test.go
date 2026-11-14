@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/PuerkitoBio/goquery"
 	catalogue "github.com/gerrowadat/andante/internal/catalogue/store"
 	"github.com/gerrowadat/andante/internal/discovery/sitetest"
 	"github.com/gerrowadat/andante/internal/feed"
@@ -60,10 +61,45 @@ func (f *fixture) person(t *testing.T, name string, admin bool) person {
 func (f *fixture) get(t *testing.T, p person, path string) answer {
 	t.Helper()
 	got := f.do(t, http.MethodGet, path, nil, home, p.session)
-	if strings.Contains(got.body, "<script") {
-		t.Errorf("%s has a script, and every page has to work without one", path)
-	}
+	worksWithoutScripts(t, path, got.body)
 	return got
+}
+
+// worksWithoutScripts checks that a page runs no script of its own making, and that
+// anything htmx does is something its form does with JavaScript off.
+func worksWithoutScripts(t *testing.T, path, body string) {
+	t.Helper()
+	doc := parse(t, body)
+	doc.Find("script").Each(func(_ int, s *goquery.Selection) {
+		if src, _ := s.Attr("src"); !strings.HasPrefix(src, "/static/") || s.Text() != "" {
+			t.Errorf("%s has an inline script, or one from elsewhere: src %q", path, src)
+		}
+	})
+	doc.Find("*").Each(func(_ int, s *goquery.Selection) {
+		for _, a := range s.Nodes[0].Attr {
+			if strings.HasPrefix(a.Key, "hx-on") {
+				t.Errorf("%s has %s, which needs eval", path, a.Key)
+			}
+		}
+	})
+	for verb, method := range map[string]string{"hx-get": "get", "hx-post": "post"} {
+		doc.Find("[" + verb + "]").Each(func(_ int, s *goquery.Selection) {
+			want, _ := s.Attr(verb)
+			action, _ := s.Attr("action")
+			if got, _ := s.Attr("method"); !s.Is("form") || action != want || got != method {
+				t.Errorf("%s: %s=%q is on a <%s> with action %q and method %q, so it doesn't work without JavaScript", path, verb, want, goquery.NodeName(s), action, got)
+			}
+		})
+	}
+}
+
+func parse(t *testing.T, body string) *goquery.Document {
+	t.Helper()
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return doc
 }
 
 func (f *fixture) post(t *testing.T, p person, path string, form url.Values) answer {
@@ -280,6 +316,9 @@ func TestReadingASerial(t *testing.T) {
 	if browse.status != http.StatusOK || !strings.Contains(browse.body, "Harbour Lights") {
 		t.Errorf("browse: %d %s", browse.status, browse.body)
 	}
+	if results := parse(t, browse.body).Find("#results").Text(); !strings.Contains(results, "Harbour Lights") {
+		t.Errorf("browse has no #results for typing in the search box to swap: %q", results)
+	}
 	if got := f.get(t, alice, "/sources?q=nothing-like-it"); strings.Contains(got.body, "Harbour Lights") {
 		t.Error("a search that shouldn't match did")
 	}
@@ -314,6 +353,20 @@ func TestReadingASerial(t *testing.T) {
 			t.Errorf("the read's page has no %q", want)
 		}
 	}
+	// The controls swap #summary, #history and #status in place, so each has to be
+	// there, and the controls have to be inside what they swap.
+	doc := parse(t, shown.body)
+	if doc.Find("#summary form[hx-post$='/skip']").Length() != 1 || doc.Find("#summary dl").Length() != 1 {
+		t.Error("the read's page has no #summary with its pace and controls")
+	}
+	if doc.Find("#history table").Length() != 1 || doc.Find("#status[aria-live]").Length() != 1 {
+		t.Error("the read's page has no #history, or no #status that's announced")
+	}
+	link := doc.Find("a.url").First()
+	copied := doc.Find("button[data-copy]").First()
+	if href, _ := link.Attr("href"); href == "" || copied.AttrOr("data-copy", "") != href || copied.AttrOr("hidden", "no") == "no" {
+		t.Errorf("the copy button: %q for %q, which should start hidden", copied.AttrOr("data-copy", ""), href)
+	}
 	if home := f.get(t, alice, "/"); !strings.Contains(home.body, "Mornings") {
 		t.Error("the home page doesn't list the read")
 	}
@@ -342,8 +395,14 @@ func TestReadingASerial(t *testing.T) {
 	if got := f.post(t, alice, r+"/jump", url.Values{"seq": {"3"}}); got.status != http.StatusSeeOther {
 		t.Errorf("jump: %d %s", got.status, got.body)
 	}
-	if got := f.post(t, alice, r+"/jump", url.Values{"seq": {"1"}}); got.status != http.StatusConflict {
-		t.Errorf("a jump backwards: %d", got.status)
+	backwards := f.post(t, alice, r+"/jump", url.Values{"seq": {"1"}})
+	if backwards.status != http.StatusConflict {
+		t.Errorf("a jump backwards: %d", backwards.status)
+	}
+	// htmx swaps a refusal in like any other page, so the reason has to be in #status.
+	refused := parse(t, backwards.body)
+	if !strings.Contains(refused.Find("#status").Text(), "That didn't work") || refused.Find("#summary").Length() != 1 {
+		t.Errorf("a refused jump doesn't say why in #status: %s", backwards.body)
 	}
 	if got := f.post(t, alice, r+"/pace", url.Values{"preset": {"replay"}, "speed": {"7"}, "max_gap": {"3"}}); got.status != http.StatusSeeOther {
 		t.Fatalf("repace: %d %s", got.status, got.body)

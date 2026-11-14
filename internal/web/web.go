@@ -47,10 +47,11 @@ const (
 	// hashTimeout is how long a login waits for a turn at hashing.
 	hashTimeout = 10 * time.Second
 
-	// securityPolicy lets a page do nothing but post forms to this site, use its own
-	// stylesheet and images, and show a source's artwork, which lives on the publisher's
-	// site. data: images are the icons Pico draws in checkboxes and selects.
-	securityPolicy = "default-src 'none'; style-src 'self'; img-src 'self' https: data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+	// securityPolicy lets a page run its own scripts and nothing inline, fetch from and
+	// post forms to this site, use its own stylesheets and images, and show a source's
+	// artwork, which lives on the publisher's site. data: images are the icons Pico
+	// draws in checkboxes and selects.
+	securityPolicy = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 
 	hstsAge = "max-age=31536000"
 
