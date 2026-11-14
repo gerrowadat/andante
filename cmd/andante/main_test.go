@@ -830,6 +830,15 @@ func TestSettingsCommands(t *testing.T) {
 	if r := h.run("settings", "set", "--password-min-length", "6"); r.err == nil {
 		t.Error("accepted a password minimum of 6")
 	}
+	if got := h.ok(t, "settings"); !strings.Contains(got, "Theme:") || !strings.Contains(got, "default, ") {
+		t.Errorf("settings without a theme set = %s", got)
+	}
+	if got := h.ok(t, "settings", "set", "--theme", "slate"); !regexp.MustCompile(`Theme:\s+slate`).MatchString(got) {
+		t.Errorf("settings with a theme = %s", got)
+	}
+	if r := h.run("settings", "set", "--theme", "plaid"); r.err == nil {
+		t.Error("accepted a theme there isn't")
+	}
 }
 
 func TestUserCommands(t *testing.T) {

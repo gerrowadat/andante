@@ -31,6 +31,10 @@ ten recovery codes, each good for one login without your phone. An admin can req
 everyone who logs in with a password, on the Users page or with `andante settings set
 --require-two-factor`, and can turn off someone's if they've lost their phone and their codes.
 
+An admin picks how the site looks for everyone on the Users page, or with `andante settings set
+--theme paper`. `andante settings` lists the themes. Each has light and dark colours, and your
+browser's light or dark setting picks between them. Feed pages use the theme too.
+
 The rest of this section does the same things with the CLI.
 
 ## Add a Serial

@@ -116,6 +116,8 @@ type site struct {
 	oidc       *oidcLogin
 	oidcLogins *prometheus.CounterVec
 	inviteUses *prometheus.CounterVec
+	// themeFallbacks counts serving the default theme in place of the chosen one.
+	themeFallbacks *prometheus.CounterVec
 	// streams is for the pages that show things as they happen.
 	streams     streamMetrics
 	streamLimit *streamLimit
@@ -154,6 +156,7 @@ func New(opts Options) http.Handler {
 		}, []string{"result"}),
 	}
 	s.streams = newStreamMetrics(opts.Registry)
+	s.themeFallbacks = newThemeFallbacks(opts.Registry)
 	s.streamLimit = &streamLimit{byUser: map[int64]int{}}
 	s.watcher = newWatcher(opts)
 	opts.Registry.MustRegister(newSessions(opts))
@@ -175,6 +178,7 @@ func New(opts Options) http.Handler {
 		mux.HandleFunc(rt.pattern, s.guard(rt))
 	}
 	mux.Handle("GET /static/", staticHandler())
+	mux.HandleFunc("GET /static/theme.css", s.themeCSS)
 	mux.HandleFunc("GET /invite/{token}", s.showInvite)
 	// It's mounted even without passwords, for picking a name before single sign-on.
 	mux.HandleFunc("POST /invite/{token}", s.useInvite)

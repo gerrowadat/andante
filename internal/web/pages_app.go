@@ -127,6 +127,7 @@ var routes = []route{
 	{pattern: "POST /users/invite", admin: true, handle: (*site).resetLink},
 	{pattern: "POST /users/invite-settings", admin: true, handle: (*site).inviteSettings},
 	{pattern: "POST /users/password-policy", admin: true, handle: (*site).passwordPolicy},
+	{pattern: "POST /users/theme", admin: true, handle: (*site).setTheme},
 	{pattern: "GET /invites", handle: (*site).invites},
 	{pattern: "POST /invites", handle: (*site).createInvite},
 	{pattern: "POST /invites/{id}/withdraw", owns: ownsInvite, handle: (*site).withdrawInvite},

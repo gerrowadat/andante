@@ -31,6 +31,7 @@ Start at the [project README](../README.md) if you don't know what andante is ye
   - [Users and a web UI](design/web-ui.md): the decisions behind accounts and the website, and where to find each part.
   - [Login](design/login.md): passwords, sessions, invites, throttling, the audit log.
   - [Pages](design/pages.md): the website, who can reach what, and the feed page.
+  - [A better website](design/website.md): why htmx, Server-Sent Events and Pico CSS, and the themes.
   - [Bootstrapping](design/bootstrap.md): the token that makes the first admin without a shell.
   - [Invites](design/invites.md): users inviting people, links for more than one, who invited whom.
   - [Logs](design/logs.md): letting admins read the services' logs and the crawl log.
@@ -41,7 +42,7 @@ Start at the [project README](../README.md) if you don't know what andante is ye
 - [`proposals/`](proposals/): ideas that aren't built:
   - [Discovery](proposals/discovery.md): later strategies, and mid-archive insertions.
   - [Feed links](proposals/feed-links.md): per-read link templates, such as for discussion.
-  - [A better website](proposals/web-ui.md): live progress, a proper stylesheet and themes, with htmx and Pico CSS.
+  - [More for the website](proposals/website.md): a live Read page, and uploaded or per-user themes.
 
 ## Building It
 

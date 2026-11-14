@@ -90,6 +90,9 @@ vendored files are served as immutable for a year, and `style.css` and `site.js`
 see vendored files, so the `vendor-web` workflow checks each one's GitHub releases on Mondays and
 opens an issue when there's a newer one.
 
+Between the two comes `static/theme.css`, the theme an admin picked, which sets Pico's variables.
+It's made from a Design Tokens file, and [`website.md`](website.md#themes) says how.
+
 ## Pages and the API Share One Layer
 
 The pages run in the same process as the API, and calling it over HTTP would need an API token for
@@ -238,8 +241,10 @@ Read page, the feed page and the feed's own description (#30).
 A feed URL with no extension (`/f/{token}`) is a page instead of a feed. It's for a friend who
 opens their link in a browser. It shows the source, the pace, how many entries are out, the next
 release and links to each format, and for an owner link, the "next one now" button. It shows
-nothing the feed doesn't, and nothing about who else reads it. The response has
-`no-referrer`, `no-store` and a CSP of `default-src 'none'`, and a revoked token gets a 404.
+nothing the feed doesn't, and nothing about who else reads it. It has the website's stylesheets,
+theme and all. The response has `no-referrer`, so the stylesheet requests don't carry the token,
+`no-store`, and a CSP of `default-src 'none'; style-src 'self'; img-src data:`, with no scripts. A
+revoked token gets a 404.
 
 ## Users
 
