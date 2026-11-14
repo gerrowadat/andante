@@ -50,6 +50,14 @@ func TestFixtures(t *testing.T) {
 			path: "jsonld-only/2.html", title: "Episode 2", image: "https://comic.example/art/2.webp",
 			next: "https://comic.example/dir/3.html", date: "2020-03-02T00:00:00Z",
 		},
+		{
+			path: "labelled-nav/2.html", title: "Lantern Hill - Page 2", image: "https://comic.example/comics/2.jpg?v=1",
+			next: "https://comic.example/dir/3.html",
+		},
+		{
+			// The last page's only "Next" goes to another site.
+			path: "labelled-nav/3.html", title: "Lantern Hill - Page 3", image: "https://comic.example/comics/3.jpg?v=1",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {

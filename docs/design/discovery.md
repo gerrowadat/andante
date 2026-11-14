@@ -67,8 +67,8 @@ robots.txt, spacing and the SSRF guard all apply. In order, it:
 2. Fetches the address. If that's a feed, it's used as it is.
 3. Follows `<link rel="alternate">` feeds, then tries common paths such as `/feed` and `/rss.xml`.
 4. If a feed looks cut off, tries `?paged=2`. A different first item means it's paged.
-5. If no feed gets the whole archive, looks for a first page to crawl from: `rel="first"`, or the
-   platform patterns the extractors already know. A crawl ranks above a feed that's cut off.
+5. If no feed gets the whole archive, looks for a first page to crawl from: `rel="first"`, the
+   platform patterns the extractors already know, or a link that says "First". A crawl ranks above a feed that's cut off.
 
 Each idea then gets a normal probe, and one that fails is dropped, so a broken feed can't hide a crawl
 that would work. A paged feed's probe stops after two pages, because walking the whole of one here
@@ -100,7 +100,18 @@ to heuristics, in this order:
    counterparts.
 4. **Known platform patterns**: ComicControl (Hiveworks), the WordPress comic
    plugins (Webcomic, Toocheke, ComicPress/ComicEasel), common class names.
-5. **User overrides**: CSS selectors in the source config. If set, these win.
+5. **What a person reads**: a link on the same site labelled "Next", "Previous" or "First"
+   (its text, else its `title` or `aria-label`, else the `alt` of an image inside it), and, for
+   `page` only, the first image whose class, id or path contains "comic". Images in `header`,
+   `footer` and `nav`, and button images inside those links, don't count.
+6. **User overrides**: CSS selectors in the source config. If set, these win.
+
+The labels have to match whole, once lower-cased and stripped of punctuation, so "Next »"
+counts and "Next week: the finale" doesn't. Arrows on their own don't count, because "»" is
+next on one site and last on another. A lot of hand-built comic sites have no metadata at all
+and draw their navigation as images with alt text, which is what step 5 is for. Picking the
+biggest image would also work for some of them, but that means fetching every image, so it
+isn't done.
 
 The extractor returns warnings along with fields ("no image found", "next link
 points to the current page", "image is a site logo shared by 90% of pages").
@@ -157,9 +168,9 @@ a next link pointing back to the same page, or N consecutive misses
 ## Testing
 
 `testdata/sites/<name>/` holds small fixture sites that mimic real platforms:
-ComicControl, WordPress + Webcomic, a site with only JSON-LD, a site with a cycle, one
-with a missing next link mid-archive, a robots.txt disallow, and one that a test makes
-return 429 with `Retry-After`. Tests serve them with `httptest` and use a fake clock
+ComicControl, WordPress + Webcomic, a site with only JSON-LD, one with no metadata and
+buttons drawn as images, a site with a cycle, one with a missing next link mid-archive, a
+robots.txt disallow, and one that a test makes return 429 with `Retry-After`. Tests serve them with `httptest` and use a fake clock
 for politeness timing. Their fetcher can only dial loopback, so a test that strays
 onto the real network fails.
 

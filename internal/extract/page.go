@@ -14,7 +14,8 @@ import (
 
 // pageExtractor handles image-led pages, such as a comic's. Each source below
 // fills only what the ones before it left empty, in the order open metadata
-// first, heuristics after. Selector overrides win over all of them.
+// first, then platform markup, then heuristics. Selector overrides win over all
+// of them.
 type pageExtractor struct{}
 
 // Selectors for platforms: ComicControl (Hiveworks), then the WordPress comic
@@ -31,7 +32,13 @@ func (pageExtractor) Extract(page Page, overrides Overrides) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("parse page: %w", err)
 	}
-	fields, warnings := common(doc, page, overrides, platform(doc))
+	patterns := platform(doc)
+	if len(patterns.Images) == 0 {
+		if image := mainImage(doc); image != "" {
+			patterns.Images = []string{image}
+		}
+	}
+	fields, warnings := common(doc, page, overrides, patterns)
 	if len(fields.Images) == 0 {
 		warnings = append(warnings, "no image found")
 	}
@@ -48,6 +55,7 @@ func common(doc *goquery.Document, page Page, overrides Overrides, patterns Fiel
 	merge(&fields, openGraph(doc))
 	merge(&fields, linkRelations(doc))
 	merge(&fields, patterns)
+	merge(&fields, heuristics(doc, page.URL))
 	merge(&fields, Fields{Title: strings.TrimSpace(doc.Find("title").First().Text())})
 
 	overridden := selected(doc, overrides)

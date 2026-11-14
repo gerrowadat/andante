@@ -119,8 +119,11 @@ curl -X POST -H "Authorization: Bearer $ANDANTE_TOKEN" -H 'Content-Type: applica
 ## Selector Overrides
 
 andante looks for open metadata first: schema.org JSON-LD, then Open Graph, then link
-relations, then the markup of common comic platforms. When that picks the wrong thing, set
-CSS selectors in the source's config. If they're set, they win:
+relations, then the markup of common comic platforms. Failing all of those, it takes a link on
+the same site that says "Next" (in its text, its title, or the alt text of a button image in
+it), and on a `page` the first image whose class, id or path says "comic", leaving out the
+header, footer and navigation. When that picks the wrong thing, set CSS selectors in the
+source's config. If they're set, they win:
 
 ```json
 {

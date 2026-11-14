@@ -6,6 +6,7 @@ package find_test
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -164,6 +165,27 @@ func TestAComicWithNoFeed(t *testing.T) {
 	}
 	if got := site.Count("/feed"); got != 1 {
 		t.Errorf("looked for /feed %d times", got)
+	}
+}
+
+func TestAComicWithOnlyButtons(t *testing.T) {
+	f := newFixture(t)
+	site := sitetest.Serve(t, "labelled-nav")
+	candidates := f.find(t, site.URL+"/")
+	if len(candidates) != 1 {
+		t.Fatalf("candidates = %+v", candidates)
+	}
+	c := candidates[0]
+	if strategyOf(t, c) != "crawl" || !strings.Contains(string(c.Config), "/1.html") {
+		t.Errorf("config = %s", c.Config)
+	}
+	if len(c.Sample) != 3 {
+		t.Fatalf("sample = %+v", c.Sample)
+	}
+	for i, e := range c.Sample {
+		if want := fmt.Sprintf("%s/comics/%d.jpg?v=1", site.URL, i+1); len(e.Images) != 1 || e.Images[0] != want {
+			t.Errorf("entry %d images = %v, want %s", i+1, e.Images, want)
+		}
 	}
 }
 
