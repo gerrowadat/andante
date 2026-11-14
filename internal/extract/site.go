@@ -42,7 +42,10 @@ func ReadSite(page Page) (Site, error) {
 	})
 	first, ok := doc.Find(`link[rel~="first"], a[rel~="first"]`).First().Attr("href")
 	if !ok {
-		first, _ = doc.Find(platformFirst).First().Attr("href")
+		first, ok = doc.Find(platformFirst).First().Attr("href")
+	}
+	if !ok {
+		first = navLink(doc, page.URL, firstLabels)
 	}
 	if first = strings.TrimSpace(first); first != "" {
 		site.First = absoluteURL(first, page.URL)
