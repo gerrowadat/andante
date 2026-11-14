@@ -21,6 +21,17 @@ SELECT * FROM sources WHERE config->>'feed_url' = $1 ORDER BY id LIMIT 1;
 -- name: ListEntries :many
 SELECT * FROM entries WHERE source_id = $1 AND seq > $2 ORDER BY seq LIMIT $3;
 
+-- name: CountEntries :one
+SELECT count(*) FROM entries WHERE source_id = $1;
+
+-- name: LastEntry :one
+SELECT * FROM entries WHERE source_id = $1 ORDER BY seq DESC LIMIT 1;
+
+-- name: NotifySourceChanged :exec
+-- Postgres sends it when the transaction commits, so a listener never hears of a
+-- change before it can read it.
+SELECT pg_notify('andante_source', sqlc.arg(source_id)::bigint::text);
+
 -- name: SyncRevision :one
 SELECT revision FROM sync_state FOR UPDATE;
 

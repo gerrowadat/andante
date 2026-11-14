@@ -4,6 +4,7 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -43,6 +44,8 @@ type job struct {
 	done        bool
 	failed      string
 	result      []client.Candidate
+	// changed is closed when the job changes, for a page waiting on it.
+	changed chan struct{}
 }
 
 type jobs struct {
@@ -83,7 +86,7 @@ func (j *jobs) start(owner int64, address string, now time.Time) (*job, bool) {
 	}
 	b := make([]byte, 16)
 	_, _ = rand.Read(b)
-	created := &job{id: hex.EncodeToString(b), address: address, owner: owner, started: now}
+	created := &job{id: hex.EncodeToString(b), address: address, owner: owner, started: now, changed: make(chan struct{})}
 	j.byID[created.id] = created
 	return created, true
 }
@@ -102,8 +105,9 @@ func (j *jobs) get(id string, owner int64) (job, bool) {
 func (j *jobs) finish(id string, result []client.Candidate, failed string) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	if found, ok := j.byID[id]; ok {
+	if found, ok := j.byID[id]; ok && !found.done {
 		found.done, found.result, found.failed = true, result, failed
+		close(found.changed)
 	}
 }
 
@@ -189,17 +193,14 @@ func how(c client.Candidate) string {
 	}[strategy]
 }
 
-func (s *site) found(w http.ResponseWriter, r *http.Request, v visitor) {
-	j, ok := s.jobs.get(r.PathValue("job"), v.actor.UserID)
-	if !ok {
-		http.NotFound(w, r)
-		return
-	}
-	data := struct {
-		ID, Address, Failed string
-		Done                bool
-		Candidates          []candidateRow
-	}{ID: j.id, Address: j.address, Failed: j.failed, Done: j.done}
+type foundData struct {
+	ID, Address, Failed string
+	Done                bool
+	Candidates          []candidateRow
+}
+
+func foundOf(j job) foundData {
+	data := foundData{ID: j.id, Address: j.address, Failed: j.failed, Done: j.done}
 	for _, c := range j.result {
 		row := candidateRow{Title: c.Title, How: how(c), Kind: string(c.DefaultKind), Similar: c.SimilarSourceIds, Warnings: c.Warnings}
 		if existing, err := c.ExistingSourceID.Get(); err == nil {
@@ -217,11 +218,76 @@ func (s *site) found(w http.ResponseWriter, r *http.Request, v visitor) {
 		}
 		data.Candidates = append(data.Candidates, row)
 	}
-	p := pageData{Title: "Add " + j.address, Data: data}
+	return data
+}
+
+func (s *site) found(w http.ResponseWriter, r *http.Request, v visitor) {
+	j, ok := s.jobs.get(r.PathValue("job"), v.actor.UserID)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	p := pageData{Title: "Add " + j.address, Data: foundOf(j)}
 	if !j.done {
+		// For a browser without JavaScript, which doesn't follow the stream.
 		p.Refresh = refreshSec
 	}
 	s.show(w, v, http.StatusOK, foundView, p)
+}
+
+// foundEvents streams what a look at a site finds, as it finds it: the same part of
+// the page found shows, each time it changes, and then the signal to stop.
+func (s *site) foundEvents(w http.ResponseWriter, r *http.Request, v visitor) {
+	j, ok := s.jobs.get(r.PathValue("job"), v.actor.UserID)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	stream, ok := s.openStream(w, r, v, "discovery")
+	if !ok {
+		return
+	}
+	defer s.closeStream(stream, v)
+	for {
+		var b bytes.Buffer
+		p := pageData{CSRF: csrfFor(v.raw), Data: foundOf(j)}
+		if err := s.views[foundView].ExecuteTemplate(&b, "look", p); err != nil {
+			s.opts.Logger.Warn("could not write a page", "error", err)
+			return
+		}
+		if stream.send("", b.Bytes()) != nil {
+			return
+		}
+		if j.done {
+			_ = stream.send("done", nil)
+			return
+		}
+		if !s.await(r, stream, j.changed) {
+			return
+		}
+		if j, ok = s.jobs.get(j.id, v.actor.UserID); !ok {
+			return
+		}
+	}
+}
+
+// await waits for changed, keeping the stream alive meanwhile. It's false when
+// the stream should end: the browser left, the server is stopping or a write failed.
+func (s *site) await(r *http.Request, stream *eventStream, changed <-chan struct{}) bool {
+	for {
+		select {
+		case <-r.Context().Done():
+			return false
+		case <-s.opts.Stopping:
+			return false
+		case <-stream.beat.C:
+			if stream.ping() != nil {
+				return false
+			}
+		case <-changed:
+			return true
+		}
+	}
 }
 
 func (s *site) addCandidate(w http.ResponseWriter, r *http.Request, v visitor) {

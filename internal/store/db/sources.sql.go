@@ -12,6 +12,17 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countEntries = `-- name: CountEntries :one
+SELECT count(*) FROM entries WHERE source_id = $1
+`
+
+func (q *Queries) CountEntries(ctx context.Context, sourceID int64) (int64, error) {
+	row := q.db.QueryRow(ctx, countEntries, sourceID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countReadsOfSource = `-- name: CountReadsOfSource :one
 SELECT count(*) FROM reads WHERE source_id = $1
 `
@@ -92,6 +103,35 @@ func (q *Queries) GetSource(ctx context.Context, id int64) (Source, error) {
 		&i.LastCrawledAt,
 		&i.LastError,
 		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const lastEntry = `-- name: LastEntry :one
+SELECT id, source_id, seq, kind, url, guid, title, summary, content_html, images, alt_text, enclosures, duration, extra, original_date, discovered_at, available_at FROM entries WHERE source_id = $1 ORDER BY seq DESC LIMIT 1
+`
+
+func (q *Queries) LastEntry(ctx context.Context, sourceID int64) (Entry, error) {
+	row := q.db.QueryRow(ctx, lastEntry, sourceID)
+	var i Entry
+	err := row.Scan(
+		&i.ID,
+		&i.SourceID,
+		&i.Seq,
+		&i.Kind,
+		&i.Url,
+		&i.Guid,
+		&i.Title,
+		&i.Summary,
+		&i.ContentHtml,
+		&i.Images,
+		&i.AltText,
+		&i.Enclosures,
+		&i.Duration,
+		&i.Extra,
+		&i.OriginalDate,
+		&i.DiscoveredAt,
+		&i.AvailableAt,
 	)
 	return i, err
 }
@@ -222,6 +262,17 @@ func (q *Queries) ListSources(ctx context.Context, arg ListSourcesParams) ([]Sou
 		return nil, err
 	}
 	return items, nil
+}
+
+const notifySourceChanged = `-- name: NotifySourceChanged :exec
+SELECT pg_notify('andante_source', $1::bigint::text)
+`
+
+// Postgres sends it when the transaction commits, so a listener never hears of a
+// change before it can read it.
+func (q *Queries) NotifySourceChanged(ctx context.Context, sourceID int64) error {
+	_, err := q.db.Exec(ctx, notifySourceChanged, sourceID)
+	return err
 }
 
 const peekSyncRevision = `-- name: PeekSyncRevision :one

@@ -38,6 +38,10 @@ you create. Tokens and read IDs are never labels.
 | `andante_oidc_logins_total` | `result` | Logins with the OpenID provider: `ok`, `created`, `linked`, `refused` or `failed` |
 | `andante_invite_uses_total` | `result` | Invites used: `ok`, or `refused` when the link was used up, withdrawn or out of date |
 | `andante_sessions` | `method` | Live website sessions, by how they logged in: `password` or `oidc` |
+| `andante_web_streams` | `stream` | Open event streams to the website's pages: `discovery` or `source` |
+| `andante_web_stream_events_total` | `stream` | Events sent on those streams |
+| `andante_web_streams_refused_total` | `stream` | Streams refused because someone had too many open |
+| `andante_web_listen_failures_total` | | Times the server lost, or couldn't get, the database connection that hears about changed sources |
 | `andante_api_requests_total` | `route`, `status` | API requests |
 | `andante_log_records_total` | `level` | Records logged: `debug`, `info`, `warn` or `error` |
 
