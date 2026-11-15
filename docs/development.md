@@ -22,6 +22,7 @@ version CI pins. A different local version can disagree with CI.
 | `make test` | `go test -race -count=1 ./...`. Database tests skip |
 | `make test-db` | The same tests against the `compose.yaml` Postgres, with no skips |
 | `make e2e` | The end-to-end suite (build tag `e2e`), against the `compose.yaml` Postgres |
+| `make e2e-browser` | The browser e2e tests only, with a pinned headless Chrome (see below) |
 | `make dist` | The release archives, into `out/dist`; needs GNU tar |
 | `make lint` | golangci-lint with `.golangci.yml` |
 | `make spec-lint` | Spectral over `api/openapi.yaml`, in Docker as CI runs it |
@@ -47,6 +48,12 @@ failure, so run `make test-db` before pushing anything that touches the database
 Two e2e tests drive Chrome through the website with chromedp. They look for Chrome or Chromium on
 the `PATH`, or use the one `ANDANTE_E2E_CHROME` names, and skip if there isn't one. CI's e2e runs set
 `ANDANTE_REQUIRE_BROWSER=1`, which turns that skip into a failure.
+
+`make e2e-browser` runs just those tests and fails rather than skips. It uses
+`scripts/chrome-headless.sh`, which downloads a pinned
+[chrome-headless-shell](https://developer.chrome.com/blog/chrome-for-testing) into
+`~/.cache/andante` (or `$ANDANTE_CACHE_DIR`), checks its hash, and prints its path. That's pinned for
+Linux on x86_64 only; anywhere else, install Chrome and set `ANDANTE_E2E_CHROME`.
 
 ## Changing the Schema
 

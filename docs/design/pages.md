@@ -225,7 +225,8 @@ library would have been more than the job. A catalogue that answers with JSON an
 - **The events are documented in an `x-events` extension.** OpenAPI 3.1 can't describe what's in
   each event of a stream (3.2's `itemSchema` can), so the media type is a string, and `x-events`
   names the schema of each event. oapi-codegen can't see that, so the catalogue's client is
-  generated without pruning, to keep `DiscoveryStage`.
+  generated without pruning, to keep `DiscoveryStage`. When oapi-codegen supports OpenAPI 3.2,
+  this moves to `itemSchema` (#86).
 - **The "first page" path has one stage of its own.** It's a probe, which doesn't stream, so the
   server says it's following the next links and waits.
 
