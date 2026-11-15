@@ -1594,6 +1594,49 @@ func TestMe(t *testing.T) {
 	}
 }
 
+func TestPickingYourOwnTheme(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	bob := f.user(t, "bob", false)
+	if me, err := bob.client.GetMeWithResponse(ctx); err != nil || me.JSON200 == nil || me.JSON200.Theme != nil {
+		t.Fatalf("by default: %v %s", err, me.Body)
+	}
+	paper := "paper"
+	got, err := bob.client.UpdateMeWithApplicationMergePatchPlusJSONBodyWithResponse(ctx, client.MePatch{Theme: &paper})
+	if err != nil || got.JSON200 == nil || got.JSON200.Theme == nil || *got.JSON200.Theme != "paper" {
+		t.Fatalf("picking paper: %v %s", err, got.Body)
+	}
+	if me, err := bob.client.GetMeWithResponse(ctx); err != nil || me.JSON200 == nil || me.JSON200.Theme == nil || *me.JSON200.Theme != "paper" {
+		t.Errorf("after: %v %s", err, me.Body)
+	}
+	// It's bob's, and the site's and the admin's are as they were.
+	if admin, err := f.client.GetMeWithResponse(ctx); err != nil || admin.JSON200 == nil || admin.JSON200.Theme != nil {
+		t.Errorf("admin: %v %s", err, admin.Body)
+	}
+	if site, err := f.store.GetTheme(ctx); err != nil || site != "default" {
+		t.Errorf("site = %q, %v", site, err)
+	}
+	// An empty patch changes nothing.
+	if same, err := bob.client.UpdateMeWithApplicationMergePatchPlusJSONBodyWithResponse(ctx, client.MePatch{}); err != nil || same.JSON200 == nil || same.JSON200.Theme == nil || *same.JSON200.Theme != "paper" {
+		t.Errorf("empty patch: %v %s", err, same.Body)
+	}
+	plaid := "plaid"
+	bad, err := bob.client.UpdateMeWithApplicationMergePatchPlusJSONBodyWithResponse(ctx, client.MePatch{Theme: &plaid})
+	if err != nil || bad.StatusCode() != http.StatusBadRequest || !strings.Contains(string(bad.Body), "default, ") {
+		t.Errorf("a theme there isn't: %v %d %s", err, bad.StatusCode(), bad.Body)
+	}
+	for _, name := range []string{"Not A Name", "-x"} {
+		if bad, err := bob.client.UpdateMeWithApplicationMergePatchPlusJSONBodyWithResponse(ctx, client.MePatch{Theme: &name}); err != nil || bad.StatusCode() != http.StatusBadRequest {
+			t.Errorf("theme %q: %v %d", name, err, bad.StatusCode())
+		}
+	}
+	none := ""
+	cleared, err := bob.client.UpdateMeWithApplicationMergePatchPlusJSONBodyWithResponse(ctx, client.MePatch{Theme: &none})
+	if err != nil || cleared.JSON200 == nil || cleared.JSON200.Theme != nil {
+		t.Errorf("back to the site's: %v %s", err, cleared.Body)
+	}
+}
+
 func TestADisabledUserCantUseTheirToken(t *testing.T) {
 	f := newFixture(t)
 	bob := f.user(t, "bob", false)

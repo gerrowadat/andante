@@ -35,6 +35,8 @@ type Session struct {
 	NeedsTOTP bool
 	// CanInvite means they can make invites.
 	CanInvite bool
+	// Theme is the theme the user picked for the website, or empty to follow the site's.
+	Theme string
 }
 
 // Client is where a request came from.
@@ -96,6 +98,7 @@ func (s *Store) LookupSession(ctx context.Context, raw string, now time.Time) (S
 		HasPassword: row.HasPassword, HasTOTP: row.HasTotp,
 		NeedsTOTP: row.RequireTotp && row.Method == MethodPassword && !row.HasTotp,
 		CanInvite: row.Role == RoleAdmin || row.WhoCanInvite == InvitesByUsers,
+		Theme:     deref(row.Theme),
 	}, nil
 }
 

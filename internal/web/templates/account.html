@@ -23,6 +23,17 @@
 {{else}}<p>Off. With it on, logging in takes a code from an app on your phone as well as your password.</p>
 <p><a href="{{root}}/account/two-factor" role="button" class="outline">Set it up</a></p>{{end}}
 {{end}}
+<h2>Theme</h2>
+<form method="post" action="{{root}}/account/theme">
+  <input type="hidden" name="csrf" value="{{$.CSRF}}">
+  <fieldset>
+    <legend>How the pages look to you</legend>
+    <label><input type="radio" name="theme" value=""{{if not .Theme}} checked{{end}}> <strong>The site's</strong>: whichever an admin has picked</label>
+    {{range .Themes}}<label><input type="radio" name="theme" value="{{.Name}}"{{if eq .Name $.Data.Theme}} checked{{end}}> <strong>{{.Name}}</strong>: {{.Description}}</label>
+    {{end}}
+  </fieldset>
+  <button>Save</button>
+</form>
 <h2>Where you're logged in</h2>
 <div class="overflow-auto"><table>
 <thead><tr><th>From</th><th>Since</th><th>Last seen</th><th></th></tr></thead>

@@ -191,4 +191,5 @@ type User struct {
 	TotpEnabledAt *time.Time
 	TotpLastStep  int64
 	InvitedBy     *string
+	Theme         *string
 }

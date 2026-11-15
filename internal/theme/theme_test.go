@@ -6,6 +6,7 @@ package theme
 import (
 	"encoding/json"
 	"math"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -229,5 +230,12 @@ func TestTokensListed(t *testing.T) {
 	var v json.RawMessage
 	if isAlias(v) {
 		t.Error("nothing is an alias")
+	}
+}
+
+func TestNames(t *testing.T) {
+	names := MustBuiltin().Names()
+	if len(names) < 2 || names[0] != Default || !slices.Contains(names, "paper") {
+		t.Errorf("names = %v", names)
 	}
 }

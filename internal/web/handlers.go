@@ -962,7 +962,10 @@ func (s *site) showAccount(w http.ResponseWriter, r *http.Request, v visitor, st
 		Policy       password.Policy
 		TwoFactor    bool
 		RecoveryLeft int64
-	}{NewToken: newToken, Password: s.canUseTwoFactor(v), Policy: policy, TwoFactor: v.session.HasTOTP}
+		Theme        string
+		Themes       []*theme.Theme
+	}{NewToken: newToken, Password: s.canUseTwoFactor(v), Policy: policy, TwoFactor: v.session.HasTOTP,
+		Theme: v.session.Theme, Themes: theme.MustBuiltin().All()}
 	if data.TwoFactor {
 		if data.RecoveryLeft, err = s.opts.Store.RecoveryCodesLeft(ctx, v.actor.UserID); err != nil {
 			s.fail(w, err)

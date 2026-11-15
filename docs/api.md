@@ -12,7 +12,8 @@ Send an API token as a bearer token (RFC 6750):
 curl -H "Authorization: Bearer $ANDANTE_TOKEN" http://127.0.0.1:8080/api/v1/sources
 ```
 
-Every token belongs to a user, and `GET /me` says who. The first one comes from `POST /bootstrap`
+Every token belongs to a user, and `GET /me` says who. `PATCH /me` changes your own `theme` on
+the website, or with an empty one has you follow the site's. The first one comes from `POST /bootstrap`
 or [`andante-server user add`](configuration.md#users). Make more with `POST /api-tokens`. The raw
 token only appears in that response. Revoking one that's already revoked succeeds. Your last
 active token can't be revoked, because you'd be locked out until someone ran `andante-server user
@@ -131,8 +132,8 @@ Leaving no active admin, or deleting yourself, is a 409.
 `GET /settings` and `PATCH /settings` are for admins too. Besides `require_two_factor` and the
 invite settings, `password_min_length` (8 to 128, 8 to start with), `password_non_letters` (up to the
 minimum length, 1 to start with) and `password_classes` (0 to 4, 0 to start with) say what a new
-password has to be. They don't touch passwords already set. `theme` is the website's theme, one of
-the names in `themes`, which lists the built-in ones with a description of each; anything else is a
+password has to be. They don't touch passwords already set. `theme` is the website's theme for anyone
+who hasn't picked their own, one of the names in `themes`, which lists the built-in ones with a description of each; anything else is a
 400.
 
 ## Importing OPML

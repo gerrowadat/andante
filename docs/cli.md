@@ -164,7 +164,7 @@ andante settings                         # admins only
 andante settings set --require-two-factor
 andante settings set --who-can-invite users --invite-limit 5
 andante settings set --password-min-length 12 --password-non-letters 2 --password-classes 3
-andante settings set --theme paper       # one of the themes andante settings lists
+andante settings set --theme paper       # for everyone who hasn't picked their own
 ```
 
 ## Users
@@ -188,6 +188,7 @@ Disabling someone leaves their feed links working, so that friends on a group re
 andante api spec > openapi.json
 andante version                          # the client's, and the server's when reachable
 andante whoami
+andante whoami set --theme slate         # your own theme on the website; "" for the site's
 ```
 
 ## Completions

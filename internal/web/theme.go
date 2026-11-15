@@ -23,7 +23,7 @@ var Stylesheets = []string{"static/vendor/pico-2.1.1/pico.min.css", "static/them
 func (s *site) themeCSS(w http.ResponseWriter, r *http.Request) {
 	themes := theme.MustBuiltin()
 	t, _ := themes.Lookup(theme.Default)
-	name, err := s.opts.Store.GetTheme(r.Context())
+	name, err := s.themeName(r, themes)
 	switch {
 	case err != nil:
 		// Pico's own look is better than no stylesheet.
@@ -39,10 +39,24 @@ func (s *site) themeCSS(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	h := w.Header()
-	h.Set("Cache-Control", "no-cache")
+	// It differs from one person to the next, so no shared cache may keep it.
+	h.Set("Cache-Control", "private, no-cache")
 	h.Set("ETag", t.ETag)
 	h.Set("Content-Type", "text/css; charset=utf-8")
 	http.ServeContent(w, r, "theme.css", time.Time{}, bytes.NewReader(t.CSS))
+}
+
+// themeName is the theme the visitor picked, if they're logged in and picked one this
+// server has, and the site's otherwise.
+func (s *site) themeName(r *http.Request, themes *theme.Set) (string, error) {
+	if session, _, err := s.sessionOf(r); err == nil && session.Theme != "" {
+		if _, ok := themes.Lookup(session.Theme); ok {
+			return session.Theme, nil
+		}
+		s.opts.Logger.Warn("the user's theme isn't one this server has; using the site's", "theme", session.Theme)
+		s.themeFallbacks.WithLabelValues("unknown").Inc()
+	}
+	return s.opts.Store.GetTheme(r.Context())
 }
 
 func newThemeFallbacks(reg prometheus.Registerer) *prometheus.CounterVec {
@@ -64,4 +78,18 @@ func (s *site) setTheme(w http.ResponseWriter, r *http.Request, v visitor) {
 	}
 	s.audit(r.Context(), v.session.Name, "settings.changed", "theme."+name, s.client(r))
 	http.Redirect(w, r, "/users", http.StatusSeeOther)
+}
+
+// setMyTheme sets the visitor's own theme, or with an empty name, has them follow the site's.
+func (s *site) setMyTheme(w http.ResponseWriter, r *http.Request, v visitor) {
+	name := r.PostForm.Get("theme")
+	if _, ok := theme.MustBuiltin().Lookup(name); name != "" && !ok {
+		s.showAccount(w, r, v, http.StatusUnprocessableEntity, "There's no theme called "+name+".", "", "")
+		return
+	}
+	if _, err := s.opts.Store.SetUserTheme(r.Context(), v.actor, name); err != nil {
+		s.fail(w, err)
+		return
+	}
+	http.Redirect(w, r, "/account", http.StatusSeeOther)
 }

@@ -40,3 +40,6 @@ DELETE FROM users WHERE id = $1;
 
 -- name: LockUsers :exec
 SELECT pg_advisory_xact_lock($1);
+
+-- name: SetUserTheme :one
+UPDATE users SET theme = sqlc.narg(theme) WHERE id = sqlc.arg(id) RETURNING *;

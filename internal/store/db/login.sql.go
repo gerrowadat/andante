@@ -158,7 +158,7 @@ func (q *Queries) GetInviteSettings(ctx context.Context) (GetInviteSettingsRow, 
 }
 
 const getLiveSession = `-- name: GetLiveSession :one
-SELECT s.id, s.user_id, s.last_seen_at, s.method, u.name, u.role,
+SELECT s.id, s.user_id, s.last_seen_at, s.method, u.name, u.role, u.theme,
        (u.password_hash IS NOT NULL)::boolean AS has_password, (u.totp_enabled_at IS NOT NULL)::boolean AS has_totp,
        coalesce((SELECT require_totp FROM settings), false)::boolean AS require_totp,
        coalesce((SELECT who_can_invite FROM settings), 'admins')::text AS who_can_invite
@@ -180,6 +180,7 @@ type GetLiveSessionRow struct {
 	Method       string
 	Name         string
 	Role         string
+	Theme        *string
 	HasPassword  bool
 	HasTotp      bool
 	RequireTotp  bool
@@ -196,6 +197,7 @@ func (q *Queries) GetLiveSession(ctx context.Context, arg GetLiveSessionParams) 
 		&i.Method,
 		&i.Name,
 		&i.Role,
+		&i.Theme,
 		&i.HasPassword,
 		&i.HasTotp,
 		&i.RequireTotp,
@@ -321,7 +323,7 @@ func (q *Queries) InsertInvite(ctx context.Context, arg InsertInviteParams) (Inv
 }
 
 const insertInvitedUser = `-- name: InsertInvitedUser :one
-INSERT INTO users (name, role, invited_by) VALUES ($1, $2, $3) RETURNING id, name, role, created_at, disabled_at, password_hash, totp_sealed, totp_enabled_at, totp_last_step, invited_by
+INSERT INTO users (name, role, invited_by) VALUES ($1, $2, $3) RETURNING id, name, role, created_at, disabled_at, password_hash, totp_sealed, totp_enabled_at, totp_last_step, invited_by, theme
 `
 
 type InsertInvitedUserParams struct {
@@ -344,6 +346,7 @@ func (q *Queries) InsertInvitedUser(ctx context.Context, arg InsertInvitedUserPa
 		&i.TotpEnabledAt,
 		&i.TotpLastStep,
 		&i.InvitedBy,
+		&i.Theme,
 	)
 	return i, err
 }

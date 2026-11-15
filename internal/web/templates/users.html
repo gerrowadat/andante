@@ -49,7 +49,7 @@
 <form method="post" action="{{root}}/users/theme">
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
   <fieldset>
-    <legend>How every page looks, for everyone</legend>
+    <legend>How the pages look, for everyone who hasn't picked their own</legend>
     {{range .Themes}}<label><input type="radio" name="theme" value="{{.Name}}"{{if eq .Name $.Data.Theme}} checked{{end}}> <strong>{{.Name}}</strong>: {{.Description}}</label>
     {{end}}
   </fieldset>
