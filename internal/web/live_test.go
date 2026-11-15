@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -105,32 +106,31 @@ func (s *stream) next(t *testing.T) (event, bool) {
 	}
 }
 
-// until reads events until one contains want, and returns it.
-func (s *stream) until(t *testing.T, want string) event {
+// until reads events until one contains everything in want, and returns it.
+func (s *stream) until(t *testing.T, want ...string) event {
 	t.Helper()
 	for {
 		e, ok := s.next(t)
 		if !ok {
 			t.Fatalf("the stream ended before %q", want)
 		}
-		if strings.Contains(e.data, want) {
+		if !slices.ContainsFunc(want, func(w string) bool { return !strings.Contains(e.data, w) }) {
 			return e
 		}
 	}
 }
 
-// ended says whether the stream ends, without anything but comments, soon.
+// ended says whether the stream ends soon. An event can still come before it does:
+// the test stack changes sources in the background, and one could be on its way
+// when the server stopped.
 func (s *stream) ended(t *testing.T) bool {
 	t.Helper()
 	timeout := time.After(10 * time.Second)
 	for {
 		select {
-		case e, ok := <-s.events:
+		case _, ok := <-s.events:
 			if !ok {
 				return true
-			}
-			if !e.comment {
-				t.Errorf("an event after the end: %+v", e)
 			}
 		case <-timeout:
 			return false
@@ -264,11 +264,10 @@ func TestTheSourcePageShowsIndexingAsItHappens(t *testing.T) {
 		t.Errorf("an admin's event has no crawl log: %s", mine.data)
 	}
 
+	// The sync can bring the entries and the source's new state in separate events.
 	f.indexMore(t, source, 3)
-	if got := hers.until(t, "8 so far"); !strings.Contains(got.data, "More 2") || !strings.Contains(got.data, "Indexing") {
-		t.Errorf("after more were indexed: %s", got.data)
-	}
-	his.until(t, "8 so far")
+	hers.until(t, "8 so far", "More 2", "Indexing")
+	his.until(t, "8 so far", "Indexing")
 
 	if err := f.stack.App.DeleteSource(t.Context(), dave.actor, source); err != nil {
 		t.Fatal(err)
