@@ -107,6 +107,7 @@ var routes = []route{
 	{pattern: "GET /sources/{id}/track", owns: ownsSource, handle: (*site).showTrack},
 	{pattern: "POST /sources/{id}/track", owns: ownsSource, handle: (*site).track},
 	{pattern: "GET /reads/{id}", owns: ownsRead, handle: (*site).read},
+	{pattern: "GET /reads/{id}/events", owns: ownsRead, handle: (*site).readEvents},
 	{pattern: "POST /reads/{id}/pause", owns: ownsRead, handle: (*site).pause},
 	{pattern: "POST /reads/{id}/resume", owns: ownsRead, handle: (*site).resume},
 	{pattern: "POST /reads/{id}/skip", owns: ownsRead, handle: (*site).skip},

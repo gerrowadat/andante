@@ -38,6 +38,9 @@ var (
 	// settle is how long a source stream waits after hearing of a change, so that a
 	// crawl's burst of changes is shown once.
 	settle = time.Second
+	// readRecheck is how often a read stream looks again with nothing to prompt it,
+	// for changes made somewhere other than this page.
+	readRecheck = time.Minute
 )
 
 type streamMetrics struct {
@@ -50,7 +53,7 @@ func newStreamMetrics(reg prometheus.Registerer) streamMetrics {
 	factory := promauto.With(reg)
 	return streamMetrics{
 		open: factory.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "andante_web_streams", Help: "Open event streams to the website's pages, by stream: discovery or source.",
+			Name: "andante_web_streams", Help: "Open event streams to the website's pages, by stream: discovery, source or read.",
 		}, []string{"stream"}),
 		events: factory.NewCounterVec(prometheus.CounterOpts{
 			Name: "andante_web_stream_events_total", Help: "Events sent on the website's event streams, by stream.",

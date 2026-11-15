@@ -287,7 +287,7 @@ func (s *site) sourceEvents(w http.ResponseWriter, r *http.Request, v visitor) {
 		if stream.send("", b.Bytes()) != nil {
 			return
 		}
-		if !s.await(r, stream, changed) {
+		if !s.await(r, stream, changed, nil) {
 			return
 		}
 		// A crawl brings its changes in a burst, which is better shown once.
@@ -519,35 +519,65 @@ func (s *site) read(w http.ResponseWriter, r *http.Request, v visitor) {
 	s.showRead(w, r, v, http.StatusOK, "")
 }
 
-func (s *site) showRead(w http.ResponseWriter, r *http.Request, v visitor, status int, problem string) {
-	found, ok := s.readOf(w, r, v)
-	if !ok {
-		return
+// readPage is what the Read page shows. Its event stream sends the same, without
+// the tokens.
+type readPage struct {
+	readRow
+	Read    db.Read
+	Source  db.Source
+	Tokens  []tokenRow
+	History []historyRow
+	// nextAt is when the next entry is due, if one is.
+	nextAt *time.Time
+}
+
+// readData is the Read page's summary and history, without the tokens.
+func (s *site) readData(ctx context.Context, v visitor, id int64) (readPage, error) {
+	found, err := s.opts.App.Reads.Get(ctx, v.actor, id)
+	if err != nil {
+		return readPage{}, err
 	}
-	ctx := r.Context()
 	source, err := s.opts.Store.GetSource(ctx, found.Read.SourceID)
 	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	tokens, err := s.opts.Store.ListFeedTokens(ctx, v.actor, found.Read.ID, 0, maxReads)
-	if err != nil {
-		s.fail(w, err)
-		return
+		return readPage{}, err
 	}
 	segments, err := s.opts.App.Reads.Segments(ctx, v.actor, found.Read.ID, 0, maxReads)
 	if err != nil {
+		return readPage{}, err
+	}
+	data := readPage{readRow: rowOf(found, source.Title), Read: found.Read, Source: source, nextAt: found.NextRelease}
+	for _, seg := range segments {
+		what := seg.Reason
+		if p, err := reads.PacingOf(seg); err == nil && seg.Reason != string(schedule.ReasonSkip) && seg.Reason != string(schedule.ReasonJump) {
+			what += ": " + schedule.Describe(p)
+		}
+		created := seg.CreatedAt
+		data.History = append(data.History, historyRow{When: stamp(&created), What: what, From: seg.FromSeq})
+	}
+	return data, nil
+}
+
+func (s *site) showRead(w http.ResponseWriter, r *http.Request, v visitor, status int, problem string) {
+	id, ok := idOf(r)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	ctx := r.Context()
+	data, err := s.readData(ctx, v, id)
+	if errors.Is(err, store.ErrNotFound) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
 		s.fail(w, err)
 		return
 	}
-	row := rowOf(found, source.Title)
-	data := struct {
-		readRow
-		Read    db.Read
-		Source  db.Source
-		Tokens  []tokenRow
-		History []historyRow
-	}{readRow: row, Read: found.Read, Source: source}
+	tokens, err := s.opts.Store.ListFeedTokens(ctx, v.actor, data.Read.ID, 0, maxReads)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
 	for _, t := range tokens {
 		token := tokenRow{ID: t.ID, Label: t.Label, Owner: t.Role == feed.RoleOwner, Revoked: t.RevokedAt != nil, Seen: stamp(t.LastSeenAt)}
 		if !token.Revoked {
@@ -562,15 +592,67 @@ func (s *site) showRead(w http.ResponseWriter, r *http.Request, v visitor, statu
 		}
 		data.Tokens = append(data.Tokens, token)
 	}
-	for _, seg := range segments {
-		what := seg.Reason
-		if p, err := reads.PacingOf(seg); err == nil && seg.Reason != string(schedule.ReasonSkip) && seg.Reason != string(schedule.ReasonJump) {
-			what += ": " + schedule.Describe(p)
-		}
-		created := seg.CreatedAt
-		data.History = append(data.History, historyRow{When: stamp(&created), What: what, From: seg.FromSeq})
+	s.show(w, v, status, readView, pageData{Title: data.Read.Name, Error: problem, Data: data})
+}
+
+// readEvents streams a read's summary and history: when the sync changes its
+// source, when its next entry is due, and every readRecheck for changes made
+// somewhere else, such as through the API. It only sends what's changed.
+func (s *site) readEvents(w http.ResponseWriter, r *http.Request, v visitor) {
+	found, ok := s.readOf(w, r, v)
+	if !ok {
+		return
 	}
-	s.show(w, v, status, readView, pageData{Title: found.Read.Name, Error: problem, Data: data})
+	// Before the first look, so that nothing in between is missed.
+	changed, stop := s.watcher.watch(found.Read.SourceID)
+	defer stop()
+	stream, ok := s.openStream(w, r, v, "read")
+	if !ok {
+		return
+	}
+	defer s.closeStream(stream, v)
+	var last []byte
+	for {
+		data, err := s.readData(r.Context(), v, found.Read.ID)
+		if errors.Is(err, store.ErrNotFound) {
+			_ = stream.send("", []byte(`<p class="alert">This read has been deleted.</p>`))
+			_ = stream.send("gone", nil)
+			return
+		}
+		if err != nil {
+			if r.Context().Err() == nil {
+				s.opts.Logger.Warn("could not show a read", "read_id", found.Read.ID, "error", err)
+			}
+			return
+		}
+		var b bytes.Buffer
+		if err := s.views[readView].ExecuteTemplate(&b, "live", pageData{CSRF: csrfFor(v.raw), Data: data}); err != nil {
+			s.opts.Logger.Warn("could not write a page", "error", err)
+			return
+		}
+		if !bytes.Equal(b.Bytes(), last) {
+			if stream.send("", b.Bytes()) != nil {
+				return
+			}
+			last = b.Bytes()
+		}
+		wake := time.NewTimer(wakeIn(data.nextAt, s.opts.Now()))
+		woken := s.await(r, stream, changed, wake.C)
+		wake.Stop()
+		if !woken {
+			return
+		}
+	}
+}
+
+// wakeIn is how long a read stream sleeps before looking again: until just after
+// the next entry is due, or readRecheck, whichever is sooner.
+func wakeIn(next *time.Time, now time.Time) time.Duration {
+	if next == nil {
+		return readRecheck
+	}
+	// A second's grace, so that the entry is out when we look.
+	return min(max(next.Sub(now)+time.Second, time.Second), readRecheck)
 }
 
 func (s *site) adjust(w http.ResponseWriter, r *http.Request, v visitor, adjustment schedule.Adjustment) {

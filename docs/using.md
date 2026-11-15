@@ -22,7 +22,8 @@ Open the base URL and log in.
    each friend reading along, so that you can stop one without stopping the rest. They don't need an
    account, and opening the link in a browser shows them what it is and how fast it goes.
 
-Pause, skip, jump and change the pace from the same page. The Account page has your password,
+Pause, skip, jump and change the pace from the same page. It keeps itself up to date as entries
+come out, whether that's the schedule or a change from the CLI. The Account page has your password,
 two-factor, your logged-in browsers and API tokens for the CLI. A password needs 8 characters, one
 of them not a letter, unless an admin has said otherwise. The page asking for one says what it needs.
 

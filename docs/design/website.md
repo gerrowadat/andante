@@ -143,7 +143,7 @@ If themes become uploadable and need aliases followed, it's worth looking at aga
 ## Where It Diverged
 
 The divergences in phases 1 to 4 are in [`pages.md`](pages.md). In short: htmx 4 instead of 2, with
-different config; `data:` images in the policy for Pico's icons; no live stream for the Read page;
+different config; `data:` images in the policy for Pico's icons; the Read page's stream later (#82);
 the source state in words, without "caught up with readers"; and the catalogue's stream documented
 with an `x-events` extension.
 
@@ -165,4 +165,4 @@ Themes an admin uploads were decided against (#83): they mean storing and checki
 supply, for little over the built-in ones. If they come back, they'd want aliases followed, which
 is when a library for the format earns its place.
 
-What's left is in [`proposals/website.md`](../proposals/website.md): a live Read page.
+Nothing is left of the proposal: the live Read page followed (#82), and the proposal went with it.
