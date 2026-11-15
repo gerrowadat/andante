@@ -21,7 +21,7 @@ import (
 func userToAPI(u db.User) (client.User, error) {
 	return client.User{
 		ID: u.ID, Name: u.Name, Role: client.UserRole(u.Role), CreatedAt: u.CreatedAt, DisabledAt: nullableValue(u.DisabledAt),
-		InvitedBy: u.InvitedBy,
+		InvitedBy: u.InvitedBy, Theme: u.Theme,
 	}, nil
 }
 

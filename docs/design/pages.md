@@ -90,7 +90,7 @@ vendored files are served as immutable for a year, and `style.css` and `site.js`
 see vendored files, so the `vendor-web` workflow checks each one's GitHub releases on Mondays and
 opens an issue when there's a newer one.
 
-Between the two comes `static/theme.css`, the theme an admin picked, which sets Pico's variables.
+Between the two comes `static/theme.css`, the visitor's own theme or the one an admin picked for the site, which sets Pico's variables.
 It's made from a Design Tokens file, and [`website.md`](website.md#themes) says how.
 
 ## Pages and the API Share One Layer

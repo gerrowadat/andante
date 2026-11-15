@@ -63,6 +63,15 @@ func (s *Set) Lookup(name string) (*Theme, bool) {
 // All is every theme, the default first and the rest by name.
 func (s *Set) All() []*Theme { return slices.Clone(s.themes) }
 
+// Names returns the themes' names, the default first.
+func (s *Set) Names() []string {
+	names := make([]string, len(s.themes))
+	for i, t := range s.themes {
+		names[i] = t.Name
+	}
+	return names
+}
+
 // Builtin reads the themes embedded in the binary. The server calls it when it
 // starts, so a theme that doesn't parse stops it there.
 var Builtin = sync.OnceValues(func() (*Set, error) { return Load(builtin, "themes") })

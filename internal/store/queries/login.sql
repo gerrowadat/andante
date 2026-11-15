@@ -13,7 +13,7 @@ VALUES ($1, $2, $3, $4, $5, $5, $6)
 RETURNING *;
 
 -- name: GetLiveSession :one
-SELECT s.id, s.user_id, s.last_seen_at, s.method, u.name, u.role,
+SELECT s.id, s.user_id, s.last_seen_at, s.method, u.name, u.role, u.theme,
        (u.password_hash IS NOT NULL)::boolean AS has_password, (u.totp_enabled_at IS NOT NULL)::boolean AS has_totp,
        coalesce((SELECT require_totp FROM settings), false)::boolean AS require_totp,
        coalesce((SELECT who_can_invite FROM settings), 'admins')::text AS who_can_invite

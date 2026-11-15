@@ -136,6 +136,7 @@ var routes = []route{
 	{pattern: "POST /users/{id}/delete", admin: true, owns: ownsUser, handle: (*site).deleteUser},
 	{pattern: "GET /account", handle: (*site).account},
 	{pattern: "POST /account/password", handle: (*site).changePassword},
+	{pattern: "POST /account/theme", handle: (*site).setMyTheme},
 	{pattern: "POST /account/sessions/{id}/end", owns: ownsSession, handle: (*site).endSession},
 	{pattern: "POST /account/tokens", handle: (*site).addAPIToken},
 	{pattern: "POST /account/tokens/{id}/revoke", owns: ownsAPIToken, handle: (*site).revokeAPIToken},

@@ -49,7 +49,7 @@ func (q *Queries) DeleteUser(ctx context.Context, id int64) error {
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, name, role, created_at, disabled_at, password_hash, totp_sealed, totp_enabled_at, totp_last_step, invited_by FROM users WHERE id = $1
+SELECT id, name, role, created_at, disabled_at, password_hash, totp_sealed, totp_enabled_at, totp_last_step, invited_by, theme FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
@@ -66,12 +66,13 @@ func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
 		&i.TotpEnabledAt,
 		&i.TotpLastStep,
 		&i.InvitedBy,
+		&i.Theme,
 	)
 	return i, err
 }
 
 const getUserByName = `-- name: GetUserByName :one
-SELECT id, name, role, created_at, disabled_at, password_hash, totp_sealed, totp_enabled_at, totp_last_step, invited_by FROM users WHERE name = $1
+SELECT id, name, role, created_at, disabled_at, password_hash, totp_sealed, totp_enabled_at, totp_last_step, invited_by, theme FROM users WHERE name = $1
 `
 
 func (q *Queries) GetUserByName(ctx context.Context, name string) (User, error) {
@@ -88,12 +89,13 @@ func (q *Queries) GetUserByName(ctx context.Context, name string) (User, error) 
 		&i.TotpEnabledAt,
 		&i.TotpLastStep,
 		&i.InvitedBy,
+		&i.Theme,
 	)
 	return i, err
 }
 
 const getUserForUpdate = `-- name: GetUserForUpdate :one
-SELECT id, name, role, created_at, disabled_at, password_hash, totp_sealed, totp_enabled_at, totp_last_step, invited_by FROM users WHERE id = $1 FOR UPDATE
+SELECT id, name, role, created_at, disabled_at, password_hash, totp_sealed, totp_enabled_at, totp_last_step, invited_by, theme FROM users WHERE id = $1 FOR UPDATE
 `
 
 func (q *Queries) GetUserForUpdate(ctx context.Context, id int64) (User, error) {
@@ -110,13 +112,14 @@ func (q *Queries) GetUserForUpdate(ctx context.Context, id int64) (User, error) 
 		&i.TotpEnabledAt,
 		&i.TotpLastStep,
 		&i.InvitedBy,
+		&i.Theme,
 	)
 	return i, err
 }
 
 const insertUser = `-- name: InsertUser :one
 
-INSERT INTO users (name, role) VALUES ($1, $2) RETURNING id, name, role, created_at, disabled_at, password_hash, totp_sealed, totp_enabled_at, totp_last_step, invited_by
+INSERT INTO users (name, role) VALUES ($1, $2) RETURNING id, name, role, created_at, disabled_at, password_hash, totp_sealed, totp_enabled_at, totp_last_step, invited_by, theme
 `
 
 type InsertUserParams struct {
@@ -140,12 +143,13 @@ func (q *Queries) InsertUser(ctx context.Context, arg InsertUserParams) (User, e
 		&i.TotpEnabledAt,
 		&i.TotpLastStep,
 		&i.InvitedBy,
+		&i.Theme,
 	)
 	return i, err
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, name, role, created_at, disabled_at, password_hash, totp_sealed, totp_enabled_at, totp_last_step, invited_by FROM users WHERE id > $1 ORDER BY id LIMIT $2
+SELECT id, name, role, created_at, disabled_at, password_hash, totp_sealed, totp_enabled_at, totp_last_step, invited_by, theme FROM users WHERE id > $1 ORDER BY id LIMIT $2
 `
 
 type ListUsersParams struct {
@@ -173,6 +177,7 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, e
 			&i.TotpEnabledAt,
 			&i.TotpLastStep,
 			&i.InvitedBy,
+			&i.Theme,
 		); err != nil {
 			return nil, err
 		}
@@ -214,8 +219,36 @@ func (q *Queries) SetSecretCheck(ctx context.Context, sealed []byte) error {
 	return err
 }
 
+const setUserTheme = `-- name: SetUserTheme :one
+UPDATE users SET theme = $1 WHERE id = $2 RETURNING id, name, role, created_at, disabled_at, password_hash, totp_sealed, totp_enabled_at, totp_last_step, invited_by, theme
+`
+
+type SetUserThemeParams struct {
+	Theme *string
+	ID    int64
+}
+
+func (q *Queries) SetUserTheme(ctx context.Context, arg SetUserThemeParams) (User, error) {
+	row := q.db.QueryRow(ctx, setUserTheme, arg.Theme, arg.ID)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Role,
+		&i.CreatedAt,
+		&i.DisabledAt,
+		&i.PasswordHash,
+		&i.TotpSealed,
+		&i.TotpEnabledAt,
+		&i.TotpLastStep,
+		&i.InvitedBy,
+		&i.Theme,
+	)
+	return i, err
+}
+
 const updateUser = `-- name: UpdateUser :one
-UPDATE users SET role = $2, disabled_at = $3 WHERE id = $1 RETURNING id, name, role, created_at, disabled_at, password_hash, totp_sealed, totp_enabled_at, totp_last_step, invited_by
+UPDATE users SET role = $2, disabled_at = $3 WHERE id = $1 RETURNING id, name, role, created_at, disabled_at, password_hash, totp_sealed, totp_enabled_at, totp_last_step, invited_by, theme
 `
 
 type UpdateUserParams struct {
@@ -238,6 +271,7 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 		&i.TotpEnabledAt,
 		&i.TotpLastStep,
 		&i.InvitedBy,
+		&i.Theme,
 	)
 	return i, err
 }

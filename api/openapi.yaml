@@ -216,6 +216,37 @@ paths:
                 created_at: 2026-11-05T07:00:00Z
         default:
           $ref: "#/components/responses/Problem"
+    patch:
+      operationId: updateMe
+      tags: [meta]
+      summary: Change your own settings
+      description: >-
+        theme is the website's look for you, one of the themes built into the server, or
+        empty to follow the site's theme. A name that isn't one is refused, and the
+        problem lists the ones there are.
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: "#/components/schemas/MePatch"
+            example:
+              theme: paper
+      responses:
+        "200":
+          description: The user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+              example:
+                id: 1
+                name: dave
+                role: admin
+                created_at: 2026-11-05T07:00:00Z
+                theme: paper
+        default:
+          $ref: "#/components/responses/Problem"
   /invites:
     post:
       operationId: createInvite
@@ -493,8 +524,8 @@ paths:
         invite_limit unused places each. password_min_length, password_non_letters and
         password_classes apply to passwords set from then on, not to ones people already
         have. password_non_letters can't be more than password_min_length.
-        theme is the website's look, for every page and every person, and has to be one
-        of the names in themes.
+        theme is the website's look, for everyone who hasn't picked one of their own with
+        PATCH /me, and for the feed page, and has to be one of the names in themes.
       requestBody:
         required: true
         content:
@@ -1566,6 +1597,11 @@ components:
           description: >-
             The name of whoever made the invite this account was made with, as
             it was then. It's missing for an account made any other way.
+        theme:
+          $ref: "#/components/schemas/ThemeName"
+          description: >-
+            The theme this user picked for the website. It's missing when they follow
+            the site's.
     UserList:
       type: object
       required: [items, next]
@@ -1585,6 +1621,14 @@ components:
           enum: [admin, user]
         disabled:
           type: boolean
+    MePatch:
+      type: object
+      additionalProperties: false
+      properties:
+        theme:
+          type: string
+          pattern: "^([a-z][a-z0-9-]{0,31})?$"
+          description: A theme's name, or empty to follow the site's.
     Settings:
       type: object
       required: [require_two_factor, who_can_invite, invite_limit, password_min_length, password_non_letters, password_classes, theme, themes]

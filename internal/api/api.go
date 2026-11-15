@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gerrowadat/andante/api"
@@ -21,6 +22,8 @@ import (
 	"github.com/gerrowadat/andante/internal/reads"
 	"github.com/gerrowadat/andante/internal/replica"
 	"github.com/gerrowadat/andante/internal/store"
+	"github.com/gerrowadat/andante/internal/store/db"
+	"github.com/gerrowadat/andante/internal/theme"
 	"github.com/gerrowadat/andante/pkg/client"
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/openapi3filter"
@@ -191,7 +194,35 @@ func (h *handler) GetMe(ctx context.Context, _ gen.GetMeRequestObject) (gen.GetM
 	if err != nil {
 		return nil, err
 	}
-	return gen.GetMe200JSONResponse{ID: user.ID, Name: user.Name, Role: client.UserRole(user.Role), CreatedAt: user.CreatedAt}, nil
+	return gen.GetMe200JSONResponse(meToAPI(user)), nil
+}
+
+// meToAPI is a user as /me shows them, which is without how they came to have an account.
+func meToAPI(user db.User) client.User {
+	return client.User{ID: user.ID, Name: user.Name, Role: client.UserRole(user.Role), CreatedAt: user.CreatedAt, Theme: user.Theme}
+}
+
+func (h *handler) UpdateMe(ctx context.Context, r gen.UpdateMeRequestObject) (gen.UpdateMeResponseObject, error) {
+	actor := actorOf(ctx)
+	if r.Body.Theme == nil {
+		user, err := h.store.GetUser(ctx, actor.UserID)
+		if err != nil {
+			return nil, err
+		}
+		return gen.UpdateMe200JSONResponse(meToAPI(user)), nil
+	}
+	name := *r.Body.Theme
+	if name != "" {
+		themes := theme.MustBuiltin()
+		if _, ok := themes.Lookup(name); !ok {
+			return nil, invalidRequest(fmt.Sprintf("there's no theme called %q; there's %s", name, strings.Join(themes.Names(), ", ")))
+		}
+	}
+	user, err := h.store.SetUserTheme(ctx, actor, name)
+	if err != nil {
+		return nil, err
+	}
+	return gen.UpdateMe200JSONResponse(meToAPI(user)), nil
 }
 
 func (h *handler) GetVersion(context.Context, gen.GetVersionRequestObject) (gen.GetVersionResponseObject, error) {

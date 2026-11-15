@@ -265,7 +265,7 @@ func (p *page) cursorParam() *client.Cursor {
 }
 
 func (a *app) whoamiCmd() *cobra.Command {
-	return operation(&cobra.Command{
+	whoami := operation(&cobra.Command{
 		Use:   "whoami",
 		Short: "Show who this token belongs to.",
 		Args:  cobra.NoArgs,
@@ -274,11 +274,37 @@ func (a *app) whoamiCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return a.show(resp.StatusCode(), resp.Body, func(w *table) {
-				w.printf("Name:\t%s\nRole:\t%s\n", resp.JSON200.Name, resp.JSON200.Role)
-			})
+			return a.show(resp.StatusCode(), resp.Body, func(w *table) { showMe(w, resp.JSON200) })
 		},
 	}, "getMe")
+	var themeName string
+	set := operation(&cobra.Command{
+		Use:   "set",
+		Short: "Change your own settings.",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			var patch client.MePatch
+			if cmd.Flags().Changed("theme") {
+				patch.Theme = &themeName
+			}
+			resp, err := a.client.UpdateMeWithApplicationMergePatchPlusJSONBodyWithResponse(cmd.Context(), patch)
+			if err != nil {
+				return err
+			}
+			return a.show(resp.StatusCode(), resp.Body, func(w *table) { showMe(w, resp.JSON200) })
+		},
+	}, "updateMe")
+	set.Flags().StringVar(&themeName, "theme", "", `your theme on the website, or "" to follow the site's`)
+	whoami.AddCommand(set)
+	return whoami
+}
+
+func showMe(w *table, me *client.User) {
+	theme := "the site's"
+	if me.Theme != nil {
+		theme = *me.Theme
+	}
+	w.printf("Name:\t%s\nRole:\t%s\nTheme:\t%s\n", me.Name, me.Role, theme)
 }
 
 func (a *app) versionCmd() *cobra.Command {

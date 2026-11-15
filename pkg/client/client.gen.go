@@ -1011,6 +1011,12 @@ type LogRecord struct {
 	Time    time.Time `json:"time"`
 }
 
+// MePatch defines model for MePatch.
+type MePatch struct {
+	// Theme A theme's name, or empty to follow the site's.
+	Theme *string `json:"theme,omitempty"`
+}
+
 // NextLink The next page, or null on the last one.
 type NextLink = string
 
@@ -1416,6 +1422,9 @@ type User struct {
 	InvitedBy *string  `json:"invited_by,omitempty"`
 	Name      string   `json:"name"`
 	Role      UserRole `json:"role"`
+
+	// Theme The theme this user picked for the website. It's missing when they follow the site's.
+	Theme *ThemeName `json:"theme,omitempty"`
 }
 
 // UserRole defines model for User.Role.
@@ -1618,6 +1627,9 @@ type ExportOPMLJSONRequestBody = OPMLExportRequest
 
 // CreateInviteJSONRequestBody defines body for CreateInvite for application/json ContentType.
 type CreateInviteJSONRequestBody = InviteCreate
+
+// UpdateMeApplicationMergePatchPlusJSONRequestBody defines body for UpdateMe for application/merge-patch+json ContentType.
+type UpdateMeApplicationMergePatchPlusJSONRequestBody = MePatch
 
 // CreateProbeJSONRequestBody defines body for CreateProbe for application/json ContentType.
 type CreateProbeJSONRequestBody = ProbeRequest
@@ -2387,6 +2399,24 @@ type ClientInterface interface {
 	// Corresponds with GET /me (the `GetMe` operationId).
 	GetMe(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// UpdateMeWithBody Change your own settings
+	//
+	// theme is the website's look for you, one of the themes built into the server, or empty to follow the site's theme. A name that isn't one is refused, and the problem lists the ones there are.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PATCH /me (the `UpdateMe` operationId).
+	UpdateMeWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateMeWithApplicationMergePatchPlusJSONBody Change your own settings
+	//
+	// theme is the website's look for you, one of the themes built into the server, or empty to follow the site's theme. A name that isn't one is refused, and the problem lists the ones there are.
+	//
+	// Takes a body of the `application/merge-patch+json` content type.
+	//
+	// Corresponds with PATCH /me (the `UpdateMe` operationId).
+	UpdateMeWithApplicationMergePatchPlusJSONBody(ctx context.Context, body UpdateMeApplicationMergePatchPlusJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetSpec Get this document
 	//
 	// Returns this OpenAPI document as JSON. Needs no token.
@@ -2542,7 +2572,7 @@ type ClientInterface interface {
 
 	// UpdateSettingsWithBody Change the site's settings
 	//
-	// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length. theme is the website's look, for every page and every person, and has to be one of the names in themes.
+	// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length. theme is the website's look, for everyone who hasn't picked one of their own with PATCH /me, and for the feed page, and has to be one of the names in themes.
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -2551,7 +2581,7 @@ type ClientInterface interface {
 
 	// UpdateSettingsWithApplicationMergePatchPlusJSONBody Change the site's settings
 	//
-	// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length. theme is the website's look, for every page and every person, and has to be one of the names in themes.
+	// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length. theme is the website's look, for everyone who hasn't picked one of their own with PATCH /me, and for the feed page, and has to be one of the names in themes.
 	//
 	// Takes a body of the `application/merge-patch+json` content type.
 	//
@@ -3025,6 +3055,44 @@ func (c *Client) GetMe(ctx context.Context, reqEditors ...RequestEditorFn) (*htt
 	return c.Client.Do(req)
 }
 
+// UpdateMeWithBody Change your own settings
+//
+// theme is the website's look for you, one of the themes built into the server, or empty to follow the site's theme. A name that isn't one is refused, and the problem lists the ones there are.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PATCH /me (the `UpdateMe` operationId).
+func (c *Client) UpdateMeWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateMeRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateMeWithApplicationMergePatchPlusJSONBody Change your own settings
+//
+// theme is the website's look for you, one of the themes built into the server, or empty to follow the site's theme. A name that isn't one is refused, and the problem lists the ones there are.
+//
+// Takes a body of the `application/merge-patch+json` content type.
+//
+// Corresponds with PATCH /me (the `UpdateMe` operationId).
+func (c *Client) UpdateMeWithApplicationMergePatchPlusJSONBody(ctx context.Context, body UpdateMeApplicationMergePatchPlusJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateMeRequestWithApplicationMergePatchPlusJSONBody(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // GetSpec Get this document
 //
 // Returns this OpenAPI document as JSON. Needs no token.
@@ -3370,7 +3438,7 @@ func (c *Client) GetSettings(ctx context.Context, reqEditors ...RequestEditorFn)
 
 // UpdateSettingsWithBody Change the site's settings
 //
-// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length. theme is the website's look, for every page and every person, and has to be one of the names in themes.
+// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length. theme is the website's look, for everyone who hasn't picked one of their own with PATCH /me, and for the feed page, and has to be one of the names in themes.
 //
 // Takes any type of body and a specified content type.
 //
@@ -3389,7 +3457,7 @@ func (c *Client) UpdateSettingsWithBody(ctx context.Context, contentType string,
 
 // UpdateSettingsWithApplicationMergePatchPlusJSONBody Change the site's settings
 //
-// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length. theme is the website's look, for every page and every person, and has to be one of the names in themes.
+// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length. theme is the website's look, for everyone who hasn't picked one of their own with PATCH /me, and for the feed page, and has to be one of the names in themes.
 //
 // Takes a body of the `application/merge-patch+json` content type.
 //
@@ -4356,6 +4424,46 @@ func NewGetMeRequest(server string) (*http.Request, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewUpdateMeRequestWithApplicationMergePatchPlusJSONBody calls the generic UpdateMe builder with application/merge-patch+json body
+func NewUpdateMeRequestWithApplicationMergePatchPlusJSONBody(server string, body UpdateMeApplicationMergePatchPlusJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateMeRequestWithBody(server, "application/merge-patch+json", bodyReader)
+}
+
+// NewUpdateMeRequestWithBody constructs an http.Request for the UpdateMe method, with any body, and a specified content type
+func NewUpdateMeRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/me")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -6044,6 +6152,24 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /me (the `GetMe` operationId).
 	GetMeWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetMeResponse, error)
 
+	// UpdateMeWithBodyWithResponse Change your own settings
+	//
+	// theme is the website's look for you, one of the themes built into the server, or empty to follow the site's theme. A name that isn't one is refused, and the problem lists the ones there are.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /me (the `UpdateMe` operationId).
+	UpdateMeWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateMeResponse, error)
+
+	// UpdateMeWithApplicationMergePatchPlusJSONBodyWithResponse Change your own settings
+	//
+	// theme is the website's look for you, one of the themes built into the server, or empty to follow the site's theme. A name that isn't one is refused, and the problem lists the ones there are.
+	//
+	// Takes a body of the `application/merge-patch+json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /me (the `UpdateMe` operationId).
+	UpdateMeWithApplicationMergePatchPlusJSONBodyWithResponse(ctx context.Context, body UpdateMeApplicationMergePatchPlusJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateMeResponse, error)
+
 	// GetSpecWithResponse Get this document
 	//
 	// Returns this OpenAPI document as JSON. Needs no token.
@@ -6217,7 +6343,7 @@ type ClientWithResponsesInterface interface {
 
 	// UpdateSettingsWithBodyWithResponse Change the site's settings
 	//
-	// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length. theme is the website's look, for every page and every person, and has to be one of the names in themes.
+	// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length. theme is the website's look, for everyone who hasn't picked one of their own with PATCH /me, and for the feed page, and has to be one of the names in themes.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -6226,7 +6352,7 @@ type ClientWithResponsesInterface interface {
 
 	// UpdateSettingsWithApplicationMergePatchPlusJSONBodyWithResponse Change the site's settings
 	//
-	// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length. theme is the website's look, for every page and every person, and has to be one of the names in themes.
+	// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length. theme is the website's look, for everyone who hasn't picked one of their own with PATCH /me, and for the feed page, and has to be one of the names in themes.
 	//
 	// Takes a body of the `application/merge-patch+json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -7035,6 +7161,54 @@ func (r GetMeResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetMeResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UpdateMeResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *User
+	// ApplicationProblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationProblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r UpdateMeResponse) GetJSON200() *User {
+	return r.JSON200
+}
+
+// GetApplicationProblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r UpdateMeResponse) GetApplicationProblemJSONDefault() *Problem {
+	return r.ApplicationProblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r UpdateMeResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateMeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateMeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UpdateMeResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -8772,6 +8946,36 @@ func (c *ClientWithResponses) GetMeWithResponse(ctx context.Context, reqEditors 
 	return ParseGetMeResponse(rsp)
 }
 
+// UpdateMeWithBodyWithResponse Change your own settings
+//
+// theme is the website's look for you, one of the themes built into the server, or empty to follow the site's theme. A name that isn't one is refused, and the problem lists the ones there are.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /me (the `UpdateMe` operationId).
+func (c *ClientWithResponses) UpdateMeWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateMeResponse, error) {
+	rsp, err := c.UpdateMeWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateMeResponse(rsp)
+}
+
+// UpdateMeWithApplicationMergePatchPlusJSONBodyWithResponse Change your own settings
+//
+// theme is the website's look for you, one of the themes built into the server, or empty to follow the site's theme. A name that isn't one is refused, and the problem lists the ones there are.
+//
+// Takes a body of the `application/merge-patch+json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /me (the `UpdateMe` operationId).
+func (c *ClientWithResponses) UpdateMeWithApplicationMergePatchPlusJSONBodyWithResponse(ctx context.Context, body UpdateMeApplicationMergePatchPlusJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateMeResponse, error) {
+	rsp, err := c.UpdateMeWithApplicationMergePatchPlusJSONBody(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateMeResponse(rsp)
+}
+
 // GetSpecWithResponse Get this document
 //
 // Returns this OpenAPI document as JSON. Needs no token.
@@ -9059,7 +9263,7 @@ func (c *ClientWithResponses) GetSettingsWithResponse(ctx context.Context, reqEd
 
 // UpdateSettingsWithBodyWithResponse Change the site's settings
 //
-// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length. theme is the website's look, for every page and every person, and has to be one of the names in themes.
+// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length. theme is the website's look, for everyone who hasn't picked one of their own with PATCH /me, and for the feed page, and has to be one of the names in themes.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -9074,7 +9278,7 @@ func (c *ClientWithResponses) UpdateSettingsWithBodyWithResponse(ctx context.Con
 
 // UpdateSettingsWithApplicationMergePatchPlusJSONBodyWithResponse Change the site's settings
 //
-// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length. theme is the website's look, for every page and every person, and has to be one of the names in themes.
+// Admins only. With require_two_factor, everyone who logs in to the website with a password has to set up two-factor before they can do anything else there. Logins with an OpenID provider are left to the provider, and API tokens aren't affected. With who_can_invite set to users, anyone with an account can invite people, up to invite_limit unused places each. password_min_length, password_non_letters and password_classes apply to passwords set from then on, not to ones people already have. password_non_letters can't be more than password_min_length. theme is the website's look, for everyone who hasn't picked one of their own with PATCH /me, and for the feed page, and has to be one of the names in themes.
 //
 // Takes a body of the `application/merge-patch+json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -9819,6 +10023,39 @@ func ParseGetMeResponse(rsp *http.Response) (*GetMeResponse, error) {
 	}
 
 	response := &GetMeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest User
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationProblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateMeResponse parses an HTTP response from a UpdateMeWithResponse call
+func ParseUpdateMeResponse(rsp *http.Response) (*UpdateMeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateMeResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}

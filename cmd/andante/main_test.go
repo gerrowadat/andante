@@ -666,6 +666,22 @@ func TestWhoAmI(t *testing.T) {
 	}
 }
 
+func TestWhoAmISetTheme(t *testing.T) {
+	h := newHarness(t)
+	if got := h.ok(t, "whoami"); !regexp.MustCompile(`Theme:\s+the site's`).MatchString(got) {
+		t.Errorf("whoami = %s", got)
+	}
+	if got := h.ok(t, "whoami", "set", "--theme", "slate"); !regexp.MustCompile(`Theme:\s+slate`).MatchString(got) {
+		t.Errorf("set slate = %s", got)
+	}
+	if r := h.run("whoami", "set", "--theme", "plaid"); r.err == nil {
+		t.Error("accepted a theme there isn't")
+	}
+	if got := h.ok(t, "whoami", "set", "--theme", ""); !regexp.MustCompile(`Theme:\s+the site's`).MatchString(got) {
+		t.Errorf("back to the site's = %s", got)
+	}
+}
+
 func TestDiscover(t *testing.T) {
 	h := newHarness(t)
 	site := sitetest.Serve(t, "discover-comic")

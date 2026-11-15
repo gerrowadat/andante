@@ -12,7 +12,8 @@ This was a proposal in five phases, and all five shipped:
 3. **Live progress** (#79). Server-Sent Events for the Add page and the source page, and `NOTIFY`
    from the sync.
 4. **Discovery stages** (#80). The catalogue streams each step of a look at a site.
-5. **Themes**. Built-in themes as Design Tokens files, picked in `/api/v1/settings`.
+5. **Themes** (#81). Built-in themes as Design Tokens files, picked in `/api/v1/settings`, and
+   later by each user for themselves (#83).
 
 [`pages.md`](pages.md) describes the website as it is: the JavaScript, the stylesheet, live progress
 and discovery stages, each with where it differed from the plan. This is the record of why the
@@ -86,10 +87,17 @@ andante can take.
 
 The themes are files in [`internal/theme/themes/`](../../internal/theme/themes/), embedded in the
 binary: `default` (Pico as it comes), `paper`, `slate` and `contrast`. The server reads them all
-when it starts, and won't start if one doesn't parse. There's one theme for the whole site, which an
-admin picks on the Users page, with `andante settings set --theme`, or as `theme` in
-`PATCH /api/v1/settings`. `GET /api/v1/settings` lists the ones there are, with a description of
-each. The choice is a column of the `settings` table.
+when it starts, and won't start if one doesn't parse. An admin picks the site's theme on the Users
+page, with `andante settings set --theme`, or as `theme` in `PATCH /api/v1/settings`.
+`GET /api/v1/settings` lists the ones there are, with a description of each. The choice is a column
+of the `settings` table.
+
+Each user can pick one of their own on the Account page, with `andante whoami set --theme`, or as
+`theme` in `PATCH /api/v1/me`, and go back to the site's with an empty name. It's a nullable column
+on `users`, read with the session, so it costs no query of its own. `PATCH /me` is the first change
+`/me` takes; a user's own settings go there, and the site's stay in `/settings`, which only admins
+can read. A name that isn't a theme gets a 400 that lists the ones there are, since a user can't
+read `/settings` to find out.
 
 A theme can set a small fixed set of tokens, each mapped to Pico's variables:
 
@@ -112,11 +120,13 @@ A test checks every built-in theme for WCAG AA contrast (4.5:1) between text and
 text and background, links and background, and button labels and buttons, in both modes.
 
 The stylesheet is served at `/static/theme.css`, after Pico's and before `style.css`, so it's still
-`style-src 'self'`. That's one URL whichever theme is chosen, with an ETag and `no-cache`, so the
-browser asks again on each page and usually gets a 304. A change shows on the next page, on every
-server sharing the database. If the database can't be read, or names a theme this server doesn't
-have (after a downgrade, say), it serves the default, logs a warning and counts it in
-`andante_web_theme_fallbacks_total`.
+`style-src 'self'`. That's one URL whichever theme is chosen, with an ETag and `private, no-cache`,
+so the browser asks again on each page and usually gets a 304, and no shared cache hands one
+person's theme to another. It's the visitor's own theme if they're logged in and picked one, and the
+site's otherwise. A change shows on the next page, on every server sharing the database. If the
+database can't be read, or names a theme this server doesn't have (after a downgrade, say), it
+serves the default, logs a warning and counts it in `andante_web_theme_fallbacks_total`. A user's
+theme the server doesn't have falls back to the site's.
 
 The feed page and its "next one now" confirmation use the same stylesheets, so a friend with a feed
 link sees the same site. Their policy went from `default-src 'none'` to allowing `style-src 'self'`
@@ -151,5 +161,8 @@ The themes diverged in these:
 - **The feed page is styled now.** It had no stylesheet at all before, which the proposal didn't
   mention.
 
-What's left is in [`proposals/website.md`](../proposals/website.md): a live Read page, and themes an
-admin uploads or each user picks.
+Themes an admin uploads were decided against (#83): they mean storing and checking files people
+supply, for little over the built-in ones. If they come back, they'd want aliases followed, which
+is when a library for the format earns its place.
+
+What's left is in [`proposals/website.md`](../proposals/website.md): a live Read page.
