@@ -827,14 +827,16 @@ func TestTheFeedPage(t *testing.T) {
 			t.Errorf("the page has no %q:\n%s", want, body)
 		}
 	}
-	for _, unwanted := range []string{"next one now", "<script", owner} {
+	for _, unwanted := range []string{"next one now", owner} {
 		if strings.Contains(body, unwanted) {
 			t.Errorf("a viewer's page has %q", unwanted)
 		}
 	}
-	// It looks like the website, theme and all, and loads nothing but its stylesheets.
+	// It looks like the website, theme and all, and loads nothing but its stylesheets
+	// and the script that shows a copy button by each format, hidden until it runs.
 	for _, want := range []string{
 		`<link rel="stylesheet" href="/static/vendor/pico-2.1.1/pico.min.css">`, `<link rel="stylesheet" href="/static/theme.css">`,
+		`<script defer src="/static/site.js"></script>`, `<div id="status" aria-live="polite">`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the page has no %q:\n%s", want, body)
@@ -842,10 +844,21 @@ func TestTheFeedPage(t *testing.T) {
 	}
 	for header, want := range map[string]string{
 		"Referrer-Policy": "no-referrer", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
-		"Content-Security-Policy": "default-src 'none'; style-src 'self'; img-src data:; base-uri 'none'; frame-ancestors 'none'",
+		"Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; img-src data:; base-uri 'none'; frame-ancestors 'none'",
 	} {
 		if got := resp.Header.Get(header); got != want {
 			t.Errorf("%s = %q, want %q", header, got, want)
+		}
+	}
+	if got := strings.Count(body, "<script"); got != 1 {
+		t.Errorf("the page has %d scripts, want only site.js", got)
+	}
+	for _, format := range []string{"atom", "rss", "json"} {
+		u := feed.URL("https://andante.example/", viewer, format)
+		want := `<a href="` + u + `">`
+		button := `<button type="button" class="copy secondary outline" data-copy="` + u + `" hidden>Copy</button>`
+		if !strings.Contains(body, want) || !strings.Contains(body, button) {
+			t.Errorf("the page has no copy button for %s:\n%s", format, body)
 		}
 	}
 
