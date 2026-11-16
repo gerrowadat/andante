@@ -420,7 +420,7 @@ func (h *handler) CreateProbe(ctx context.Context, r gen.CreateProbeRequestObjec
 	defer cancel()
 	found, err := h.prober.Probe(ctx, req)
 	if err != nil {
-		return nil, httpapi.NewProblem(http.StatusUnprocessableEntity, httpapi.TypeProbeFailed, err.Error())
+		return nil, httpapi.NewProblem(http.StatusUnprocessableEntity, httpapi.TypeProbeFailed, failure(err))
 	}
 
 	return gen.CreateProbe200JSONResponse{
@@ -481,7 +481,7 @@ func (h *handler) CreateDiscovery(ctx context.Context, r gen.CreateDiscoveryRequ
 func (h *handler) discover(ctx context.Context, address string, limit int, report find.Report) (client.DiscoveryResult, error) {
 	found, err := h.finder.Find(ctx, address, limit, report)
 	if err != nil {
-		return client.DiscoveryResult{}, httpapi.NewProblem(http.StatusUnprocessableEntity, httpapi.TypeProbeFailed, err.Error())
+		return client.DiscoveryResult{}, httpapi.NewProblem(http.StatusUnprocessableEntity, httpapi.TypeProbeFailed, failure(err))
 	}
 	candidates := make([]client.Candidate, 0, len(found))
 	for _, c := range found {

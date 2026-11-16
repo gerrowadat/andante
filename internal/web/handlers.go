@@ -15,6 +15,7 @@ import (
 
 	"github.com/gerrowadat/andante/internal/app"
 	"github.com/gerrowadat/andante/internal/feed"
+	"github.com/gerrowadat/andante/internal/httpapi"
 	"github.com/gerrowadat/andante/internal/password"
 	"github.com/gerrowadat/andante/internal/reads"
 	"github.com/gerrowadat/andante/internal/schedule"
@@ -311,7 +312,7 @@ func (s *site) crawl(w http.ResponseWriter, r *http.Request, v visitor) {
 		return
 	}
 	if err := s.opts.App.RequestCrawl(r.Context(), source.ID); err != nil {
-		s.showSource(w, r, v, http.StatusServiceUnavailable, "That didn't work: "+err.Error(), "")
+		s.showSource(w, r, v, http.StatusServiceUnavailable, didntWork(err), "")
 		return
 	}
 	s.showSource(w, r, v, http.StatusOK, "", "It'll be checked shortly.")
@@ -333,7 +334,7 @@ func (s *site) editSource(w http.ResponseWriter, r *http.Request, v visitor) {
 		patch.State = &state
 	}
 	if _, err := s.opts.App.UpdateSource(r.Context(), v.actor, source.ID, patch); err != nil {
-		s.showSource(w, r, v, http.StatusUnprocessableEntity, "That didn't work: "+err.Error(), "")
+		s.showSource(w, r, v, http.StatusUnprocessableEntity, didntWork(err), "")
 		return
 	}
 	s.audit(r.Context(), v.session.Name, "source.changed", source.Slug, s.client(r))
@@ -365,7 +366,7 @@ func (s *site) deleteSource(w http.ResponseWriter, r *http.Request, v visitor) {
 		return
 	}
 	if err != nil {
-		s.showSource(w, r, v, http.StatusServiceUnavailable, "That didn't work: "+err.Error(), "")
+		s.showSource(w, r, v, http.StatusServiceUnavailable, didntWork(err), "")
 		return
 	}
 	s.audit(r.Context(), v.session.Name, "source.deleted", source.Slug, s.client(r))
@@ -476,7 +477,7 @@ func (s *site) track(w http.ResponseWriter, r *http.Request, v visitor) {
 	ctx := r.Context()
 	created, err := s.opts.App.CreateRead(ctx, reads.CreateParams{UserID: v.actor.UserID, SourceID: source.ID, Name: name, Pacing: chosen, Initial: 1})
 	if err != nil {
-		again(err.Error())
+		again(reason(err))
 		return
 	}
 	if _, _, err := s.opts.Store.CreateFeedToken(ctx, v.actor, created.Read.ID, feed.RoleOwner, "me"); err != nil {
@@ -666,7 +667,7 @@ func (s *site) adjust(w http.ResponseWriter, r *http.Request, v visitor, adjustm
 	case errors.Is(err, store.ErrNotFound):
 		http.NotFound(w, r)
 	case err != nil:
-		s.showRead(w, r, v, http.StatusConflict, "That didn't work: "+err.Error())
+		s.showRead(w, r, v, http.StatusConflict, didntWork(err))
 	default:
 		http.Redirect(w, r, "/reads/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
 	}
@@ -927,7 +928,34 @@ func userError(err error) string {
 	case errors.Is(err, store.ErrDeleteSelf):
 		return "You can't delete yourself."
 	}
-	return "That didn't work: " + err.Error()
+	return didntWork(err)
+}
+
+// didntWork says that something failed, and why.
+func didntWork(err error) string {
+	return "That didn't work: " + reason(err)
+}
+
+// reason is why err happened, for a person. A problem from an API says why in its
+// detail and field errors; its title, such as "Unprocessable Entity", says nothing.
+func reason(err error) string {
+	var p *httpapi.Error
+	if !errors.As(err, &p) {
+		return err.Error()
+	}
+	var parts []string
+	if p.Problem.Detail != nil && *p.Problem.Detail != "" {
+		parts = append(parts, *p.Problem.Detail)
+	}
+	if p.Problem.Errors != nil {
+		for _, field := range *p.Problem.Errors {
+			parts = append(parts, field.Detail)
+		}
+	}
+	if len(parts) == 0 {
+		return p.Problem.Title
+	}
+	return strings.Join(parts, "; ")
 }
 
 func (s *site) changeUser(w http.ResponseWriter, r *http.Request, v visitor) {
