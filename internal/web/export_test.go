@@ -10,4 +10,5 @@ import "time"
 func init() {
 	heartbeat = 100 * time.Millisecond
 	settle = 20 * time.Millisecond
+	readRecheck = 50 * time.Millisecond
 }

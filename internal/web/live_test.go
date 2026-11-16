@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -17,6 +18,7 @@ import (
 
 	catalogue "github.com/gerrowadat/andante/internal/catalogue/store"
 	"github.com/gerrowadat/andante/internal/discovery/sitetest"
+	"github.com/gerrowadat/andante/internal/schedule"
 )
 
 // event is one Server-Sent Event, or a comment when comment is set.
@@ -281,6 +283,69 @@ func TestTheSourcePageShowsIndexingAsItHappens(t *testing.T) {
 	}
 	if missing := f.stream(t, alice, at+"/events"); missing.resp.StatusCode != http.StatusNotFound {
 		t.Errorf("the stream of a deleted source: %d", missing.resp.StatusCode)
+	}
+}
+
+// The Read page follows the read: entries the sync brings, entries coming due,
+// and changes made elsewhere, sending only when something has changed.
+func TestTheReadPageFollowsTheRead(t *testing.T) {
+	f := newFixture(t)
+	alice, bob := f.person(t, "alice", false), f.person(t, "bob", false)
+	source := f.source(t, "Harbour Lights")
+	read := f.track(t, alice, source)
+	at := "/reads/" + strconv.FormatInt(read, 10)
+
+	if page := f.get(t, alice, at); !strings.Contains(page.body, `hx-sse:connect="`+at+`/events"`) {
+		t.Errorf("the read page: %s", page.body)
+	}
+	if theirs := f.stream(t, bob, at+"/events"); theirs.resp.StatusCode != http.StatusNotFound {
+		t.Errorf("someone else's read: %d", theirs.resp.StatusCode)
+	}
+	hers := f.stream(t, alice, at+"/events")
+	first := hers.until(t, "of 5 released")
+	worksWithoutScripts(t, at+"/events", first.data)
+	if !strings.Contains(first.data, `id="summary"`) || !strings.Contains(first.data, `id="history" hx-swap-oob="true"`) ||
+		!strings.Contains(first.data, `name="csrf" value="`+alice.csrf+`"`) {
+		t.Errorf("the first event: %s", first.data)
+	}
+	released := regexp.MustCompile(`(\d+) of 5 released`).FindStringSubmatch(first.data)[1]
+
+	// Nothing has changed, so nothing more is sent, however often it looks.
+	sent := metric(t, f, "andante_web_stream_events_total", "read")
+	time.Sleep(250 * time.Millisecond) // Five times the tests' readRecheck.
+	if again := metric(t, f, "andante_web_stream_events_total", "read"); again != sent {
+		t.Errorf("sent %v events with nothing changed", again-sent)
+	}
+
+	f.indexMore(t, source, 3)
+	hers.until(t, released+" of 8 released")
+
+	// Paused through the API, say.
+	if _, err := f.stack.App.Adjust(t.Context(), alice.actor, read, schedule.Pause{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := hers.until(t, "paused"); !strings.Contains(got.data, "Resume") || !strings.Contains(got.data, "<td>pause: Paused</td>") {
+		t.Errorf("after pausing: %s", got.data)
+	}
+	if _, err := f.stack.App.Adjust(t.Context(), alice.actor, read, schedule.Resume{}); err != nil {
+		t.Fatal(err)
+	}
+	hers.until(t, "Pause</button>")
+
+	// The next one released from somewhere else. (One coming due is the same look
+	// again, on a timer: see TestWakeIn.)
+	if _, err := f.stack.App.Adjust(t.Context(), alice.actor, read, schedule.Skip{Count: 1}); err != nil {
+		t.Fatal(err)
+	}
+	n, _ := strconv.Atoi(released)
+	hers.until(t, strconv.Itoa(n+1)+" of 8 released")
+
+	if err := f.stack.App.DeleteRead(t.Context(), alice.actor, read); err != nil {
+		t.Fatal(err)
+	}
+	hers.until(t, "deleted")
+	if gone, ok := hers.next(t); !ok || gone.name != "gone" {
+		t.Errorf("after the delete: %+v, %v", gone, ok)
 	}
 }
 

@@ -100,3 +100,24 @@ func TestTheStreamLimitIsPerPerson(t *testing.T) {
 		t.Errorf("left over: %v", l.byUser)
 	}
 }
+
+// A read stream wakes just after the next entry is due, but never sooner than a
+// second from now or later than readRecheck.
+func TestWakeIn(t *testing.T) {
+	now := time.Date(2026, 11, 15, 7, 0, 0, 0, time.UTC)
+	at := func(d time.Duration) *time.Time { t := now.Add(d); return &t }
+	for _, tc := range []struct {
+		next *time.Time
+		want time.Duration
+	}{
+		{nil, readRecheck},
+		{at(-time.Hour), min(time.Second, readRecheck)},
+		{at(0), min(time.Second, readRecheck)},
+		{at(readRecheck / 10), min(readRecheck/10+time.Second, readRecheck)},
+		{at(24 * time.Hour), readRecheck},
+	} {
+		if got := wakeIn(tc.next, now); got != tc.want {
+			t.Errorf("wakeIn(%v) = %v, want %v", tc.next, got, tc.want)
+		}
+	}
+}

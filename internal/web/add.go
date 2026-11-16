@@ -291,7 +291,7 @@ func (s *site) foundEvents(w http.ResponseWriter, r *http.Request, v visitor) {
 			_ = stream.send("done", nil)
 			return
 		}
-		if !s.await(r, stream, j.changed) {
+		if !s.await(r, stream, j.changed, nil) {
 			return
 		}
 		if j, ok = s.jobs.get(j.id, v.actor.UserID); !ok {
@@ -300,9 +300,9 @@ func (s *site) foundEvents(w http.ResponseWriter, r *http.Request, v visitor) {
 	}
 }
 
-// await waits for changed, keeping the stream alive meanwhile. It's false when
+// await waits for changed or wake, keeping the stream alive meanwhile. It's false when
 // the stream should end: the browser left, the server is stopping or a write failed.
-func (s *site) await(r *http.Request, stream *eventStream, changed <-chan struct{}) bool {
+func (s *site) await(r *http.Request, stream *eventStream, changed <-chan struct{}, wake <-chan time.Time) bool {
 	for {
 		select {
 		case <-r.Context().Done():
@@ -314,6 +314,8 @@ func (s *site) await(r *http.Request, stream *eventStream, changed <-chan struct
 				return false
 			}
 		case <-changed:
+			return true
+		case <-wake:
 			return true
 		}
 	}
