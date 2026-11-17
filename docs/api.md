@@ -60,7 +60,9 @@ and no `default_gap`, or a source that doesn't exist.
 
 Status 422. A probe couldn't get an answer from the site: robots.txt disallows the page, the
 site is refusing or failing, the links form a cycle, or the URL is a private address. `detail`
-says which. A probe that gets some pages and then stops returns those, with a warning instead.
+says which and, where andante can tell, what to try instead, such as checking the address or
+starting from the first page. A probe that gets some pages and then stops returns those, with a
+warning instead. Discoveries fail the same way.
 
 ### Conflict
 

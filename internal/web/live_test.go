@@ -212,11 +212,15 @@ func TestTheWaitingPageRefreshesOnlyWithoutJavaScript(t *testing.T) {
 		t.Errorf("the page follows %q", connect)
 	}
 	events := f.stream(t, alice, started.header.Get("Location")+"/events")
-	if e := events.until(t, "Looking"); e.name != "" {
-		t.Errorf("the first event is %+v", e)
+	busy := events.until(t, "Looking")
+	if busy.name != "" {
+		t.Errorf("the first event is %+v", busy)
 	}
-	// The catalogue says what it's doing, and the page shows it as it happens.
-	busy := events.until(t, "Fetching "+hang.URL+"/")
+	// The catalogue says what it's doing, and the page shows it as it happens. The
+	// step can be under way before the stream starts, and then it's in the first event.
+	if !strings.Contains(busy.data, "Fetching "+hang.URL+"/") {
+		busy = events.until(t, "Fetching "+hang.URL+"/")
+	}
 	if item := parse(t, busy.data).Find(`li[aria-busy="true"]`).Text(); item != "Fetching "+hang.URL+"/" {
 		t.Errorf("the step under way is %q", item)
 	}

@@ -170,7 +170,7 @@ func (s *site) look(id, address string, first bool) {
 			s.jobs.stage(id, st.Message)
 		})
 		if err != nil {
-			s.jobs.finish(id, nil, "That didn't work: "+err.Error())
+			s.jobs.finish(id, nil, didntWork(err))
 			return
 		}
 		s.jobs.finish(id, found.Candidates, "")
@@ -185,7 +185,7 @@ func (s *site) look(id, address string, first bool) {
 	s.jobs.stage(id, "Following the next links from "+address)
 	probe, err := s.opts.App.Catalogue.Probe(ctx, client.ProbeRequest{Config: config, Limit: &limit})
 	if err != nil {
-		s.jobs.finish(id, nil, "That didn't work: "+err.Error())
+		s.jobs.finish(id, nil, didntWork(err))
 		return
 	}
 	title := address
@@ -342,7 +342,7 @@ func (s *site) addCandidate(w http.ResponseWriter, r *http.Request, v visitor) {
 		return
 	}
 	if err != nil {
-		s.show(w, v, http.StatusUnprocessableEntity, addView, pageData{Title: "Add a site", Error: "That didn't work: " + err.Error()})
+		s.show(w, v, http.StatusUnprocessableEntity, addView, pageData{Title: "Add a site", Error: didntWork(err)})
 		return
 	}
 	s.audit(r.Context(), v.session.Name, "source.added", created.Slug, s.client(r))

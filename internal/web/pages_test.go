@@ -511,6 +511,13 @@ func TestAddingASite(t *testing.T) {
 		t.Errorf("a second look didn't find the source: %s", again.body)
 	}
 
+	// A look that fails says why, and what to try, not the API's status.
+	missing := look(url.Values{"url": {site.URL + "/no-such-page"}})
+	if !strings.Contains(missing.body, "returned 404") || !strings.Contains(missing.body, "no page at that address") ||
+		strings.Contains(missing.body, "Unprocessable") {
+		t.Errorf("a missing page: %s", missing.body)
+	}
+
 	// Somebody else's look is nothing to anyone else.
 	mallory := f.person(t, "mallory", false)
 	if got := f.get(t, mallory, strings.TrimSuffix(job[1], "/0")); got.status != http.StatusNotFound {
