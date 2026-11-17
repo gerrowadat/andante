@@ -55,7 +55,7 @@ Every element with `hx-get` or `hx-post` is a form whose `action` and `method` s
 so with JavaScript off it posts and redirects as it always did. The tests check that on every page
 they render, and that there's no inline script and no `hx-on`.
 
-`site.js` shows a copy button next to each feed link (only where the browser has a clipboard, which
+`site.js` shows a copy button next to each feed link, here and on the feed page (only where the browser has a clipboard, which
 means https or localhost), and when a request htmx made fails with something other than a page,
 such as an expired session's plain-text 403, it puts the message in `#status` so the button doesn't
 seem to do nothing. `#status` is where the layout puts errors and notices, and it's an
@@ -254,8 +254,10 @@ opens their link in a browser. It shows the source, the pace, how many entries a
 release and links to each format, and for an owner link, the "next one now" button. It shows
 nothing the feed doesn't, and nothing about who else reads it. It has the website's stylesheets,
 theme and all. The response has `no-referrer`, so the stylesheet requests don't carry the token,
-`no-store`, and a CSP of `default-src 'none'; style-src 'self'; img-src data:`, with no scripts. A
-revoked token gets a 404.
+`no-store`, and a CSP of `default-src 'none'; script-src 'self'; style-src 'self'; img-src data:`.
+The one script is `site.js`, for a copy button by each format (#93), since a friend's next step is
+to paste a link into an app. It started with no scripts at all, and a button is worth one script
+from our own origin. There's no htmx, and nothing on the page needs it. A revoked token gets a 404.
 
 ## Users
 

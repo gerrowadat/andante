@@ -7,9 +7,11 @@ package e2e
 
 import (
 	"context"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -265,5 +267,45 @@ func TestTheThemeInABrowser(t *testing.T) {
 	font, err := chromedp.Run(ctx, chromedp.Evaluate[string](`getComputedStyle(document.body).fontFamily`))
 	if err != nil || !strings.Contains(font, "Iowan Old Style") {
 		t.Errorf("font-family = %q, %v; want paper's", font, err)
+	}
+}
+
+// The feed page loads the website's script past its own Content-Security-Policy,
+// which shows a copy button by each format.
+func TestTheFeedPageInABrowser(t *testing.T) {
+	ctx := headless(t, true)
+	base, b, server, catalogue := loggedIn(t)
+	site := sitetest.Serve(t, "discover-comic")
+
+	b.get(t, "/add")
+	job := b.post(t, "/add", url.Values{"url": {site.URL + "/"}})
+	var found visit
+	for deadline := time.Now().Add(time.Minute); ; time.Sleep(50 * time.Millisecond) {
+		found = b.get(t, job)
+		if found.status != http.StatusOK || !strings.Contains(found.body, `http-equiv="refresh"`) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("still looking at %s. Logs:\n%s\n%s", site.URL, server.output(), catalogue.output())
+		}
+	}
+	match := addThis.FindStringSubmatch(found.body)
+	if match == nil {
+		t.Fatalf("what was found: %d %s", found.status, found.body)
+	}
+	track := b.post(t, match[1], url.Values{})
+	b.get(t, track)
+	read := b.post(t, track, url.Values{"name": {"Mornings"}, "preset": {"daily"}, "at": {"07:00"}, "tz": {"UTC"}, "count": {"1"}})
+	link := regexp.MustCompile(`href="(` + regexp.QuoteMeta(base) + `/f/[^"]+)"`).FindStringSubmatch(b.get(t, read).body)
+	if link == nil {
+		t.Fatal("the read has no feed link")
+	}
+
+	if err := chromedp.Do(ctx, chromedp.Navigate(link[1]), chromedp.WaitVisible(chromedp.CSS("button[data-copy]"))); err != nil {
+		t.Fatalf("waiting for the copy buttons: %v", err)
+	}
+	shown, err := chromedp.Run(ctx, chromedp.Evaluate[int](`[...document.querySelectorAll("button[data-copy]")].filter(b => !b.hidden).length`))
+	if err != nil || shown != 3 {
+		t.Errorf("copy buttons shown: %d, %v; want 3", shown, err)
 	}
 }
