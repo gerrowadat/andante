@@ -40,3 +40,6 @@ SELECT * FROM read_segments WHERE read_id = $1 AND id > $2 ORDER BY id LIMIT $3;
 
 -- name: ListEntryTimes :many
 SELECT seq, original_date, available_at AS discovered_at FROM entries WHERE source_id = $1 ORDER BY seq;
+
+-- name: DeleteReadsOfSource :execrows
+DELETE FROM reads WHERE source_id = sqlc.arg(source_id) AND (sqlc.arg(anyone)::boolean OR user_id = sqlc.arg(user_id));

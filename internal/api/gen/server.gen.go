@@ -115,7 +115,7 @@ type ServerInterface interface {
 	CreateSource(w http.ResponseWriter, r *http.Request)
 	// DeleteSource Delete a source
 	// (DELETE /sources/{id})
-	DeleteSource(w http.ResponseWriter, r *http.Request, id ID)
+	DeleteSource(w http.ResponseWriter, r *http.Request, id ID, params DeleteSourceParams)
 	// GetSource Get a source
 	// (GET /sources/{id})
 	GetSource(w http.ResponseWriter, r *http.Request, id ID)
@@ -1105,8 +1105,24 @@ func (siw *ServerInterfaceWrapper) DeleteSource(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteSourceParams
+
+	// ------------- Optional query parameter "with_reads" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "with_reads", r.URL.Query(), &params.WithReads, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "with_reads"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "with_reads", Err: err})
+		}
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.DeleteSource(w, r, id)
+		siw.Handler.DeleteSource(w, r, id, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3036,7 +3052,8 @@ func (response CreateSourcedefaultApplicationProblemPlusJSONResponse) VisitCreat
 }
 
 type DeleteSourceRequestObject struct {
-	ID ID `json:"id"`
+	ID     ID `json:"id"`
+	Params DeleteSourceParams
 }
 
 type DeleteSourceResponseObject interface {
@@ -4612,10 +4629,11 @@ func (sh *strictHandler) CreateSource(w http.ResponseWriter, r *http.Request) {
 }
 
 // DeleteSource operation middleware
-func (sh *strictHandler) DeleteSource(w http.ResponseWriter, r *http.Request, id ID) {
+func (sh *strictHandler) DeleteSource(w http.ResponseWriter, r *http.Request, id ID, params DeleteSourceParams) {
 	var request DeleteSourceRequestObject
 
 	request.ID = id
+	request.Params = params
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
 		return sh.ssi.DeleteSource(ctx, request.(DeleteSourceRequestObject))

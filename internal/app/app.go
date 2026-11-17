@@ -137,10 +137,22 @@ func (a *App) UpdateSource(ctx context.Context, actor store.Actor, id int64, pat
 	return updated, nil
 }
 
-// DeleteSource deletes a source nobody reads. Only an admin can.
-func (a *App) DeleteSource(ctx context.Context, actor store.Actor, id int64) error {
+// DeleteSource deletes a source. Only an admin can. A source someone reads is
+// refused, unless withReads, which deletes everyone's reads of it first. If the
+// catalogue then fails, the reads stay gone and the source stays, and trying again
+// finishes the job.
+func (a *App) DeleteSource(ctx context.Context, actor store.Actor, id int64, withReads bool) error {
 	if !actor.Admin {
 		return ErrAdminOnly
+	}
+	if withReads {
+		deleted, err := a.Store.DeleteReadsOfSource(ctx, actor, id)
+		if err != nil {
+			return err
+		}
+		if deleted > 0 {
+			a.Logger.Info("deleted the reads of a source", "source", id, "reads", deleted)
+		}
 	}
 	count, err := a.Store.CountReads(ctx, id)
 	if err != nil {

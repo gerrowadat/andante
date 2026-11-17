@@ -672,7 +672,16 @@ paths:
       summary: Delete a source
       description: >-
         Deletes a source and its entries. Refused with a 409 while a read uses
-        the source.
+        the source, unless `with_reads` is set.
+      parameters:
+        - name: with_reads
+          in: query
+          description: >-
+            Delete every read of the source too, whoever owns it. Their feed
+            links stop working. It can't be undone.
+          schema:
+            type: boolean
+            default: false
       responses:
         "204":
           description: The source is gone.

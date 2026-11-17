@@ -1571,6 +1571,12 @@ type ListSourcesParams struct {
 	Kind *Kind `form:"kind,omitempty" json:"kind,omitempty"`
 }
 
+// DeleteSourceParams defines parameters for DeleteSource.
+type DeleteSourceParams struct {
+	// WithReads Delete every read of the source too, whoever owns it. Their feed links stop working. It can't be undone.
+	WithReads *bool `form:"with_reads,omitempty" json:"with_reads,omitempty"`
+}
+
 // ListCrawlLogParams defines parameters for ListCrawlLog.
 type ListCrawlLogParams struct {
 	// Cursor An opaque cursor from a previous page's next link.
@@ -2615,10 +2621,10 @@ type ClientInterface interface {
 
 	// DeleteSource Delete a source
 	//
-	// Deletes a source and its entries. Refused with a 409 while a read uses the source.
+	// Deletes a source and its entries. Refused with a 409 while a read uses the source, unless `with_reads` is set.
 	//
 	// Corresponds with DELETE /sources/{id} (the `DeleteSource` operationId).
-	DeleteSource(ctx context.Context, id ID, reqEditors ...RequestEditorFn) (*http.Response, error)
+	DeleteSource(ctx context.Context, id ID, params *DeleteSourceParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetSource Get a source
 	//
@@ -3531,11 +3537,11 @@ func (c *Client) CreateSource(ctx context.Context, body CreateSourceJSONRequestB
 
 // DeleteSource Delete a source
 //
-// Deletes a source and its entries. Refused with a 409 while a read uses the source.
+// Deletes a source and its entries. Refused with a 409 while a read uses the source, unless `with_reads` is set.
 //
 // Corresponds with DELETE /sources/{id} (the `DeleteSource` operationId).
-func (c *Client) DeleteSource(ctx context.Context, id ID, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewDeleteSourceRequest(c.Server, id)
+func (c *Client) DeleteSource(ctx context.Context, id ID, params *DeleteSourceParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteSourceRequest(c.Server, id, params)
 	if err != nil {
 		return nil, err
 	}
@@ -5306,7 +5312,7 @@ func NewCreateSourceRequestWithBody(server string, contentType string, body io.R
 }
 
 // NewDeleteSourceRequest constructs an http.Request for the DeleteSource method
-func NewDeleteSourceRequest(server string, id ID) (*http.Request, error) {
+func NewDeleteSourceRequest(server string, id ID, params *DeleteSourceParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -5329,6 +5335,33 @@ func NewDeleteSourceRequest(server string, id ID) (*http.Request, error) {
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.WithReads != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "with_reads", *params.WithReads, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
 	}
 
 	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
@@ -6388,12 +6421,12 @@ type ClientWithResponsesInterface interface {
 
 	// DeleteSourceWithResponse Delete a source
 	//
-	// Deletes a source and its entries. Refused with a 409 while a read uses the source.
+	// Deletes a source and its entries. Refused with a 409 while a read uses the source, unless `with_reads` is set.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with DELETE /sources/{id} (the `DeleteSource` operationId).
-	DeleteSourceWithResponse(ctx context.Context, id ID, reqEditors ...RequestEditorFn) (*DeleteSourceResponse, error)
+	DeleteSourceWithResponse(ctx context.Context, id ID, params *DeleteSourceParams, reqEditors ...RequestEditorFn) (*DeleteSourceResponse, error)
 
 	// GetSourceWithResponse Get a source
 	//
@@ -9338,13 +9371,13 @@ func (c *ClientWithResponses) CreateSourceWithResponse(ctx context.Context, body
 
 // DeleteSourceWithResponse Delete a source
 //
-// Deletes a source and its entries. Refused with a 409 while a read uses the source.
+// Deletes a source and its entries. Refused with a 409 while a read uses the source, unless `with_reads` is set.
 //
 // Returns a wrapper object for the known response body format(s).
 //
 // Corresponds with DELETE /sources/{id} (the `DeleteSource` operationId).
-func (c *ClientWithResponses) DeleteSourceWithResponse(ctx context.Context, id ID, reqEditors ...RequestEditorFn) (*DeleteSourceResponse, error) {
-	rsp, err := c.DeleteSource(ctx, id, reqEditors...)
+func (c *ClientWithResponses) DeleteSourceWithResponse(ctx context.Context, id ID, params *DeleteSourceParams, reqEditors ...RequestEditorFn) (*DeleteSourceResponse, error) {
+	rsp, err := c.DeleteSource(ctx, id, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}

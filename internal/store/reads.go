@@ -82,6 +82,16 @@ func (s *Store) DeleteRead(ctx context.Context, actor Actor, id int64) error {
 	return nil
 }
 
+// DeleteReadsOfSource deletes the reads of a source that the actor can reach, which
+// for an admin is all of them, and returns how many went.
+func (s *Store) DeleteReadsOfSource(ctx context.Context, actor Actor, sourceID int64) (int64, error) {
+	rows, err := s.queries.DeleteReadsOfSource(ctx, db.DeleteReadsOfSourceParams{SourceID: sourceID, Anyone: actor.Admin, UserID: actor.UserID})
+	if err != nil {
+		return 0, fmt.Errorf("delete reads of source %d: %w", sourceID, err)
+	}
+	return rows, nil
+}
+
 // Segments returns a read's whole history, in order.
 func (s *Store) Segments(ctx context.Context, readID int64) ([]db.ReadSegment, error) {
 	segments, err := s.queries.ListSegments(ctx, readID)

@@ -213,7 +213,10 @@ func TestSourceCommands(t *testing.T) {
 	if got := h.ok(t, "source", "crawl", "comic"); !strings.Contains(got, "crawl requested") {
 		t.Errorf("crawl = %s", got)
 	}
-	if got := h.ok(t, "source", "rm", "comic"); !strings.Contains(got, "deleted") {
+	if r := h.run("source", "rm", "comic", "--with-reads"); r.err == nil || !strings.Contains(r.err.Error(), "--yes") {
+		t.Errorf("rm --with-reads without --yes: %v", r.err)
+	}
+	if got := h.ok(t, "source", "rm", "comic", "--with-reads", "--yes"); !strings.Contains(got, "deleted") {
 		t.Errorf("rm = %s", got)
 	}
 	if r := h.run("source", "get", "comic"); r.err == nil || !strings.Contains(r.err.Error(), "not found") {

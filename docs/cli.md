@@ -68,6 +68,7 @@ andante source crawl-log my-comic --has-page                  # the event that k
 andante source crawled-page my-comic 812                      # the page event 812 kept
 andante source fetches my-comic                               # just the crawl log's requests
 andante source rm my-comic
+andante source rm my-comic --with-reads --yes                # and everyone's reads of it. Admins only
 ```
 
 `--selector` takes `field=css`, where the field is `title`, `image`, `alt_text`, `date` or `next`.
