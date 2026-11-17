@@ -376,14 +376,15 @@ func (s *site) deleteSource(w http.ResponseWriter, r *http.Request, v visitor) {
 	if !ok {
 		return
 	}
-	typed := r.PostFormValue("confirm")
-	err := s.opts.App.DeleteSource(r.Context(), v.actor, source.ID, typed == source.Slug)
+	// A wrong slug stops the delete even if the reads have gone since the page asked.
+	typed, asked := r.PostForm["confirm"]
+	if asked && typed[0] != source.Slug {
+		s.showSource(w, r, v, http.StatusConflict, "That isn't its slug, so nothing was deleted.", "")
+		return
+	}
+	err := s.opts.App.DeleteSource(r.Context(), v.actor, source.ID, asked)
 	if errors.Is(err, app.ErrSourceInUse) {
-		problem := "Someone reads this, so deleting it deletes their reads too. Type its slug on the delete page to go ahead."
-		if typed != "" {
-			problem = "That isn't its slug, so nothing was deleted."
-		}
-		s.showSource(w, r, v, http.StatusConflict, problem, "")
+		s.showSource(w, r, v, http.StatusConflict, "Someone reads this, so deleting it deletes their reads too. Type its slug on the delete page to go ahead.", "")
 		return
 	}
 	if err != nil {

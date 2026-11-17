@@ -473,6 +473,9 @@ func TestAnAdminDeletesASourceWithItsReads(t *testing.T) {
 	if got := f.get(t, dave, at+"/delete"); strings.Contains(got.body, `name="confirm"`) {
 		t.Error("a source nobody reads asks for its slug")
 	}
+	if got := f.post(t, dave, at+"/delete", url.Values{"confirm": {"harbour"}}); got.status != http.StatusConflict {
+		t.Errorf("the wrong slug for a source nobody reads: %d", got.status)
+	}
 	read := f.track(t, alice, source)
 	if got := f.get(t, dave, at+"/delete"); !strings.Contains(got.body, "the one read of it") || !strings.Contains(got.body, `name="confirm"`) {
 		t.Errorf("the delete page doesn't warn about the read: %s", got.body)
