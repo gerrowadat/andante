@@ -32,6 +32,10 @@ ten recovery codes, each good for one login without your phone. An admin can req
 everyone who logs in with a password, on the Users page or with `andante settings set
 --require-two-factor`, and can turn off someone's if they've lost their phone and their codes.
 
+An admin can delete a source from its page. If anyone reads it, their reads go with it and their
+feed links stop working, so the page says how many there are and asks for the source's slug before
+it does anything.
+
 An admin picks how the site looks on the Users page, or with `andante settings set --theme paper`.
 `andante settings` lists the themes. You can pick your own on your Account page, or with `andante
 whoami set --theme slate`, and go back to the site's the same way. Each theme has light and dark

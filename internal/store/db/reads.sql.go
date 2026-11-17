@@ -30,6 +30,24 @@ func (q *Queries) DeleteRead(ctx context.Context, arg DeleteReadParams) (int64, 
 	return result.RowsAffected(), nil
 }
 
+const deleteReadsOfSource = `-- name: DeleteReadsOfSource :execrows
+DELETE FROM reads WHERE source_id = $1 AND ($2::boolean OR user_id = $3)
+`
+
+type DeleteReadsOfSourceParams struct {
+	SourceID int64
+	Anyone   bool
+	UserID   int64
+}
+
+func (q *Queries) DeleteReadsOfSource(ctx context.Context, arg DeleteReadsOfSourceParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteReadsOfSource, arg.SourceID, arg.Anyone, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getRead = `-- name: GetRead :one
 SELECT id, user_id, source_id, name, start_seq, catch_up, buffer, config, created_at FROM reads WHERE id = $1 AND ($2::boolean OR user_id = $3)
 `

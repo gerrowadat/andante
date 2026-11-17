@@ -341,18 +341,34 @@ func (s *site) editSource(w http.ResponseWriter, r *http.Request, v visitor) {
 	http.Redirect(w, r, "/sources/"+strconv.FormatInt(source.ID, 10), http.StatusSeeOther)
 }
 
-type confirm struct{ Question, Detail, Action, Button, Back string }
+// confirm asks whether to go ahead. With Type set, the person has to type it into
+// the confirm field first, for what can't be undone and reaches past them.
+type confirm struct{ Question, Detail, Action, Button, Back, Type string }
 
 func (s *site) confirmDeleteSource(w http.ResponseWriter, r *http.Request, v visitor) {
 	source, ok := s.sourceOf(w, r)
 	if !ok {
 		return
 	}
+	reads, err := s.opts.Store.CountReads(r.Context(), source.ID)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
 	at := "/sources/" + strconv.FormatInt(source.ID, 10)
-	s.show(w, v, http.StatusOK, confirmView, pageData{Title: "Delete " + source.Title, Data: confirm{
-		Question: "Delete " + source.Title + "?", Detail: "Its entries go too. A source someone reads can't be deleted.",
+	ask := confirm{
+		Question: "Delete " + source.Title + "?", Detail: "Its entries go too.",
 		Action: at + "/delete", Button: "Delete it", Back: at,
-	}})
+	}
+	if reads > 0 {
+		which := "do the " + strconv.FormatInt(reads, 10) + " reads of it"
+		if reads == 1 {
+			which = "does the one read of it"
+		}
+		ask.Detail = "Its entries go too, and so " + which + ", whoever they belong to. Their feed links stop working. It can't be undone."
+		ask.Type = source.Slug
+	}
+	s.show(w, v, http.StatusOK, confirmView, pageData{Title: "Delete " + source.Title, Data: ask})
 }
 
 func (s *site) deleteSource(w http.ResponseWriter, r *http.Request, v visitor) {
@@ -360,9 +376,14 @@ func (s *site) deleteSource(w http.ResponseWriter, r *http.Request, v visitor) {
 	if !ok {
 		return
 	}
-	err := s.opts.App.DeleteSource(r.Context(), v.actor, source.ID)
+	typed := r.PostFormValue("confirm")
+	err := s.opts.App.DeleteSource(r.Context(), v.actor, source.ID, typed == source.Slug)
 	if errors.Is(err, app.ErrSourceInUse) {
-		s.showSource(w, r, v, http.StatusConflict, "Someone still reads this, so it can't be deleted.", "")
+		problem := "Someone reads this, so deleting it deletes their reads too. Type its slug on the delete page to go ahead."
+		if typed != "" {
+			problem = "That isn't its slug, so nothing was deleted."
+		}
+		s.showSource(w, r, v, http.StatusConflict, problem, "")
 		return
 	}
 	if err != nil {

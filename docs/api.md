@@ -68,7 +68,7 @@ warning instead. Discoveries fail the same way.
 
 Status 409. The request clashes with what exists: a source that already reads this serial, whose ID is
 in `existing_source_id`, a slug already in use, deleting
-a source a read still uses, revoking your last active API token, changing a read's
+a source a read still uses (unless `with_reads` is set, which deletes everyone's reads of it too), revoking your last active API token, changing a read's
 `catch_up` or `buffer`, a jump to or behind the read's position or past the index, a
 skip with nothing to skip to, pausing a paused read, or resuming one that is not.
 

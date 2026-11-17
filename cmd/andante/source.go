@@ -526,22 +526,29 @@ func (a *app) editedConfig(ctx context.Context, id int64, startURL string, flags
 }
 
 func (a *app) sourceRemove() *cobra.Command {
-	return operation(&cobra.Command{
+	var withReads, sure bool
+	remove := operation(&cobra.Command{
 		Use:   "rm <id|slug>",
 		Short: "Delete a source and its entries.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if withReads && !sure {
+				return errors.New("this deletes everyone's reads of the source for good; add --yes if you mean it")
+			}
 			id, err := a.resolveSource(cmd.Context(), args[0])
 			if err != nil {
 				return err
 			}
-			resp, err := a.client.DeleteSourceWithResponse(cmd.Context(), id)
+			resp, err := a.client.DeleteSourceWithResponse(cmd.Context(), id, &client.DeleteSourceParams{WithReads: &withReads})
 			if err != nil {
 				return err
 			}
 			return a.done(resp.StatusCode(), resp.Body, "deleted")
 		},
 	}, "deleteSource")
+	remove.Flags().BoolVar(&withReads, "with-reads", false, "delete everyone's reads of it too")
+	remove.Flags().BoolVar(&sure, "yes", false, "really delete the reads")
+	return remove
 }
 
 func (a *app) sourceCrawl() *cobra.Command {

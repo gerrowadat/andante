@@ -120,7 +120,7 @@ func (h *handler) UpdateSource(ctx context.Context, r gen.UpdateSourceRequestObj
 }
 
 func (h *handler) DeleteSource(ctx context.Context, r gen.DeleteSourceRequestObject) (gen.DeleteSourceResponseObject, error) {
-	if err := h.app.DeleteSource(ctx, actorOf(ctx), r.ID); err != nil {
+	if err := h.app.DeleteSource(ctx, actorOf(ctx), r.ID, r.Params.WithReads != nil && *r.Params.WithReads); err != nil {
 		return nil, sourceError(err)
 	}
 	return gen.DeleteSource204Response{}, nil

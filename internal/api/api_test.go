@@ -154,7 +154,7 @@ func TestSourceLifecycle(t *testing.T) {
 		t.Fatalf("patching config: %d %s", reconfigured.StatusCode(), reconfigured.Body)
 	}
 
-	deleted, err := f.client.DeleteSourceWithResponse(ctx, created.ID)
+	deleted, err := f.client.DeleteSourceWithResponse(ctx, created.ID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +190,7 @@ func TestSourceConflicts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	refused, err := f.client.DeleteSourceWithResponse(ctx, created.ID)
+	refused, err := f.client.DeleteSourceWithResponse(ctx, created.ID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -617,7 +617,7 @@ func TestReadLifecycle(t *testing.T) {
 		t.Fatalf("list: %d %s", list.StatusCode(), list.Body)
 	}
 
-	inUse, err := f.client.DeleteSourceWithResponse(ctx, s.ID)
+	inUse, err := f.client.DeleteSourceWithResponse(ctx, s.ID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1507,6 +1507,42 @@ func TestAdminsCanSeeEveryRead(t *testing.T) {
 	}
 }
 
+func TestAnAdminDeletesASourceWithItsReads(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	s := f.createSource(t, "s").ID
+	f.addEntries(t, s, 3, true)
+	alice, bob := f.user(t, "alice", false), f.user(t, "bob", false)
+	read, err := alice.client.CreateReadWithResponse(ctx, client.ReadCreate{SourceID: s, Name: "r", Pacing: rrulePacing(t)})
+	if err != nil || read.JSON201 == nil {
+		t.Fatalf("create read: %v %s", err, read.Body)
+	}
+	withReads := &client.DeleteSourceParams{WithReads: ptr(true)}
+
+	refused, err := f.client.DeleteSourceWithResponse(ctx, s, nil)
+	if err != nil || refused.StatusCode() != http.StatusConflict {
+		t.Errorf("without with_reads: %v %d", err, refused.StatusCode())
+	}
+	forbidden, err := bob.client.DeleteSourceWithResponse(ctx, s, withReads)
+	if err != nil || forbidden.StatusCode() != http.StatusForbidden {
+		t.Errorf("a user with with_reads: %v %d", err, forbidden.StatusCode())
+	}
+	if kept, err := alice.client.GetReadWithResponse(ctx, read.JSON201.ID); err != nil || kept.JSON200 == nil {
+		t.Fatalf("alice's read after refusals: %v %s", err, kept.Body)
+	}
+
+	deleted, err := f.client.DeleteSourceWithResponse(ctx, s, withReads)
+	if err != nil || deleted.StatusCode() != http.StatusNoContent {
+		t.Fatalf("with with_reads: %v %d %s", err, deleted.StatusCode(), deleted.Body)
+	}
+	if gone, err := alice.client.GetReadWithResponse(ctx, read.JSON201.ID); err != nil || gone.StatusCode() != http.StatusNotFound {
+		t.Errorf("alice's read after: %v %d", err, gone.StatusCode())
+	}
+	if gone, err := f.client.GetSourceWithResponse(ctx, s); err != nil || gone.StatusCode() != http.StatusNotFound {
+		t.Errorf("the source after: %v %d", err, gone.StatusCode())
+	}
+}
+
 func TestSourcesAreSharedButOnlyAdminsChangeThem(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
@@ -1532,7 +1568,7 @@ func TestSourcesAreSharedButOnlyAdminsChangeThem(t *testing.T) {
 	if patched.ApplicationProblemJSONDefault == nil || !strings.HasSuffix(patched.ApplicationProblemJSONDefault.Type, "#forbidden") {
 		t.Errorf("problem = %s", patched.Body)
 	}
-	deleted, err := bob.client.DeleteSourceWithResponse(ctx, id)
+	deleted, err := bob.client.DeleteSourceWithResponse(ctx, id, nil)
 	if err != nil || deleted.StatusCode() != http.StatusForbidden {
 		t.Errorf("a user deleting a source: %v %d", err, deleted.StatusCode())
 	}

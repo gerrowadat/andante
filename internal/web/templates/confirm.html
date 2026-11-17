@@ -4,6 +4,9 @@
 <p>{{.Detail}}</p>
 <form method="post" action="{{root}}{{.Action}}" class="actions">
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
+  {{with .Type}}<label>Type <code>{{.}}</code> to confirm
+    <input name="confirm" required autocomplete="off" autocapitalize="off" spellcheck="false" pattern="{{.}}">
+  </label>{{end}}
   <button>{{.Button}}</button> <a href="{{root}}{{.Back}}" role="button" class="secondary outline">No, go back</a>
 </form>
 </article>

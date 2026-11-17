@@ -465,6 +465,32 @@ func TestAdminsManageSources(t *testing.T) {
 	}
 }
 
+func TestAnAdminDeletesASourceWithItsReads(t *testing.T) {
+	f := newFixture(t)
+	dave, alice := f.person(t, "dave", true), f.person(t, "alice", false)
+	source := f.source(t, "Harbour Lights")
+	at := "/sources/" + strconv.FormatInt(source, 10)
+	if got := f.get(t, dave, at+"/delete"); strings.Contains(got.body, `name="confirm"`) {
+		t.Error("a source nobody reads asks for its slug")
+	}
+	read := f.track(t, alice, source)
+	if got := f.get(t, dave, at+"/delete"); !strings.Contains(got.body, "the one read of it") || !strings.Contains(got.body, `name="confirm"`) {
+		t.Errorf("the delete page doesn't warn about the read: %s", got.body)
+	}
+	if got := f.post(t, dave, at+"/delete", url.Values{"confirm": {"harbour"}}); got.status != http.StatusConflict || !strings.Contains(got.body, "isn&#39;t its slug") {
+		t.Errorf("the wrong slug: %d", got.status)
+	}
+	if got := f.get(t, alice, "/reads/"+strconv.FormatInt(read, 10)); got.status != http.StatusOK {
+		t.Fatalf("alice's read after the wrong slug: %d", got.status)
+	}
+	if got := f.post(t, dave, at+"/delete", url.Values{"confirm": {"harbour-lights"}}); got.status != http.StatusSeeOther {
+		t.Fatalf("the right slug: %d %s", got.status, got.body)
+	}
+	if got := f.get(t, alice, "/reads/"+strconv.FormatInt(read, 10)); got.status != http.StatusNotFound {
+		t.Errorf("alice's read after: %d", got.status)
+	}
+}
+
 func TestAddingASite(t *testing.T) {
 	f := newFixture(t)
 	alice := f.person(t, "alice", false)

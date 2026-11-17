@@ -275,7 +275,7 @@ func TestTheSourcePageShowsIndexingAsItHappens(t *testing.T) {
 	hers.until(t, "8 so far", "More 2", "Indexing")
 	his.until(t, "8 so far", "Indexing")
 
-	if err := f.stack.App.DeleteSource(t.Context(), dave.actor, source); err != nil {
+	if err := f.stack.App.DeleteSource(t.Context(), dave.actor, source, false); err != nil {
 		t.Fatal(err)
 	}
 	if err := f.stack.Sync.CatchUp(t.Context()); err != nil {
