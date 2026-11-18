@@ -6,6 +6,44 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-18
+
+### Added
+
+- The website has a stylesheet (Pico CSS) and uses htmx where JavaScript is on. Every page still
+  works without it.
+- The Add page shows discovery's steps as they happen, and a source's page shows indexing as it
+  happens. The Read page keeps itself up to date. All three follow a Server-Sent Events stream.
+- Themes. An admin picks the site's with `theme` in `PATCH /settings`, on the Users page or with
+  `andante settings set --theme`, and each user can pick their own on the Account page, with
+  `PATCH /me` or with `andante whoami set --theme`. There are four built in: default, paper, slate
+  and contrast.
+- Copy buttons for feed links, on the Read page and the feed page, where the browser has a
+  clipboard.
+- Admins can read each service's recent logs at `/logs`, `GET /logs` and `andante logs`, filtered by
+  level, source or read. `--log-history` sets how many records each service keeps.
+- The crawl log, on a source's page, at `GET /sources/{id}/fetches` and
+  `GET /sources/{id}/crawl-log`, and with `andante source crawl-log`. Beside the requests it says
+  why a pass ran, what the strategy decided and when the source is checked again. When a crawl
+  finds no next link it keeps that page's body, readable with
+  `GET /sources/{id}/crawl-log/{entry}/page` and `andante source crawled-page`.
+- Password rules are settings: `password_min_length`, `password_classes` and
+  `password_non_letters`, on the Users page, with `PATCH /settings` or `andante settings set`.
+- An admin can delete a source along with everyone's reads of it, with `with_reads` on
+  `DELETE /sources/{id}`, `andante source rm --with-reads --yes`, or on the website after typing
+  the source's slug.
+- Crawling falls back to link labels ("Next", "First") and images with "comic" in their class or
+  path, for sites with no metadata the extractor knows.
+- `andante_discovery_stages_total`.
+
+### Changed
+
+- The default password rules are at least 8 characters with at least one that isn't a letter. They
+  apply to passwords set from now on.
+- The website's CSP allows scripts, and connections, from its own origin.
+- A failed look at a site on the website says why, and what to try, where it can tell.
+- The oldest Postgres supported is 15, and CI tests against it.
+
 ### Fixed
 
 - The CLI in the image finds the server under a path. With `ANDANTE_BASE_URL` set, which it is in
@@ -13,6 +51,9 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rather than `http://127.0.0.1:8080`.
 - The Nomad CLI alias in the install docs puts `-task` before `-job`, which `nomad alloc exec`
   needs.
+- The example Nomad job passes `bootstrap_token` through to the server.
+- A daily RRULE in a zone that puts its clocks forward at midnight, such as America/Havana,
+  released twice on the day before the change and not at all on the day itself.
 
 ## [0.1.1] - 2026-11-12
 
@@ -132,7 +173,8 @@ CLI, a Nomad job and alert rules.
 - Update `golang.org/x/net` to v0.62.0, for GO-2026-6860 and GO-2026-6866 in its
   HTML parser, which reads pages from other people's sites.
 
-[Unreleased]: https://github.com/gerrowadat/andante/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/gerrowadat/andante/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/gerrowadat/andante/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/gerrowadat/andante/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/gerrowadat/andante/compare/v0.0.1...v0.1.0
 [0.0.1]: https://github.com/gerrowadat/andante/releases/tag/v0.0.1
