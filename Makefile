@@ -137,6 +137,10 @@ docker: ## Build the image for this machine's platform as andante:dev
 	  --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg DATE=$(DATE) \
 	  -t andante:dev .
 
+.PHONY: screenshots
+screenshots: ## Retake the user guide's screenshots in Docker (see docs/development.md)
+	scripts/guide/screenshots.sh
+
 .PHONY: docker-scan
 docker-scan: docker ## Scan andante:dev as CI does (needs Trivy)
 	@command -v trivy >/dev/null 2>&1 || { echo "trivy is not installed"; exit 1; }
