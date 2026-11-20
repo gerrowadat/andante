@@ -6,6 +6,14 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-20
+
+### Changed
+
+- Dependency updates: goquery 1.14.0, chromedp/cdproto 0.160.3, pgx 5.13.0, oapi-codegen/runtime
+  1.9.0, goose 3.30.1, golang.org/x/crypto 0.59.0 and golang.org/x/text 0.44.0, and a newer
+  `golang` base image.
+
 ## [0.2.0] - 2026-11-18
 
 ### Added
@@ -173,7 +181,8 @@ CLI, a Nomad job and alert rules.
 - Update `golang.org/x/net` to v0.62.0, for GO-2026-6860 and GO-2026-6866 in its
   HTML parser, which reads pages from other people's sites.
 
-[Unreleased]: https://github.com/gerrowadat/andante/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/gerrowadat/andante/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/gerrowadat/andante/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/gerrowadat/andante/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/gerrowadat/andante/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/gerrowadat/andante/compare/v0.0.1...v0.1.0
