@@ -101,7 +101,13 @@ Users list and end their own sessions through the API, and an admin can't end so
 `http.CrossOriginProtection` from the standard library covers every POST, including login, where there's
 no session for a CSRF token to come from. Logged-in forms also carry a token derived from the session, so
 there's nothing to store and it's dead when the session is. Pages send a strict Content-Security-Policy,
-`frame-ancestors 'none'`, `nosniff`, `no-referrer` and `no-store`, and HSTS over HTTPS.
+`frame-ancestors 'none'`, `nosniff`, `same-origin` referrers and `no-store`, and HSTS over HTTPS.
+
+The referrer policy was `no-referrer` at first, because an invite's URL is the credential. But with
+`no-referrer` browsers send `Origin: null` on a POST, even to the same site. Over HTTPS that doesn't
+matter, since `Sec-Fetch-Site` says it's same-origin. Over plain http to a name that isn't localhost
+Chrome doesn't send `Sec-Fetch-Site`, so the null Origin was all the check had, and every login
+failed (#103). `same-origin` keeps the URL from other sites and lets the Origin through.
 
 ## Two-Factor
 
