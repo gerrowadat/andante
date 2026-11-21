@@ -358,6 +358,9 @@ func (p *public) confirmNext(w http.ResponseWriter, r *http.Request) {
 var feedPage = template.Must(template.New("feed").Parse(`<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{{.Title}}</title>
+<link rel="alternate" type="application/atom+xml" title="Atom" href="{{.Atom}}">
+<link rel="alternate" type="application/rss+xml" title="RSS" href="{{.RSS}}">
+<link rel="alternate" type="application/feed+json" title="JSON Feed" href="{{.JSON}}">
 {{range .Styles}}<link rel="stylesheet" href="{{.}}">
 {{end}}<script defer src="{{.Script}}"></script>
 </head>
