@@ -369,8 +369,9 @@ type FeedInfo struct {
 	Title   string
 	HomeURL string
 	Items   int
-	First   string // The identity of its first item, to tell pages apart.
-	CutOff  bool   // It looks like the latest items, and not the archive.
+	First   string   // The identity of its first item, to tell pages apart.
+	CutOff  bool     // It looks like the latest items, and not the archive.
+	Links   []string // Its items' links, made absolute against the feed's address.
 }
 
 // ReadFeed returns what's in a feed, or false if body isn't one with items in it.
@@ -385,7 +386,27 @@ func ReadFeed(body []byte, base string) (FeedInfo, bool) {
 		Items:   len(doc.Items),
 		First:   itemIdentity(doc.Items[0]),
 		CutOff:  len(truncationWarning([]*gofeed.Feed{doc})) > 0 && archiveLink(body, base) == "",
+		Links:   itemLinks(doc, base),
 	}, true
+}
+
+func itemLinks(doc *gofeed.Feed, base string) []string {
+	baseURL, err := url.Parse(base)
+	if err != nil {
+		return nil
+	}
+	var links []string
+	for _, item := range doc.Items {
+		if item.Link == "" {
+			continue
+		}
+		link, err := baseURL.Parse(strings.TrimSpace(item.Link))
+		if err != nil {
+			continue
+		}
+		links = append(links, link.String())
+	}
+	return links
 }
 
 func sourceUpdate(doc *gofeed.Feed) *discovery.SourceUpdate {

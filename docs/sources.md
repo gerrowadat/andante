@@ -11,8 +11,9 @@ andante source discover https://comic.example/
 ```
 
 It looks for a feed the page links to, then tries common paths such as `/feed` and `/rss.xml`, and
-checks whether the feed holds the whole archive. If it doesn't, it looks for a `?paged=` feed, or a
-link to the first page. Each candidate gets a normal probe, so you can see what you'd get before you
+checks whether the feed holds the whole archive. If it doesn't, it looks for a `?paged=` feed. If the
+page links to the first page, crawling from there is a candidate too, ahead of a feed that's short.
+Each candidate gets a normal probe, so you can see what you'd get before you
 add anything. Best first, each one has the config to pass to `source add`. Nothing is saved.
 
 This keeps to the same limits as crawling, so it can take a minute or two. If it finds nothing, it
@@ -36,7 +37,9 @@ webcomics don't.
 | Pages with a "next" link | `crawl` | `start_url`, optional `selectors`, `full_text` |
 
 A probe of a `feed` warns when the feed looks cut off at a round number of items. If it is,
-the rest of the archive isn't in the feed, so use `feed-paged` or `crawl`.
+the rest of the archive isn't in the feed, so use `feed-paged` or `crawl`. Discovery also warns
+when a site links its first page and the feed doesn't have it, which is how most webcomics' feeds
+look: the latest few pages.
 
 In a `numeric` source a 404 is a gap, and `max_consecutive_misses` of them in a row (5 by
 default) are taken as the live end. With `format: json`, `fields` says where each value is,

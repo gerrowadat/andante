@@ -6,6 +6,12 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Discovery offers a crawl from the first page whenever a site links one. Before, a webcomic whose
+  feed held its latest few pages was offered only that feed. A feed that doesn't reach the site's
+  first page now ranks below the crawl, with a warning (#102).
+
 ## [0.2.1] - 2026-11-20
 
 ### Changed

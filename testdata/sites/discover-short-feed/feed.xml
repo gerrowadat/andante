@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The latest three pages, as most webcomics' feeds have. The links are relative
+     so that they point at the test server, wherever it is. -->
+<rss version="2.0">
+  <channel>
+    <title>The Short Comic</title>
+    <description>The Short Comic</description>
+    <item>
+      <title>Page 5</title>
+      <link>/5.html</link>
+      <guid isPermaLink="false">short-comic-5</guid>
+      <pubDate>Mon, 05 Mar 2015 00:00:00 +0000</pubDate>
+      <description>Page 5</description>
+    </item>
+    <item>
+      <title>Page 4</title>
+      <link>/4.html</link>
+      <guid isPermaLink="false">short-comic-4</guid>
+      <pubDate>Mon, 04 Mar 2015 00:00:00 +0000</pubDate>
+      <description>Page 4</description>
+    </item>
+    <item>
+      <title>Page 3</title>
+      <link>/3.html</link>
+      <guid isPermaLink="false">short-comic-3</guid>
+      <pubDate>Mon, 03 Mar 2015 00:00:00 +0000</pubDate>
+      <description>Page 3</description>
+    </item>
+  </channel>
+</rss>

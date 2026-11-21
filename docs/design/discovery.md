@@ -66,9 +66,21 @@ robots.txt, spacing and the SSRF guard all apply. In order, it:
    matches. That's what stops a second person adding a serial from costing the site anything.
 2. Fetches the address. If that's a feed, it's used as it is.
 3. Follows `<link rel="alternate">` feeds, then tries common paths such as `/feed` and `/rss.xml`.
-4. If a feed looks cut off, tries `?paged=2`. A different first item means it's paged.
-5. If no feed gets the whole archive, looks for a first page to crawl from: `rel="first"`, the
-   platform patterns the extractors already know, or a link that says "First". A crawl ranks above a feed that's cut off.
+4. Looks for a first page to crawl from: `rel="first"`, the platform patterns the extractors
+   already know, or a link that says "First".
+5. Decides whether each feed is cut off. One with the first page among its items has the whole
+   archive. One without it is short, and gets a warning saying so. Otherwise a feed is cut off if
+   it has a round number of items and no RFC 5005 archive link. A short or cut-off feed gets a try
+   of `?paged=2`, and a different first item means it's paged.
+6. Offers a crawl from the first page whenever there is one. It ranks above a feed that's short or
+   cut off, and below one that has the whole archive.
+
+A webcomic's feed usually holds its latest few pages, at no round number, so before #102 a feed
+like that counted as the whole archive and the crawl was never offered. Whether the feed reaches
+the first page is a better test than its length, because it doesn't need to know how long the
+archive is. It can be wrong when the feed's links and the site's first-page link name the same page
+by different URLs. That makes the feed look short, so the worst case is a crawl ranked first and a
+warning that isn't needed.
 
 Each idea then gets a normal probe, and one that fails is dropped, so a broken feed can't hide a crawl
 that would work. A paged feed's probe stops after two pages, because walking the whole of one here
