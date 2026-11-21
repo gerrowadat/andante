@@ -6,6 +6,11 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- The website's pages keep a margin either side at window widths up to about 1200px, where the
+  header and content used to touch the edges of the window (#106).
+
 ## [0.2.1] - 2026-11-20
 
 ### Changed

@@ -154,3 +154,30 @@ func TestVendoredFilesAreCachedForGood(t *testing.T) {
 		}
 	}
 }
+
+// Pico scales rem up at wide breakpoints and takes the container's side padding
+// away above 576px, so a .container max-width in rem alone can be wider than the
+// window and leave no margin (#106). Every one must also be capped by the width
+// it sits in.
+func TestContainerWidthLeavesAMargin(t *testing.T) {
+	css, err := staticFiles.ReadFile("static/style.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule := regexp.MustCompile(`(?m)^([^{}]*\.container[^{}]*)\{([^}]*)\}`)
+	maxWidth := regexp.MustCompile(`max-width:\s*([^;]+)`)
+	found := 0
+	for _, m := range rule.FindAllStringSubmatch(string(css), -1) {
+		w := maxWidth.FindStringSubmatch(m[2])
+		if w == nil {
+			continue
+		}
+		found++
+		if v := strings.TrimSpace(w[1]); !strings.HasPrefix(v, "min(") || !strings.Contains(v, "100% - 2 * var(--pico-spacing)") {
+			t.Errorf("%s: max-width %q isn't capped at the window less a margin", strings.TrimSpace(m[1]), v)
+		}
+	}
+	if found == 0 {
+		t.Error("no .container max-width in style.css")
+	}
+}
