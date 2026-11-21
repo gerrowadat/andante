@@ -158,6 +158,7 @@ scripts/                  check.sh, ci-wait.sh, release.sh, build-dist.sh, licen
 | Term | Meaning |
 |---|---|
 | Catalogue | The service that holds sources and entries and does the crawling. |
+| Instance | One deployment of andante: both services and their databases. "andante" isn't a noun, so write "an andante instance", "your andante instance", never "an andante" or "your andante". |
 | Source | A serial (comic, podcast, blog, news site), plus the strategy used to discover its archive. |
 | Strategy | How a source's archive is discovered: `crawl`, `numeric`, `feed`, `feed-paged`. |
 | Entry | One item of a serial — a comic page, an episode, a post — with a sequence number (`seq`) in reading order. |

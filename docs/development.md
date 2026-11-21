@@ -61,7 +61,7 @@ The screenshots in the [user guide](user-guide.md) come from `make screenshots`,
 `scripts/guide/screenshots.sh`. It builds `andante:dev`, then runs andante, two made-up serials
 (`scripts/guide/make_site.py`) and Miniflux in Docker on a network of their own, and drives Chromium
 through them with Playwright (`scripts/guide/shoot.py`). It publishes no ports, so it doesn't clash
-with an andante already running, and it removes everything when it's done. `KEEP=1` leaves the stack
+with an andante instance already running, and it removes everything when it's done. `KEEP=1` leaves the stack
 up, and `IMAGE` uses an image you already have instead of building one.
 
 Retake them when the website changes enough that they're wrong. They aren't checked in CI.

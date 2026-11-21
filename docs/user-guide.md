@@ -1,8 +1,8 @@
 # User Guide
 
-This is for people who use an andante someone else runs. You don't need to know how it works
-inside, and there's nothing here about installing it. If you're the person running it, start with
-[installing](install.md) and [bootstrapping](bootstrap.md), and send everyone else here.
+This is for people who use an andante instance someone else runs. You don't need to know how it
+works inside, and there's nothing here about installing it. If you're the person running it, start
+with [installing](install.md) and [bootstrapping](bootstrap.md), and send everyone else here.
 
 ## What andante Does
 
@@ -44,8 +44,8 @@ You start with nothing.
 
 ## Finding Something to Read
 
-**Browse** lists every serial anyone on this andante has added. Serials are shared, so if someone
-got there first you can start straight away.
+**Browse** lists every serial anyone on this andante instance has added. Serials are shared, so if
+someone got there first you can start straight away.
 
 ![Browse, listing Gannet Point and Tide Tables](images/guide/browse.png)
 
@@ -184,4 +184,4 @@ If you can invite people, **Invites** in the menu makes links for them.
   to you, and a reader would bury an entry dated 2012. The original date is in the entry itself. The
   [FAQ](faq.md) has more on this and other surprises.
 
-For anything else, ask whoever runs your andante.
+For anything else, ask whoever runs your andante instance.
