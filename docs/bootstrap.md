@@ -1,7 +1,7 @@
 # Bootstrapping
 
-A new andante has no users. This page gets you from a freshly [installed](install.md) server to an
-admin who can log in, use the CLI and let other people in. Why it works this way is in
+A new andante instance has no users. This page gets you from a freshly [installed](install.md)
+server to an admin who can log in, use the CLI and let other people in. Why it works this way is in
 [the design record](design/bootstrap.md).
 
 ## The First Admin

@@ -4,6 +4,8 @@ Start at the [project README](../README.md) if you don't know what andante is ye
 
 ## Using It
 
+- [User guide](user-guide.md): for people using an andante instance someone else runs. What it
+  does, with screenshots, from logging in to subscribing in a feed reader.
 - [Installing](install.md): start here. Docker Compose, Nomad, plain Docker, a release archive or source.
 - [Bootstrapping](bootstrap.md): the first admin, the CLI, invites, and what to do before going public.
 - [Using andante](using.md): add a serial, make a read, subscribe, on the website or the CLI.

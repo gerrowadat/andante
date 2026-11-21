@@ -13,6 +13,9 @@ You get a normal feed (Atom, RSS 2.0 or JSON Feed) for whatever feed reader or p
 you already use. Feeds are shareable, so a few friends can read or listen along
 together. Going back to the start is a new read.
 
+The [user guide](docs/user-guide.md) walks through it with screenshots, from logging in to reading
+in a feed reader.
+
 > Status: alpha. v0.1.0 was the first release with accounts and a website. Expect rough edges.
 
 ## Quick Start
@@ -66,6 +69,7 @@ The feed URL is built from the base URL, so a reader on another machine needs a 
 
 ## Documentation
 
+- [User guide](docs/user-guide.md): what andante does, for the people using it
 - [Installing](docs/install.md): Docker Compose, Nomad, a binary or from source
 - [Bootstrapping](docs/bootstrap.md): the first admin, and letting people in
 - [Using andante](docs/using.md): adding a serial, pacing it, subscribing
