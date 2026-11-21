@@ -241,7 +241,7 @@ func foundOf(j job) foundData {
 			}
 			title, _ := e.Title.Get()
 			if title == "" {
-				title = "Entry " + strconv.Itoa(int(e.Seq))
+				title = "Entry " + strconv.Itoa(entryNumber(int32(e.Seq)))
 			}
 			row.Sample = append(row.Sample, title)
 		}

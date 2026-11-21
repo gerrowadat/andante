@@ -109,7 +109,8 @@ From here you can:
 - **Pause** it while you're on holiday, and **Resume** when you're back. Nothing piles up while it's
   paused.
 - **Release the next one now**, when you can't wait until tomorrow.
-- **Jump** ahead to an entry, if you've read some of it already.
+- **Jump** ahead to an entry, if you've read some of it already. Entries are numbered from 1, as in
+  the source page's list, so jumping to entry 5 releases the first five.
 - **Change the pace**. The new pace starts from where you are.
 
 ![Changing the pace of a read](images/guide/repace.png)
