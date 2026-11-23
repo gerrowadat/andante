@@ -8,6 +8,8 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The website's pages keep a margin either side at window widths up to about 1200px, where the
+  header and content used to touch the edges of the window (#106).
 - Discovery offers a crawl from the first page whenever a site links one. Before, a webcomic whose
   feed held its latest few pages was offered only that feed. A feed that doesn't reach the site's
   first page now ranks below the crawl, with a warning (#102).

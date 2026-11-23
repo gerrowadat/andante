@@ -1,8 +1,11 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /* Copyright (C) 2026 Dave O'Connor */
 /* What Pico doesn't do. Colours come from Pico's variables, so light and dark follow it. */
-.container { max-width: 64rem; }
-.container.narrow { max-width: 32rem; padding-top: 2rem; }
+/* Pico grows the root font size at wider breakpoints and drops the container's
+   side padding above 576px, so a bare rem max-width can come out wider than the
+   window. Cap it at the viewport less a margin either side. */
+.container { max-width: min(64rem, 100% - 2 * var(--pico-spacing)); }
+.container.narrow { max-width: min(32rem, 100% - 2 * var(--pico-spacing)); padding-top: 2rem; }
 header.container { border-bottom: 1px solid var(--pico-muted-border-color); margin-bottom: var(--pico-spacing); }
 nav ul { flex-wrap: wrap; }
 nav .brand { font-weight: bold; color: var(--pico-color); }
