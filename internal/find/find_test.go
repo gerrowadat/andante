@@ -209,6 +209,66 @@ func TestACrawlComesBeforeAFeedThatsCutOff(t *testing.T) {
 	}
 }
 
+// A webcomic's feed usually holds its latest few pages, at no round number, and it's
+// the first-page link that gives it away (#102).
+func TestAComicWithAShortFeed(t *testing.T) {
+	f := newFixture(t)
+	site := sitetest.Serve(t, "discover-short-feed")
+	candidates := f.find(t, site.URL+"/")
+	if len(candidates) != 2 || strategyOf(t, candidates[0]) != "crawl" || strategyOf(t, candidates[1]) != "feed" {
+		t.Fatalf("candidates = %+v", candidates)
+	}
+	// It checks whether the feed is paged, as for one cut off at a round number.
+	if got, want := steps(f.stepsOf(t, site.URL+"/")), "fetch feed paged probe probe"; got != want {
+		t.Errorf("steps = %q, want %q", got, want)
+	}
+	crawl, feed := candidates[0], candidates[1]
+	if !strings.Contains(string(crawl.Config), site.URL+"/1.html") || crawl.Kind != "page" || crawl.Title != "The Short Comic" {
+		t.Errorf("crawl = %+v", crawl)
+	}
+	if len(crawl.Sample) != 3 || crawl.Sample[0].Title != "Page 1" || len(crawl.Sample[0].Images) == 0 {
+		t.Errorf("crawl sample = %+v", crawl.Sample)
+	}
+	if len(crawl.Warnings) != 0 {
+		t.Errorf("crawl warnings = %q", crawl.Warnings)
+	}
+	if len(feed.Sample) != 3 {
+		t.Errorf("feed sample = %+v", feed.Sample)
+	}
+	if warnings := strings.Join(feed.Warnings, " "); !strings.Contains(warnings, "the feed has 3 items and doesn't go back to the site's first page") {
+		t.Errorf("feed warnings = %q", warnings)
+	}
+}
+
+// A feed that holds the first page has the whole archive, so it stays first, and the
+// crawl is there for anyone who'd rather have the pages.
+func TestAComicWithAFeedThatGoesBackToTheStart(t *testing.T) {
+	f := newFixture(t)
+	site := sitetest.Serve(t, "discover-short-feed")
+	var items strings.Builder
+	for n := 5; n >= 1; n-- {
+		fmt.Fprintf(&items, "<item><title>Page %d</title><link>%s/%d.html</link></item>", n, site.URL, n)
+	}
+	site.Intercept(func(w http.ResponseWriter, r *http.Request) bool {
+		if r.URL.Path != "/feed.xml" {
+			return false
+		}
+		_, _ = fmt.Fprintf(w, `<?xml version="1.0"?><rss version="2.0"><channel><title>The Short Comic</title>%s</channel></rss>`, items.String())
+		return true
+	})
+	candidates := f.find(t, site.URL+"/")
+	if len(candidates) != 2 || strategyOf(t, candidates[0]) != "feed" || strategyOf(t, candidates[1]) != "crawl" {
+		t.Fatalf("candidates = %+v", candidates)
+	}
+	if len(candidates[0].Warnings) != 0 {
+		t.Errorf("feed warnings = %q", candidates[0].Warnings)
+	}
+	// A feed with the first page in it needs no check for older pages.
+	if got, want := steps(f.stepsOf(t, site.URL+"/")), "fetch feed probe probe"; got != want {
+		t.Errorf("steps = %q, want %q", got, want)
+	}
+}
+
 func TestNothingToGoOn(t *testing.T) {
 	f := newFixture(t)
 	site := sitetest.Serve(t, "discover-full")

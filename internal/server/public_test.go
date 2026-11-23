@@ -861,6 +861,16 @@ func TestTheFeedPage(t *testing.T) {
 			t.Errorf("the page has no copy button for %s:\n%s", format, body)
 		}
 	}
+	// A feed reader given the page's own URL finds the feeds by the usual autodiscovery links.
+	for format, link := range map[string]string{
+		"atom": `<link rel="alternate" type="application/atom+xml" title="Atom" href="`,
+		"rss":  `<link rel="alternate" type="application/rss+xml" title="RSS" href="`,
+		"json": `<link rel="alternate" type="application/feed+json" title="JSON Feed" href="`,
+	} {
+		if want := link + feed.URL("https://andante.example/", viewer, format) + `">`; !strings.Contains(body, want) {
+			t.Errorf("the page has no %q:\n%s", want, body)
+		}
+	}
 
 	_, ownerBody := f.get(t, "/f/"+owner)
 	if !strings.Contains(ownerBody, "/f/"+owner+"/next") {

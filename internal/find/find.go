@@ -139,7 +139,8 @@ type idea struct {
 	title, home, strategy, kind string
 	config                      map[string]any
 	probeConfig                 map[string]any
-	partial                     bool // It won't get the whole archive.
+	partial                     bool     // It won't get the whole archive.
+	warnings                    []string // To go ahead of the probe's own.
 }
 
 // Find returns candidates for an address, best first. None means nothing worked, and a
@@ -183,23 +184,30 @@ func (f *Finder) look(ctx context.Context, address string, report Report) ([]ide
 	}
 	if info, ok := strategies.ReadFeed(resp.Body, resp.URL); ok {
 		f.stage(report, StepFeed, "That's a feed: "+feedName(info))
-		return []idea{f.feedIdea(ctx, fetcher, resp.URL, resp.URL, info, report)}, nil
+		return []idea{f.feedIdea(ctx, fetcher, resp.URL, resp.URL, info, "", report)}, nil
 	}
 
 	site, err := extract.ReadSite(extract.Page{URL: resp.URL, Body: resp.Body})
 	if err != nil {
 		return nil, err
 	}
-	ideas := f.feedIdeas(ctx, fetcher, resp.URL, site, report)
-	complete := slices.ContainsFunc(ideas, func(i idea) bool { return !i.partial })
-	if site.First != "" && canon.URL(site.First) != canon.URL(resp.URL) && !complete {
-		// A crawl gets everything, and a feed that's cut off doesn't, so it goes first.
-		ideas = append([]idea{{
-			title: site.Title, home: resp.URL, strategy: strategyCrawl, kind: kindPage,
-			config: map[string]any{"strategy": strategyCrawl, "start_url": site.First},
-		}}, ideas...)
+	if site.First != "" && canon.URL(site.First) == canon.URL(resp.URL) {
+		site.First = "" // A page that links to itself as the first gives a crawl nowhere to go.
 	}
-	return ideas, nil
+	ideas := f.feedIdeas(ctx, fetcher, resp.URL, site, report)
+	if site.First == "" {
+		return ideas, nil
+	}
+	crawl := idea{
+		title: site.Title, home: resp.URL, strategy: strategyCrawl, kind: kindPage,
+		config: map[string]any{"strategy": strategyCrawl, "start_url": site.First},
+	}
+	if slices.ContainsFunc(ideas, func(i idea) bool { return !i.partial }) {
+		// The feed has it all, but someone may still want the pages themselves.
+		return append(ideas, crawl), nil
+	}
+	// A crawl gets everything, and a feed that's cut off doesn't, so it goes first.
+	return append([]idea{crawl}, ideas...), nil
 }
 
 // feedName is what a stage calls a feed.
@@ -250,7 +258,7 @@ func (f *Finder) feedIdeas(ctx context.Context, fetcher discovery.PageFetcher, h
 		if !ok {
 			continue
 		}
-		i := f.feedIdea(ctx, fetcher, home, resp.URL, info, report)
+		i := f.feedIdea(ctx, fetcher, home, resp.URL, info, site.First, report)
 		if i.title == "" {
 			i.title = site.Title
 		}
@@ -262,9 +270,10 @@ func (f *Finder) feedIdeas(ctx context.Context, fetcher discovery.PageFetcher, h
 	return ideas
 }
 
-// feedIdea works out how to read a feed. Only a feed that looks cut off needs another
-// request, to see whether it's paged.
-func (f *Finder) feedIdea(ctx context.Context, fetcher discovery.PageFetcher, home, address string, info strategies.FeedInfo, report Report) idea {
+// feedIdea works out how to read a feed. first is the site's first page, if it links
+// one. A feed that holds the first page has the whole archive. One that doesn't, or
+// that looks cut off, needs another request, to see whether it's paged.
+func (f *Finder) feedIdea(ctx context.Context, fetcher discovery.PageFetcher, home, address string, info strategies.FeedInfo, first string, report Report) idea {
 	if info.HomeURL != "" {
 		home = info.HomeURL
 	}
@@ -272,7 +281,14 @@ func (f *Finder) feedIdea(ctx context.Context, fetcher discovery.PageFetcher, ho
 		title: info.Title, home: home, strategy: strategyFeed, kind: kindArticle,
 		config: map[string]any{"strategy": strategyFeed, "feed_url": address},
 	}
-	if !info.CutOff {
+	short := false
+	if first != "" {
+		if slices.ContainsFunc(info.Links, func(link string) bool { return canon.URL(link) == canon.URL(first) }) {
+			return i
+		}
+		short = true
+	}
+	if !info.CutOff && !short {
 		return i
 	}
 	f.stage(report, StepPaged, "The feed only has the latest, so checking for older pages")
@@ -283,6 +299,10 @@ func (f *Finder) feedIdea(ctx context.Context, fetcher discovery.PageFetcher, ho
 		return i
 	}
 	i.partial = true
+	if short && !info.CutOff {
+		// A feed cut off at a round number gets its own warning from the probe.
+		i.warnings = []string{fmt.Sprintf("the feed has %d items and doesn't go back to the site's first page, so it holds only the latest; reading page by page gets the whole archive", info.Items)}
+	}
 	return i
 }
 
@@ -369,7 +389,7 @@ func (f *Finder) tryOne(ctx context.Context, i idea, limit int) (Candidate, erro
 	}
 	return Candidate{
 		Title: i.title, Kind: kindOf(i.kind, result.Entries), HomeURL: i.home, Strategy: i.strategy, Config: config,
-		Sample: result.Entries, DatedShare: result.DatedShare, Warnings: result.Warnings, SimilarSourceIDs: similar,
+		Sample: result.Entries, DatedShare: result.DatedShare, Warnings: append(slices.Clip(i.warnings), result.Warnings...), SimilarSourceIDs: similar,
 	}, nil
 }
 

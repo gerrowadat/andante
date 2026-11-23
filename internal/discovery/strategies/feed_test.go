@@ -405,3 +405,18 @@ func TestEpisodePagesHeadOnlyWhenNeeded(t *testing.T) {
 		t.Errorf("heads = %d for a feed's enclosures", heads)
 	}
 }
+
+func TestReadFeedMakesItemLinksAbsolute(t *testing.T) {
+	body := []byte(`<?xml version="1.0"?><rss version="2.0"><channel><title>T</title>` +
+		`<item><title>Two</title><link>/2.html</link></item>` +
+		`<item><title>One</title><link>https://other.example/1.html</link></item>` +
+		`<item><title>No link</title><guid>x</guid></item></channel></rss>`)
+	info, ok := strategies.ReadFeed(body, "https://comic.example/feed.xml")
+	if !ok {
+		t.Fatal("not read as a feed")
+	}
+	want := []string{"https://comic.example/2.html", "https://other.example/1.html"}
+	if !slices.Equal(info.Links, want) || info.Items != 3 {
+		t.Errorf("links = %q, items = %d", info.Links, info.Items)
+	}
+}

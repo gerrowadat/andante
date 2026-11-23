@@ -275,7 +275,7 @@ func TestNobodyReachesSomeoneElsesThings(t *testing.T) {
 		}
 		tried++
 		method, _, _ := strings.Cut(rt.Pattern, " ")
-		form := url.Values{"seq": {"3"}, "label": {"x"}, "preset": {"daily"}, "at": {"07:00"}, "tz": {"UTC"}}
+		form := url.Values{"entry": {"3"}, "label": {"x"}, "preset": {"daily"}, "at": {"07:00"}, "tz": {"UTC"}}
 		var got answer
 		if method == http.MethodPost {
 			got = f.post(t, mallory, path(rt.Pattern, id), form)
@@ -344,8 +344,12 @@ func TestReadingASerial(t *testing.T) {
 	}
 	read := f.track(t, alice, source)
 	r := "/reads/" + strconv.FormatInt(read, 10)
-	if got := f.post(t, alice, r+"/jump", url.Values{"seq": {"4294967299"}}); got.status != http.StatusUnprocessableEntity {
+	if got := f.post(t, alice, r+"/jump", url.Values{"entry": {"4294967299"}}); got.status != http.StatusUnprocessableEntity {
 		t.Errorf("a jump past int32: %d", got.status)
+	}
+	// The website counts entries from 1, so there's no entry 0.
+	if got := f.post(t, alice, r+"/jump", url.Values{"entry": {"0"}}); got.status != http.StatusUnprocessableEntity {
+		t.Errorf("a jump to entry 0: %d", got.status)
 	}
 	shown := f.get(t, alice, r)
 	for _, want := range []string{"Every day at 07:00 (UTC)", "1 of 5 released", "/f/"} {
@@ -392,10 +396,24 @@ func TestReadingASerial(t *testing.T) {
 			t.Errorf("after %s the page has no %q", step.path, step.want)
 		}
 	}
-	if got := f.post(t, alice, r+"/jump", url.Values{"seq": {"3"}}); got.status != http.StatusSeeOther {
+	// Entry 3 is the third in the source page's list, so a jump to it has released 3.
+	if got := f.post(t, alice, r+"/jump", url.Values{"entry": {"3"}}); got.status != http.StatusSeeOther {
 		t.Errorf("jump: %d %s", got.status, got.body)
 	}
-	backwards := f.post(t, alice, r+"/jump", url.Values{"seq": {"1"}})
+	jumped := parse(t, f.get(t, alice, r).body)
+	if got := jumped.Find("#summary dl").Text(); !strings.Contains(got, "3 of 5 released") {
+		t.Errorf("after a jump to entry 3: %s", got)
+	}
+	// The history counts the same way: made at entry 1, skipped to 2, paused and
+	// resumed there, and jumped to 3.
+	var from []string
+	jumped.Find("#history tbody tr").Each(func(_ int, row *goquery.Selection) {
+		from = append(from, strings.TrimSpace(row.Find("td").Last().Text()))
+	})
+	if got := strings.Join(from, " "); got != "1 2 2 2 3" {
+		t.Errorf("the history's entries: %s", got)
+	}
+	backwards := f.post(t, alice, r+"/jump", url.Values{"entry": {"2"}})
 	if backwards.status != http.StatusConflict {
 		t.Errorf("a jump backwards: %d", backwards.status)
 	}

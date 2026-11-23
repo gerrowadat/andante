@@ -621,7 +621,7 @@ func TestHeaders(t *testing.T) {
 			"Content-Security-Policy":   "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
 			"Strict-Transport-Security": "max-age=31536000",
 			"X-Content-Type-Options":    "nosniff",
-			"Referrer-Policy":           "no-referrer",
+			"Referrer-Policy":           "same-origin",
 			"Cache-Control":             "no-store",
 		} {
 			if have := got.header.Get(name); have != want {
@@ -641,6 +641,22 @@ func TestCrossOriginPostsAreRefused(t *testing.T) {
 	}
 	if got := f.do(t, http.MethodPost, "/login", form, home, "", "Sec-Fetch-Site", "same-origin"); got.status != http.StatusSeeOther {
 		t.Errorf("same-origin login: %d", got.status)
+	}
+}
+
+// Chrome sends no Sec-Fetch-Site over plain http to a name that isn't localhost, so the
+// check falls back to Origin, which has to be the real one and not "null".
+func TestPostsWithOnlyAnOrigin(t *testing.T) {
+	f := newFixture(t)
+	f.user(t, "dave")
+	form := url.Values{"name": {"dave"}, "password": {phrase}}
+	if got := f.do(t, http.MethodPost, "/login", form, home, "", "Origin", f.server.URL); got.status != http.StatusSeeOther {
+		t.Errorf("same origin: %d", got.status)
+	}
+	for _, origin := range []string{"null", "http://elsewhere.example"} {
+		if got := f.do(t, http.MethodPost, "/login", form, home, "", "Origin", origin); got.status != http.StatusForbidden {
+			t.Errorf("origin %s: %d", origin, got.status)
+		}
 	}
 }
 
