@@ -169,7 +169,7 @@ type sourcePage struct {
 func entryOf(e db.Entry) entryRow {
 	title := text(e.Title)
 	if title == "" {
-		title = "Entry " + strconv.Itoa(int(e.Seq))
+		title = "Entry " + strconv.Itoa(entryNumber(e.Seq))
 	}
 	return entryRow{Title: title, Url: webOnly(text(e.Url)), Date: stamp(e.OriginalDate)}
 }
@@ -517,8 +517,18 @@ type tokenRow struct {
 
 type historyRow struct {
 	When, What string
-	From       int32
+	// From is an entry number, as the website counts them.
+	From int
 }
+
+// The website numbers entries from 1, as its lists of entries do, where the API's
+// seq counts from 0. These two are the only places that convert.
+
+// entryNumber is the number the website shows for an entry's seq.
+func entryNumber(seq int32) int { return int(seq) + 1 }
+
+// seqOf is the seq of the entry the website numbers n.
+func seqOf(n int) int { return n - 1 }
 
 func (s *site) readOf(w http.ResponseWriter, r *http.Request, v visitor) (reads.View, bool) {
 	id, ok := idOf(r)
@@ -575,7 +585,7 @@ func (s *site) readData(ctx context.Context, v visitor, id int64) (readPage, err
 			what += ": " + schedule.Describe(p)
 		}
 		created := seg.CreatedAt
-		data.History = append(data.History, historyRow{When: stamp(&created), What: what, From: seg.FromSeq})
+		data.History = append(data.History, historyRow{When: stamp(&created), What: what, From: entryNumber(seg.FromSeq)})
 	}
 	return data, nil
 }
@@ -708,12 +718,12 @@ func (s *site) skip(w http.ResponseWriter, r *http.Request, v visitor) {
 }
 
 func (s *site) jump(w http.ResponseWriter, r *http.Request, v visitor) {
-	seq, ok := number(r.PostForm.Get("seq"))
-	if !ok || seq < 0 {
-		s.showRead(w, r, v, http.StatusUnprocessableEntity, "Give the number of an entry.")
+	n, ok := number(r.PostForm.Get("entry"))
+	if !ok || n < 1 {
+		s.showRead(w, r, v, http.StatusUnprocessableEntity, "Give the number of an entry, counting the first as 1.")
 		return
 	}
-	s.adjust(w, r, v, schedule.Jump{Seq: seq})
+	s.adjust(w, r, v, schedule.Jump{Seq: seqOf(n)})
 }
 
 type repaceData struct {
