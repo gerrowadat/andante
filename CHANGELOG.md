@@ -6,6 +6,28 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-11-23
+
+### Added
+
+- A user guide with screenshots, for people using an andante instance someone else runs.
+  `make screenshots` retakes the screenshots.
+- The feed page at `/f/{token}` advertises its Atom, RSS and JSON Feed URLs with
+  `<link rel="alternate">`, so a feed reader given the page link finds them.
+
+### Changed
+
+- Discovery offers a crawl for any site that links its first page. A feed that doesn't include
+  that first page counts as short: it ranks below the crawl and carries a warning.
+- The website numbers entries from 1 in the read page's jump field, its history and an untitled
+  entry's "Entry N", to match the source page. The API still takes `seq`, which starts at 0.
+
+### Fixed
+
+- Logins and setup over plain http on a name other than localhost. The website now sends
+  `Referrer-Policy: same-origin`, so browsers send a real `Origin` on form posts.
+- Pages keep a side margin at window widths between about 1024px and 1280px.
+
 ### Fixed
 
 - The website's pages keep a margin either side at window widths up to about 1200px, where the
@@ -189,7 +211,8 @@ CLI, a Nomad job and alert rules.
 - Update `golang.org/x/net` to v0.62.0, for GO-2026-6860 and GO-2026-6866 in its
   HTML parser, which reads pages from other people's sites.
 
-[Unreleased]: https://github.com/gerrowadat/andante/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/gerrowadat/andante/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/gerrowadat/andante/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/gerrowadat/andante/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/gerrowadat/andante/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/gerrowadat/andante/compare/v0.1.0...v0.1.1
