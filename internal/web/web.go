@@ -206,8 +206,11 @@ func (s *site) headers(next http.Handler) http.Handler {
 		h := w.Header()
 		h.Set("Content-Security-Policy", securityPolicy)
 		h.Set("X-Content-Type-Options", "nosniff")
-		// An invite's URL is the credential.
-		h.Set("Referrer-Policy", "no-referrer")
+		// An invite's URL is the credential, so it's never sent to another site. Our own
+		// pages get it, because with no-referrer browsers send Origin: null on every POST,
+		// and over plain http, where Chrome sends no Sec-Fetch-Site, the cross-origin
+		// check has nothing else to go on.
+		h.Set("Referrer-Policy", "same-origin")
 		h.Set("Cache-Control", "no-store")
 		if s.secure {
 			h.Set("Strict-Transport-Security", hstsAge)

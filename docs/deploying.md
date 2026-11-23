@@ -42,6 +42,10 @@ Each login can take 64 MiB, and two run at once, so leave room for that. The Nom
 
 Set `--base-url` to the address readers will use, because feed links are built from it.
 
+Plain http works, on a LAN name as well as localhost, but put it behind HTTPS if anyone will log in
+from outside your own network. Over http the session cookie, passwords and feed tokens go in the
+clear, and the session cookie loses its `__Host-` prefix.
+
 A new database has no admin. [Bootstrapping](bootstrap.md) covers making one.
 [Configuration](configuration.md) has every setting.
 

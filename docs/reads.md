@@ -75,7 +75,7 @@ timestamps.
 | `skip` | Releases the next `count` entries now, stopping at the end of the index. |
 | `pause` | Stops releases. |
 | `resume` | Restarts them. Replay keeps the part of the current gap that had passed. |
-| `jump` | Releases everything up to `seq` now. It must be ahead of the position and indexed. |
+| `jump` | Releases everything up to `seq` now. It must be ahead of the position and indexed. The website counts entries from 1, so its entry 5 is `seq` 4. |
 | `pacing` | Changes the pacing. At most one entry comes out at once, so a change does not release a backlog. |
 
 A skip or a pause keeps a rule's rhythm: "every other day" stays on the same days.

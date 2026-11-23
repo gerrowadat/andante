@@ -109,7 +109,8 @@ From here you can:
 - **Pause** it while you're on holiday, and **Resume** when you're back. Nothing piles up while it's
   paused.
 - **Release the next one now**, when you can't wait until tomorrow.
-- **Jump** ahead to an entry, if you've read some of it already.
+- **Jump** ahead to an entry, if you've read some of it already. Entries are numbered from 1, as in
+  the source page's list, so jumping to entry 5 releases the first five.
 - **Change the pace**. The new pace starts from where you are.
 
 ![Changing the pace of a read](images/guide/repace.png)
@@ -126,7 +127,9 @@ feeds on it.
 
 ![The feed page, with Atom, RSS and JSON Feed links to copy](images/guide/feed-page.png)
 
-Copy one into your feed reader or podcast app:
+Feed readers that do autodiscovery (Miniflux, NetNewsWire, FreshRSS and most others) will take
+the page's own link and find the feeds from it. If yours doesn't, or you want a particular
+format, copy one of these instead:
 
 - **Atom** for most feed readers (Miniflux, NetNewsWire, Feedly, Inoreader, FreshRSS and the like).
 - **RSS** for podcast apps (Pocket Casts, Overcast, AntennaPod, Apple Podcasts).
