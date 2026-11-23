@@ -7,9 +7,9 @@
 {{/* Outside the summary, so that an update doesn't clear what someone is typing. */}}
 <form method="post" action="{{root}}/reads/{{.Read.ID}}/jump" hx-post="{{root}}/reads/{{.Read.ID}}/jump" hx-target="#summary" hx-select="#summary" hx-swap="outerHTML" hx-select-oob="#status:innerHTML,#history">
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
-  <label for="seq">Release everything up to entry</label>
+  <label for="entry">Release everything up to entry</label>
   <fieldset role="group">
-    <input type="number" id="seq" name="seq" min="0" required>
+    <input type="number" id="entry" name="entry" min="1" required>
     <button class="secondary">Jump</button>
   </fieldset>
 </form>

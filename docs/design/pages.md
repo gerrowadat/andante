@@ -25,6 +25,13 @@ The code is in `internal/web`: the route table in `pages_app.go`, the handlers i
 `add.go`, and the templates and stylesheet embedded from `templates/` and `static/`. The feed page is
 in `internal/server/public.go`, because it's part of the feeds.
 
+The website numbers entries from 1, where the API's `seq` counts from 0. Its lists of entries (the
+source page's first entries, the Add page's samples) are numbered lists, and people read a number
+off them, so the jump field, the read's history and an untitled entry's "Entry N" all use the same
+count. `entryNumber` and `seqOf` in `handlers.go` are the only places that convert ([#105]).
+
+[#105]: https://github.com/gerrowadat/andante/issues/105
+
 ## JavaScript
 
 The pages are server-rendered `html/template`, and every one works with JavaScript off. On top of
