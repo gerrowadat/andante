@@ -9,8 +9,8 @@ require (
 	github.com/PuerkitoBio/goquery v1.14.0
 	github.com/alecthomas/kong v1.17.0
 	github.com/andybalholm/cascadia v1.3.5
-	github.com/chromedp/cdproto v0.160.3
-	github.com/chromedp/chromedp v0.23.1
+	github.com/chromedp/cdproto v0.160.8
+	github.com/chromedp/chromedp v0.24.0
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/getkin/kin-openapi v0.153.0
 	github.com/go-jose/go-jose/v4 v4.1.9
@@ -19,7 +19,7 @@ require (
 	github.com/mmcdole/gofeed v1.5.0
 	github.com/oapi-codegen/nethttp-middleware v1.3.1
 	github.com/oapi-codegen/nullable v1.2.0
-	github.com/oapi-codegen/runtime v1.9.0
+	github.com/oapi-codegen/runtime v1.9.1
 	github.com/piprate/json-gold v0.9.1
 	github.com/pquerna/otp v1.5.0
 	github.com/pressly/goose/v3 v3.30.1

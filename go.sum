@@ -24,10 +24,10 @@ github.com/cayleygraph/quad v1.3.0 h1:xg7HOLWWPgvZ4CcvzEpfCwq42L8mzYUR+8V0jtYoBz
 github.com/cayleygraph/quad v1.3.0/go.mod h1:NadtM7uMm78FskmX++XiOOrNvgkq0E1KvvhQdMseMz4=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=
 github.com/cespare/xxhash/v2 v2.3.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
-github.com/chromedp/cdproto v0.160.3 h1:IpCgfMavg4heyk4detaGEUneXjAZ7hZDwqWwYMSgaVQ=
-github.com/chromedp/cdproto v0.160.3/go.mod h1:h68JaIuFr9o3yiayxEYhBdvaxgYO3shDrPSYhNlyfu0=
-github.com/chromedp/chromedp v0.23.1 h1:CbK1Knbhe9H/m/KT3qfmuSG1c6ErR8ZjmmpHb4Fadz8=
-github.com/chromedp/chromedp v0.23.1/go.mod h1:cz9BPo2oR1YBCu7e+KTdO+7uMvTTuEYh11fErlxdCuQ=
+github.com/chromedp/cdproto v0.160.8 h1:4PfdGeKLRU/q8Rn9kIEmGEUnN4I+Kcf/8jkMLDFUIwA=
+github.com/chromedp/cdproto v0.160.8/go.mod h1:h68JaIuFr9o3yiayxEYhBdvaxgYO3shDrPSYhNlyfu0=
+github.com/chromedp/chromedp v0.24.0 h1:bARawUSS5gshTOsNbFz2YFJyjaQCt7IHcW6E2mqDABQ=
+github.com/chromedp/chromedp v0.24.0/go.mod h1:cz9BPo2oR1YBCu7e+KTdO+7uMvTTuEYh11fErlxdCuQ=
 github.com/chzyer/logex v1.1.10/go.mod h1:+Ywpsq7O8HXn0nuIou7OrIPyXbp3wmkHB+jjWRnGsAI=
 github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e/go.mod h1:nSuG5e5PlCu98SY8svDHJxuZscDgtXS6KTTbou5AhLI=
 github.com/chzyer/test v0.0.0-20180213035817-a1ea475d72b1/go.mod h1:Q3SI9o4m/ZMnBNeIyt5eFwwo7qiLfzFZmjNmxjkiQlU=
@@ -134,8 +134,8 @@ github.com/oapi-codegen/nullable v1.2.0 h1:VflFkDW980KhBPiFF7nWSyjg+r4Obqj8lXipV
 github.com/oapi-codegen/nullable v1.2.0/go.mod h1:KUZ3vUzkmEKY90ksAmit2+5juDIhIZhfDl+0PwOQlFY=
 github.com/oapi-codegen/oapi-codegen/v2 v2.8.2 h1:68UGCFId8tysEuz1jqDgem0Lnz0d6T+73br+KwH/W6k=
 github.com/oapi-codegen/oapi-codegen/v2 v2.8.2/go.mod h1:yae2TI9IYB5vxQ35gFrpXh9L5H1eJv4MAUK1jumGMTo=
-github.com/oapi-codegen/runtime v1.9.0 h1:YZ9DxX8ZQ8ZmNW1xAtOqa3MQ9AfdcUTcoBakvhQKHno=
-github.com/oapi-codegen/runtime v1.9.0/go.mod h1:jDd+iW9sT//NMDhIne8laRtI2Zq+z1QmUNidsql+M64=
+github.com/oapi-codegen/runtime v1.9.1 h1:77xKS3fIvTBRSCivMyY79002dqH1SMCunGjm/vB9eXY=
+github.com/oapi-codegen/runtime v1.9.1/go.mod h1:jDd+iW9sT//NMDhIne8laRtI2Zq+z1QmUNidsql+M64=
 github.com/onsi/ginkgo v1.6.0/go.mod h1:lLunBs/Ym6LB5Z9jYTR76FiuTmxDTDusOGeTQH+WWjE=
 github.com/onsi/ginkgo v1.10.2/go.mod h1:lLunBs/Ym6LB5Z9jYTR76FiuTmxDTDusOGeTQH+WWjE=
 github.com/onsi/ginkgo v1.12.1/go.mod h1:zj2OWP4+oCPe1qIXoGWkgMRwljMUYCdkwsT2108oapk=
